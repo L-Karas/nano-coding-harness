@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "command": "echo 'Auditing bash command'; exit 0"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "command": "echo 'Tool finished'"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "echo 'Session started at $(date)'"
+      }
+    ]
+  }
+}
