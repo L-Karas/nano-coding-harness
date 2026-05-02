@@ -27,11 +27,15 @@ to understand.
 Key insight: "Memory only stores cross-session information that is still
 worth recalling later and is not easy to re-derive from the current repo."
 """
+import json
+import os
 import re
 from pathlib import Path
 from typing import Optional
 
-from config import WORKDIR
+from config import WORKDIR, client, MODEL
+from tool_schema import BASE_TOOLS
+from tools import TOOL_HANDLERS
 
 MEMORY_DIR = WORKDIR / ".memory"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
@@ -205,9 +209,315 @@ class DreamConsolidator:
 
     COOLDOWN_SECONDS = 86400  # 24 hours between consolidations
     SCAN_THROTTLE_SECONDS = 600  # 10 minutes between scan attempts
-    MIN_SESSION_COUNT = 5  # need enough data to consolidate
+    MIN_SESSION_COUNT = 3  # need enough data to consolidate
     LOCK_STALE_SECONDS = 3600  # PID lock considered stale after 1 hour
 
     PHASES = [
-        ""
+        "Orient: scan MEMORY.md index for structure and categories",
+        "Gather: read individual memory files for full content",
+        "Consolidate: merge related memories, remove stale entries",
+        "Prune: enforce 200-line limit on MEMORY.md index"
     ]
+
+    def __init__(self, memory_dir: Path = None):
+        self.memory_dir = memory_dir or MEMORY_DIR
+        self.lock_file = self.memory_dir / ".dream_lock"
+        self.enabled = True
+        self.mode = "default"
+        self.last_consolidation_time = 0.0
+        self.last_scan_time = 0.0
+        self.session_count = 0
+
+    def should_consolidate(self) -> tuple[bool, str]:
+        """
+        Check 7 gates in sequence. All must pass.
+        Returns:
+            returns (can_run, reason) where reason explains the first failed gate.
+        """
+        import time
+
+        now = time.time()
+
+        # Gate 1: enabled flag
+        if not self.enabled:
+            return False, "Gate 1: consolidation is disabled"
+
+        # Gate 2: memory directory exists and has memory files
+        if not self.memory_dir.exists():
+            return False, "Gate 2: memory directory does not exist"
+        memory_files = list(self.memory_dir.glob("*.md"))
+        # Exclude MEMORY.md itself from the count
+        memory_files = [f for f in memory_files if f.name != "MEMORY.md"]
+        if not memory_files:
+            return False, "Gate 2: no memory files found"
+
+        # Gate 3: not in plan mode (only consolidate in active modes)
+        if self.mode == "plan":
+            return False, "Gate 3: plan mode does not allow consolidation"
+
+        # Gate 4: 24-hour cooldown since last consolidation
+        time_since_last = now - self.last_consolidation_time
+        if time_since_last < self.COOLDOWN_SECONDS:
+            remaining = int(self.COOLDOWN_SECONDS - time_since_last)
+            return False, f"Gate 4: cooldown active, {remaining}s remaining"
+
+        # Gate 5: 10-minute throttle since last scan attempt
+        time_since_scan = now - self.last_scan_time
+        if time_since_scan < self.SCAN_THROTTLE_SECONDS:
+            remaining = int(self.SCAN_THROTTLE_SECONDS - time_since_last)
+            return False, f"Gate 5: scan throttle active, {remaining}s remaining"
+
+        # Gate 6: need at least 3 sessions worth of data
+        if self.session_count < self.MIN_SESSION_COUNT:
+            return False, f"Gate 6: only {self.session_count} sessions, need {self.MIN_SESSION_COUNT}"
+
+        # Gate 7: no active lock file (check PID staleness)
+        if self._acquire_lock():
+            return False, "Gate 7: lock held by another process"
+
+        return True, "All 7 gate passed"
+
+    def consolidate(self) -> list[str]:
+        """
+        Run the-phase consolidation process.
+        The teaching version returns phase descriptions to make the flow
+        visible without requiring an extra LLM pass here.
+        Returns:
+
+        """
+        import time
+
+        can_run, reason = self.should_consolidate()
+        if not can_run:
+            print(f"[Dream] Cannot consolidate: {reason}")
+            return []
+
+        print("[Dream] Starting consolidation...")
+        self.last_scan_time = time.time()
+
+        completed_phases = []
+        for i, phase in enumerate(self.PHASES, 1):
+            print(f"[Dream] Phase {i}/4: {phase}")
+            completed_phases.append(phase)
+
+        self.last_consolidation_time = time.time()
+        self._release_lock()
+        print(f"[Dream] Consolidation complete: {len(completed_phases)} phases executed")
+        return completed_phases
+
+    def _acquire_lock(self) -> bool:
+        """
+        Acquire a PID-based lock file.
+        Returns:
+            returns False if locked by another live process. Stale locks (older than LOCK_STALE_SECONDS) are removed.
+        """
+        import time
+
+        if self.lock_file.exists():
+            try:
+                lock_data = self.lock_file.read_text().strip()
+                pid_str, timestamp_str = lock_data.split(":", 1)
+                pid = int(pid_str)
+                lock_time = float(timestamp_str)
+
+                # check if lock is stale
+                if (time.time() - lock_time) > self.LOCK_STALE_SECONDS:
+                    print(f"[Dream] Removing stale lock from PID {pid}")
+                    self.lock_file.unlink()
+                else:
+                    # check if owning process is still alive
+                    try:
+                        os.kill(pid, 0)
+                        return False  # process alive, lock is valid
+                    except OSError:
+                        print(f"[Dream] Removing lock from dead PID {pid}")
+                        self.lock_file.unlink()
+            except (ValueError, OSError):
+                # corrupted lock file, remove it
+                self.lock_file.unlink(missing_ok=True)
+
+        # write new lock
+        try:
+            self.memory_dir.mkdir(parents=True, exist_ok=True)
+            self.lock_file.write_text(f"{os.getpid()}:{time.time()}")
+            return True
+        except OSError:
+            return False
+
+    def _release_lock(self):
+        """
+        Release the lock file if we own it.
+        Returns:
+
+        """
+        try:
+            if self.lock_file.exists():
+                lock_data = self.lock_file.read_text().strip()
+                pid_str = lock_data.split(":")[0]
+                if int(pid_str) == os.getpid():
+                    self.lock_file.unlink()
+        except (ValueError, OSError):
+            pass
+
+
+# Global memory manager
+memory_manager = MemoryManager()
+
+
+def run_save_memory(name: str, description: str, mem_type: str, content: str) -> str:
+    return memory_manager.save_memory(name, description, mem_type, content)
+
+
+TOOL_HANDLERS = TOOL_HANDLERS | {
+    "save_memory": lambda **kw: run_save_memory(**kw)
+}
+
+TOOLS = BASE_TOOLS + [
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": "Save a persistent memory that survives across sessions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Short identifier (e.g. prefer_tabs, db_schema)"},
+                    "description": {"type": "string", "description": "One-line summary of what this memory captures"},
+                    "mem_type": {"type": "string", "enum": ["user", "feedback", "project", "reference"],
+                                 "description": "user=preferences, feedback=corrections, project=non-obvious project conventions or decision reasons, reference=external resource pointers"},
+                    "content": {"type": "string", "description": "Full memory content (multi-line OK)"},
+                },
+                "required": ["name", "description", "type", "content"]
+            },
+        },
+    },
+]
+
+MEMORY_GUIDANCE = """
+When to save memories:
+- User states a preference ("I like tabs", "always use pytest") -> type: user
+- User corrects you ("don't do X", "that was wrong because...") -> type: feedback
+- You learn a project fact that is not easy to infer from current code alone
+  (for example: a rule exists because of compliance, or a legacy module must
+  stay untouched for business reasons) -> type: project
+- You learn where an external resource lives (ticket board, dashboard, docs URL)
+  -> type: reference
+When NOT to save:
+- Anything easily derivable from code (function signatures, file structure, directory layout)
+- Temporary task state (current branch, open PR numbers, current TODOs)
+- Secrets or credentials (API keys, passwords)
+"""
+
+
+def build_system_prompt() -> str:
+    """
+    Assemble system prompt with memory content included.
+    Returns:
+
+    """
+    parts = [f"You are a coding agent at {WORKDIR}. Use tools to solve tasks."]
+    # inject memory content if available
+    memory = memory_manager.load_memory_prompt()
+    if memory:
+        parts.append(memory)
+
+    parts.append(MEMORY_GUIDANCE)
+    return "\n\n".join(parts)
+
+
+def agent_loop(messages: list):
+    """
+    Agent loop with memory-aware system prompt.
+    The system prompt is rebuilt each call so newly saved memories
+    are visible in the next LLM turn within the same session.
+    Args:
+        messages:
+
+    Returns:
+
+    """
+    while True:
+        system_message = [{
+            "role": "system",
+            "content": build_system_prompt()
+        }]
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=system_message + messages,
+            tools=TOOLS,
+            max_tokens=int(8e3)
+        )
+
+        if response.choices[0].finish_reason != "tool_calls":
+            messages.append({
+                "role": "assistant",
+                "content": response.choices[0].message.content
+            })
+            return
+
+        results = []
+        tool_call_messages = [{"role": "assistant", "tool_calls": []}]
+        for tool_call in response.choices[0].message.tool_calls:
+            tool_name = tool_call.function.name
+            tool_args = json.loads(tool_call.function.arguments)
+
+            handler = TOOL_HANDLERS.get(tool_name)
+            try:
+                output = handler(**tool_args) if handler else f"Unknown: {tool_name}"
+            except Exception as e:
+                output = f"Error: {e}"
+            print(f"> {tool_name}: {str(output)[:100]}")
+
+            tool_call_messages[0]["tool_calls"].append({
+                "id": tool_call.id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": tool_call.function.arguments
+                }
+            })
+            results.append({
+                "role": "tool",
+                "content": str(output),
+                "tool_call_id": tool_call.id
+            })
+
+        messages.extend(tool_call_messages + results)
+
+
+if __name__ == '__main__':
+    # load existing memories at session start
+    memory_manager.load_all()
+    mem_count = len(memory_manager.memories)
+    if mem_count:
+        print(f"[{mem_count} memories loaded into context]")
+    else:
+        print("[No existing memories. The agent can create them with save_memory.]")
+
+    messages = []
+    while True:
+        try:
+            query = input("\033[36ms09 >> \033[0m")
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        if query.strip().lower() in ("q", "exit", ""):
+            break
+
+        # /memories command to list current memories
+        if query.strip() == "/memories":
+            if memory_manager.memories:
+                for name, mem in memory_manager.memories.items():
+                    print(f"  [{mem['type']}] {name}: {mem['description']}")
+            else:
+                print("  (no memories)")
+            continue
+
+        messages.append({
+            "role": "user", "content": query
+        })
+        agent_loop(messages)
+        response = messages[-1]["content"]
+        print(response)
+
+        print()

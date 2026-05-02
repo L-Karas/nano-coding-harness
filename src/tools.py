@@ -1,7 +1,13 @@
+"""工具函数模块，用于文件操作和 Shell 命令执行。
+
+本模块提供安全的文件读取、写入、编辑以及 bash 命令执行的实用工具。
+包含路径验证以防止越界访问，以及命令过滤以确保执行安全。
+"""
+
 import subprocess
 from pathlib import Path
 
-WORKDIR = Path.cwd().parent
+from config import WORKDIR
 
 
 def safe_path(p: str) -> Path:

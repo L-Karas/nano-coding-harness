@@ -1,3 +1,8 @@
+"""配置模块说明。
+
+本模块负责环境设置和提供共享的配置对象，包括 API 客户端初始化、模型设置和工作目录路径。
+"""
+
 import os
 from pathlib import Path
 

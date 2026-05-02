@@ -1,5 +1,5 @@
 # Child gets all base tools except task (no recursive spawning)
-CHILD_TOOLS = [
+BASE_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -60,7 +60,7 @@ CHILD_TOOLS = [
     },
 ]
 
-PARENT_TOOLS = CHILD_TOOLS + [
+PARENT_TOOLS = BASE_TOOLS + [
     {
         "type": "function",
         "function": {
@@ -81,7 +81,7 @@ PARENT_TOOLS = CHILD_TOOLS + [
     }
 ]
 
-SKILLS_TOOLS = CHILD_TOOLS + [
+SKILLS_TOOLS = BASE_TOOLS + [
     {
         "type": "function",
         "function": {
@@ -96,7 +96,7 @@ SKILLS_TOOLS = CHILD_TOOLS + [
     }
 ]
 
-COMPACT_TOOLS = CHILD_TOOLS + [
+COMPACT_TOOLS = BASE_TOOLS + [
     {
         "type": "function",
         "function": {
