@@ -35,7 +35,7 @@ from typing import Optional
 
 from config import WORKDIR, client, MODEL
 from tool_schema import BASE_TOOLS
-from tools import TOOL_HANDLERS
+from tools import BASE_TOOL_HANDLERS
 
 MEMORY_DIR = WORKDIR / ".memory"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
@@ -368,7 +368,7 @@ def run_save_memory(name: str, description: str, mem_type: str, content: str) ->
     return memory_manager.save_memory(name, description, mem_type, content)
 
 
-TOOL_HANDLERS = TOOL_HANDLERS | {
+TOOL_HANDLERS = BASE_TOOL_HANDLERS | {
     "save_memory": lambda **kw: run_save_memory(**kw)
 }
 
@@ -461,7 +461,7 @@ def agent_loop(messages: list):
             tool_name = tool_call.function.name
             tool_args = json.loads(tool_call.function.arguments)
 
-            handler = TOOL_HANDLERS.get(tool_name)
+            handler = BASE_TOOL_HANDLERS.get(tool_name)
             try:
                 output = handler(**tool_args) if handler else f"Unknown: {tool_name}"
             except Exception as e:

@@ -15,6 +15,9 @@ import os
 import subprocess
 from dataclasses import dataclass
 
+import dotenv
+from openai import OpenAI
+
 # try:
 #     import readline
 #     readline.parse_and_bind("set bind-tty-special-chars off")
@@ -25,9 +28,6 @@ from dataclasses import dataclass
 # except Exception:
 #     pass
 
-from openai import OpenAI
-import dotenv
-
 dotenv.load_dotenv(override=True)
 
 client = OpenAI(
@@ -35,7 +35,7 @@ client = OpenAI(
     base_url=os.getenv("DASHSCOPE_BASE_URL"),
 )
 
-model = os.getenv("MODEL")
+model = os.getenv("MAIN_MODEL")
 
 SYSTEM = """You are a coding agent at {os.getcwd()}.
 Use bash to inspect and change the workspace. Act first, then report clearly."""

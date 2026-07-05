@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from tool_schema import CHILD_TOOLS
-from tools import TOOL_HANDLERS
+from tools import BASE_TOOL_HANDLERS
 
 load_dotenv(override=True)
 
@@ -210,7 +210,7 @@ def agent_loop(messages: list, hooks: HookManager):
                 continue
 
             # -- execute tool --
-            handler = TOOL_HANDLERS.get(tool_name)
+            handler = BASE_TOOL_HANDLERS.get(tool_name)
             try:
                 output = handler(**tool_args) if handler else f"Unknown: {tool_name}"
             except Exception as e:

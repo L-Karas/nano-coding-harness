@@ -12,5 +12,16 @@ from openai import OpenAI
 load_dotenv(override=True)
 
 WORKDIR = Path.cwd().parent
+MEMORY_DIR = WORKDIR / ".memory"
+MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
+MEMORY_DIR.mkdir(exist_ok=True)
+
+TASK_DIR = WORKDIR / ".task"
+TASK_DIR.mkdir(exist_ok=True)
+
+MAILBOX_DIR = WORKDIR / ".mailbox"
+MAILBOX_DIR.mkdir(exist_ok=True)
+
 client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"), base_url=os.getenv("DASHSCOPE_BASE_URL"))
 MODEL = os.getenv("MODEL")
+SUB_MODEL = os.getenv("SUB_MODEL")
