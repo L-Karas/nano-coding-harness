@@ -95,9 +95,9 @@ def can_start(task_id: str) -> bool:
 def claim_task(task_id: str, owner: str = "agent") -> str:
     task = load_task(task_id)
     if task.status != "pending":
-        return f"Task {task_id} is {task.status}, can't claim"
+        return f"Task {task_id} is {task.status}, can't claim. You can try to claim other tasks."
     if task.owner:
-        return f"Task {task_id} already claimed by {task.owner}"
+        return f"Task {task_id} already claimed by {task.owner}. You can try to claim other tasks."
     if not can_start(task_id):
         deps = [dep for dep in task.blockedBy
                 if _task_path(dep).exists() and load_task(dep).status != "completed"]
@@ -546,7 +546,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
 
         def _run_claim_task(task_id: str):
             result = claim_task(task_id, owner=name)
-            if "Claimed" in result:
+            if "claimed" in result:
                 # Set worktree cwd if task has one
                 task = load_task(task_id)
                 if task.worktree:
@@ -713,7 +713,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     })
                     print(f"\033[36m>   [Call tool] (Teammate: {name}) {tool_name}\033[0m")
                     print(f"\033[36m>   [Tool arguments] (Teammate: {name}) {tool_input}\033[0m")
-                    print(f"\033[36m>   [Tool result] (Teammate: {name}) {output[:20]}\033[0m")
+                    print(f"\033[36m>   [Tool result] (Teammate: {name}) {output[:100]}\033[0m")
 
                 messages.extend(tool_call_messages + tool_call_results)
 

@@ -16,3 +16,6 @@ wheels/
 /.transcripts
 /.claude
 /.memory
+
+
+/examples
