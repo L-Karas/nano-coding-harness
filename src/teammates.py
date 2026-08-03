@@ -338,8 +338,8 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     for tool_call in response_message.tool_calls:
                         tool_name = tool_call.function.name
                         tool_args = json.loads(tool_call.function.arguments)
-                        print(f"\033[36m>   [Call tool] (Teammate: {name}) {tool_name}\033[0m")
-                        print(f"\033[36m>   [Tool arguments] (Teammate: {name}) {tool_args}\033[0m")
+                        print(f"\033[90m>   [Call tool] (Teammate: {name}) {tool_name}\033[0m")
+                        print(f"\033[90m>   [Tool arguments] (Teammate: {name}) {tool_args}\033[0m")
 
                         if tool_name == "submit_plan":
                             output = _teammate_submit_plan(**tool_args)
@@ -355,7 +355,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                             "content": str(output),
                         })
 
-                        print(f"\033[36m>   [Tool result] (Teammate: {name}) {output[:100]}\033[0m")
+                        print(f"\033[90m>   [Tool result] (Teammate: {name}) {output[:100]}\033[0m")
 
                         if protocol_ctx["waiting_plan"]:
                             # Ignore later tool_calls from the same model

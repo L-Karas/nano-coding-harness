@@ -20,7 +20,7 @@ client = OpenAI(
 )
 SUB_MODEL = os.getenv("SUB_MODEL")
 PRIMARY_MODEL = os.getenv("MODEL")
-FALLBACK_MODEL = os.getenv("SUB_MODEL")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL")
 
 WORKDIR = Path.cwd()
 SKILL_DIR = WORKDIR / "skills"
@@ -41,4 +41,4 @@ PERSIST_THRESHOLD = int(3e4)
 CONTINUATION_PROMPT = "Continue from the previous response. Do not repeat completed work."
 
 PROMPT = "\033[36ms20 >> \033[0m"
-CLI_ACTIVE = False
+CLI_ACTIVE = True

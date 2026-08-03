@@ -5,32 +5,6 @@ The model sees tool schemas; Python executes handlers. S20 keeps both tables
 explicit so every added capability is visible in one place.
 """
 
-from typing import Any
-
-from pydantic import BaseModel
-
-
-def _json_schema_to_openai_params(schema: dict) -> dict:
-    return {
-        "type": "object",
-        "properties": schema.get("properties", {}),
-        "required": schema.get("required", []),
-    }
-
-
-def to_openai_tool(model: type[BaseModel]) -> dict[str, Any]:
-    tool_schema = model.model_json_schema()
-
-    return {
-        "type": "function",
-        "function": {
-            "name": model.__name__,
-            "description": model.__doc__ or "",
-            "parameters": _json_schema_to_openai_params(tool_schema),
-        },
-    }
-
-
 BUILTIN_TOOLS: list[dict] = [
     {
         "type": "function",
@@ -41,7 +15,8 @@ BUILTIN_TOOLS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "The bash command to execute."},
-                    "run_in_background": {"type": "boolean", "description": "Set to true to run the command in the background."},
+                    "run_in_background": {"type": "boolean",
+                                          "description": "Set to true to run the command in the background."},
                 },
                 "required": ["command"],
             },
@@ -102,7 +77,8 @@ BUILTIN_TOOLS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "The glob pattern to match files against (e.g. '**/*.py')."},
+                    "pattern": {"type": "string",
+                                "description": "The glob pattern to match files against (e.g. '**/*.py')."},
                 },
                 "required": ["pattern"],
             },
@@ -145,7 +121,8 @@ BUILTIN_TOOLS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "description": {"type": "string", "description": "The task description for the subagent to complete."},
+                    "description": {"type": "string",
+                                    "description": "The task description for the subagent to complete."},
                 },
                 "required": ["description"],
             },
@@ -173,7 +150,8 @@ BUILTIN_TOOLS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "focus": {"type": "string", "description": "What to focus on when summarizing (e.g. 'current goal', 'key findings')."},
+                    "focus": {"type": "string",
+                              "description": "What to focus on when summarizing (e.g. 'current goal', 'key findings')."},
                 },
             },
         },
@@ -261,10 +239,13 @@ BUILTIN_TOOLS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "cron_expression": {"type": "string", "description": "5-field cron expression (minute hour day-of-month month day-of-week)."},
+                    "cron_expression": {"type": "string",
+                                        "description": "5-field cron expression (minute hour day-of-month month day-of-week)."},
                     "prompt": {"type": "string", "description": "The prompt to enqueue at each fire time."},
-                    "recurring": {"type": "boolean", "description": "Whether the job repeats on every cron match (default: true)."},
-                    "durable": {"type": "boolean", "description": "Whether the job persists across sessions (default: true)."},
+                    "recurring": {"type": "boolean",
+                                  "description": "Whether the job repeats on every cron match (default: true)."},
+                    "durable": {"type": "boolean",
+                                "description": "Whether the job persists across sessions (default: true)."},
                 },
                 "required": ["cron_expression", "prompt"],
             },
@@ -301,7 +282,8 @@ BUILTIN_TOOLS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Unique name for the teammate."},
-                    "role": {"type": "string", "description": "The role or expertise of the teammate (e.g. 'code reviewer')."},
+                    "role": {"type": "string",
+                             "description": "The role or expertise of the teammate (e.g. 'code reviewer')."},
                     "prompt": {"type": "string", "description": "The initial task or instructions for the teammate."},
                 },
                 "required": ["name", "role", "prompt"],
@@ -369,7 +351,8 @@ BUILTIN_TOOLS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "request_id": {"type": "string", "description": "The request ID of the plan to review."},
-                    "approve": {"type": "boolean", "description": "Whether to approve (true) or reject (false) the plan."},
+                    "approve": {"type": "boolean",
+                                "description": "Whether to approve (true) or reject (false) the plan."},
                     "feedback": {"type": "string", "description": "Optional feedback when rejecting a plan."},
                 },
                 "required": ["request_id", "approve"],
@@ -400,7 +383,8 @@ BUILTIN_TOOLS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "The name of the worktree to remove."},
-                    "discard_changes": {"type": "boolean", "description": "Set to true to force removal even with uncommitted changes."},
+                    "discard_changes": {"type": "boolean",
+                                        "description": "Set to true to force removal even with uncommitted changes."},
                 },
                 "required": ["name"],
             },

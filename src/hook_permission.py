@@ -76,7 +76,7 @@ def large_output_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = 
 
 
 def user_prompt_hook(query: str):
-    print(f"\033[90m[HOOK] UserPromptSubmit: {WORKDIR}\033[0m")
+    print(f"\033[90m[HOOK] UserPromptSubmit: {query}\033[0m")
     return None
 
 

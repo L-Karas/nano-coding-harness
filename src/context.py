@@ -2,12 +2,14 @@
 Context
 """
 import teammates
+
 from config import WORKDIR
 
 MEMORY_DIR = WORKDIR / ".memory"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
 
 
+# todo: mcp connect support
 def update_context(context: dict, messages: list) -> dict:
     memories = ""
     if MEMORY_INDEX.exists():

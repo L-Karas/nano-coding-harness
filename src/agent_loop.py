@@ -12,7 +12,7 @@ from background_task import collect_background_results, should_run_background, s
 from base_tool_handlers import BUILTIN_HANDLERS
 from base_tools import call_tool_handler
 from config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
-    CONTINUATION_PROMPT, PROMPT
+    CONTINUATION_PROMPT
 from context import update_context
 from context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
     reactive_compact, message_has_tool_use
@@ -22,7 +22,15 @@ from hook_permission import trigger_hooks
 from prompt import assemble_system_prompt
 from protocol_state import consume_lead_inbox
 from tool_schema import BUILTIN_TOOLS
-from utils import terminal_print
+from ui import (
+    render_banner,
+    render_user_input,
+    render_tool_call,
+    render_tool_result,
+    render_assistant_response,
+    render_background_notification,
+    get_user_input
+)
 
 ROUNDS_SINCE_TODO = 0
 AGENT_LOCK = threading.Lock()
@@ -109,7 +117,7 @@ def agent_loop(messages: list, context: dict):
                 "role": "user",
                 "content": f"[Scheduled crons] {cron.prompt}"
             })
-            print(f"  \033[35m[Cron inject] {cron.prompt[:60]}\033[0m")
+            render_background_notification(f"Cron Prompt: {cron.prompt}", title="⏰ Cron Injected")
 
         inject_background_notifications(messages)
 
@@ -174,7 +182,7 @@ def agent_loop(messages: list, context: dict):
         for tool_call in response.choices[0].message.tool_calls:
             tool_name = tool_call.function.name
             tool_args = json.loads(tool_call.function.arguments)
-            print(f"\033[36m> {tool_name}\033[0m")
+            render_tool_call(tool_name, tool_args)
 
             if tool_name == "compact":
                 messages[:] = compact_history(messages)
@@ -207,7 +215,7 @@ def agent_loop(messages: list, context: dict):
             handler = handlers.get(tool_name)
             output = call_tool_handler(handler, tool_args, tool_name)
             trigger_hooks("PostToolUse", tool_call, output)
-            print(str(output)[:300])
+            render_tool_result(output)
 
             if tool_name == "todo_write":
                 ROUNDS_SINCE_TODO = 0
@@ -227,9 +235,9 @@ def agent_loop(messages: list, context: dict):
 
 
 def print_turn_assistants(messages: list, turn_start: int):
-    for msg in messages:
-        if isinstance(msg, dict) and msg["role"] == "assistant":
-            terminal_print(msg["content"])
+    for msg in messages[turn_start:]:
+        if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
+            render_assistant_response(msg["content"])
 
 
 def cron_auto_loop(messages: list, context: dict):
@@ -246,7 +254,7 @@ def cron_auto_loop(messages: list, context: dict):
                     "role": "user",
                     "content": f"[Scheduled] {job.prompt}"
                 })
-                terminal_print(f"  \033[35m[Cron auto] {job.prompt[:60]}\033[0m")
+                render_background_notification(f"Cron Auto Prompt: {job.prompt}", title="⏰ Cron Triggered")
 
             agent_loop(messages, context)
             context.update(update_context(context, messages))
@@ -255,21 +263,22 @@ def cron_auto_loop(messages: list, context: dict):
 
 if __name__ == '__main__':
     CLI_ACTIVE = True
-    print("Enter a question, press Enter to send. Type q to quit.\n")
+    render_banner("🤖 Nano-Harness Agent Loop", "Enter a question, press Enter to send. Type /exit or q to quit.")
 
     messages = []
     context = update_context({}, [])
-    threading.Thread(target=cron_auto_loop, args=(messages, context)).start()
+    threading.Thread(target=cron_auto_loop, args=(messages, context), daemon=True).start()
 
     while True:
         try:
-            query = input(PROMPT)
+            query = get_user_input()
         except (EOFError, KeyboardInterrupt):
             break
 
-        if query.strip().lower() in ["q", "quit", "exit"]:
+        if query.strip().lower() in ["q", "quit", "exit", "/exit", "/quit"]:
             break
 
+        render_user_input(query)
         trigger_hooks("UserPromptSubmit", query)
         turn_start = len(messages)
         messages.append({

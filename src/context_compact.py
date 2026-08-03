@@ -25,7 +25,7 @@ def message_has_tool_use(message: ChatCompletionMessage) -> bool:
 
 
 def is_tool_result_message(message: dict) -> bool:
-    if message.get("role") == "tool":
+    if isinstance(message, dict) and message.get("role") == "tool":
         return True
 
     return False
