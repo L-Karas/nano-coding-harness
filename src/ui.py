@@ -9,7 +9,6 @@ from typing import Optional, Any, List
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style as PtStyle
 from rich import box
 from rich.console import Console
@@ -43,14 +42,12 @@ LEFT_BAR_BOX = box.Box(
     "█   \n"
 )
 
-
 # 默认斜杠命令补全列表
 DEFAULT_COMMANDS = ['/help', '/clear', '/model', '/compact', '/tools', '/exit', '/quit']
 
 # Prompt 输入样式（淡灰色/中灰色背景，淡灰文字）
 pt_style = PtStyle.from_dict({
-    'prompt': 'bold #f3f4f6 bg:#374151',
-    '': 'bg:#374151 #ffffff',
+    'prompt': 'bold #f3f4f6',
 })
 
 _session: Optional[PromptSession] = None
@@ -72,9 +69,23 @@ def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
 
 def get_user_input(prompt_str: str = ">> ") -> str:
     """获取用户终端输入（配合 patch_stdout 防止后台多线程输出打乱当前输入）"""
-    session = get_prompt_session()
-    with patch_stdout(raw=True):
-        return session.prompt(prompt_str).strip()
+    # session = get_prompt_session()
+    # with patch_stdout(raw=True):
+    #     return session.prompt(prompt_str).strip()
+    import sys
+    import os
+
+    # 获取当前文件（main.py）所在目录的父目录（即项目根目录 my_project/）
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # 将根目录添加到 Python 搜索路径
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
+
+    # 现在可以像导入普通顶级包一样导入 tests
+    from test import text_test  # 假设 tests 下有 test_utils.py
+    # 或者 from tests import test_utils
+
+    return text_test.get_user_input(prompt_str)
 
 
 def render_banner(title: str = "🤖 Nano-Harness Agent Loop", subtitle: str = "Type /help for commands, /exit to quit"):

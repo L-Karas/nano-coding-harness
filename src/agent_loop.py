@@ -29,7 +29,7 @@ from ui import (
     render_tool_result,
     render_assistant_response,
     render_background_notification,
-    get_user_input
+    get_user_input, render_thinking_status
 )
 
 ROUNDS_SINCE_TODO = 0
@@ -91,20 +91,21 @@ def call_llm(
 ) -> ChatCompletion | Stream[ChatCompletionChunk]:
     system = assemble_system_prompt(context)
     messages = [{"role": "system", "content": system}] + messages
-    return with_retry(
-        lambda: client.chat.completions.create(
-            model=state.current_model,
-            messages=messages,
-            tools=tools,
-            max_tokens=max_tokens,
-        ),
-        state
-    )
+
+    with render_thinking_status():
+        return with_retry(
+            lambda: client.chat.completions.create(
+                model=state.current_model,
+                messages=messages,
+                tools=tools,
+                max_tokens=max_tokens,
+            ),
+            state
+        )
 
 
 def agent_loop(messages: list, context: dict):
     global ROUNDS_SINCE_TODO
-    tools, handlers = assemble_tool_pool()
     state = RecoveryState()
     max_tokens = DEFAULT_MAX_TOKENS
 

@@ -18,5 +18,9 @@ wheels/
 /.memory
 
 
+# Temp
 /examples
 /test
+
+/src/**
+!/src/**/*.py
