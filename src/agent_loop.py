@@ -19,6 +19,7 @@ from context_compact import tool_result_budget, snip_compact, micro_compact, est
 from cron_scheduler import consume_cron_queue
 from error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
 from hook_permission import trigger_hooks
+from mcps import get_client_manager
 from prompt import assemble_system_prompt
 from protocol_state import consume_lead_inbox
 from tool_schema import BUILTIN_TOOLS
@@ -43,6 +44,15 @@ def assemble_tool_pool():
     tools = list(BUILTIN_TOOLS)
     handlers = BUILTIN_HANDLERS
     # todo: mcp tools
+    try:
+        mcp_client_manager = get_client_manager()
+    except Exception as e:
+        print(f"  \033[33m[MCP] init failed, falling back to builtin tools: {e}\033[0m")
+        mcp_client_manager = None
+
+    if mcp_client_manager:
+        tools.extend(mcp_client_manager.list_tools())
+        handlers = handlers | mcp_client_manager.tool_handlers
 
     return tools, handlers
 

@@ -4,19 +4,29 @@ Provides Rich-based visual components with color-coded background panels and pro
 """
 
 import json
+import shutil
 from typing import Optional, Any, List
 
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, Application
+from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import Window, FormattedTextControl, BufferControl, Layout, FloatContainer, HSplit, Float, \
+    CompletionsMenu
+from prompt_toolkit.layout.processors import BeforeInput
+from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style as PtStyle
 from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from textual.document import _history
 
 # 使用 force_terminal 与 legacy_windows=False 防止 Windows 控制台 ANSI/UTF-8 字符宽度错位导致边框撕裂
 console = Console(force_terminal=True, legacy_windows=False)
+# 单例历史记录，保持跨次输入的历史
+_history = InMemoryHistory()
 
 # 无边框（无线条、仅保留背景色色块）Box 定义
 EMPTY_BOX = box.Box(
@@ -67,25 +77,39 @@ def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
     return _session
 
 
-def get_user_input(prompt_str: str = ">> ") -> str:
-    """获取用户终端输入（配合 patch_stdout 防止后台多线程输出打乱当前输入）"""
-    # session = get_prompt_session()
-    # with patch_stdout(raw=True):
-    #     return session.prompt(prompt_str).strip()
-    import sys
-    import os
+def get_user_input(prompt_str: str = ">> ", commands: Optional[List[str]] = None) -> str:
+    """获取用户输入（上下紧贴实线，高度锁定 3 行，绝不掉落到屏幕底端）"""
+    width = console.width or shutil.get_terminal_size().columns
 
-    # 获取当前文件（main.py）所在目录的父目录（即项目根目录 my_project/）
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # 将根目录添加到 Python 搜索路径
-    if root_dir not in sys.path:
-        sys.path.insert(0, root_dir)
+    # 1. 上下边框 (严格锁定 height=1)
+    border = Window(FormattedTextControl([('class:border', '─' * width)]), height=1)
 
-    # 现在可以像导入普通顶级包一样导入 tests
-    from test import text_test  # 假设 tests 下有 test_utils.py
-    # 或者 from tests import test_utils
+    # 2. 输入框 Buffer 及窗口 (严格锁定 height=1，防止被拉伸到屏幕底部)
+    buffer = Buffer(history=_history, completer=WordCompleter(commands or DEFAULT_COMMANDS, ignore_case=True),
+                    complete_while_typing=True)
+    input_win = Window(BufferControl(buffer=buffer, input_processors=[BeforeInput(prompt_str, style='class:prompt')]),
+                       height=1)
 
-    return text_test.get_user_input(prompt_str)
+    # 3. 组合为 3 行高 (1+1+1=3) 的紧凑布局 + 补全菜单浮窗
+    layout = Layout(FloatContainer(
+        content=HSplit([border, input_win, border]),
+        floats=[Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=6))]
+    ))
+
+    # 4. 快捷键绑定 (Enter 提交, Ctrl+C 退出)
+    kb = KeyBindings()
+
+    @kb.add('enter')
+    def _(event): event.app.exit(result=buffer.text)
+
+    @kb.add('c-c')
+    def _(event): event.app.exit(exception=KeyboardInterrupt)
+
+    # 5. 原生内联应用
+    app = Application(layout=layout, key_bindings=kb, style=pt_style, erase_when_done=True, full_screen=False)
+
+    with patch_stdout(raw=True):
+        return (app.run() or "").strip()
 
 
 def render_banner(title: str = "🤖 Nano-Harness Agent Loop", subtitle: str = "Type /help for commands, /exit to quit"):
