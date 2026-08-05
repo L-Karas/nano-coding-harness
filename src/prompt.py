@@ -3,8 +3,8 @@ Prompt Assemble
 """
 from datetime import datetime
 
-from config import WORKDIR
-from skills import list_skills
+from src.config import WORKDIR
+from src.skills import list_skills
 
 PROMPT_SECTIONS = {
     "identity": "You are a coding agent. Act, don't explain.",

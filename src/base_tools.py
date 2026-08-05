@@ -7,8 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-import task
-from config import WORKDIR
+from src import task
+from src.config import WORKDIR
 
 
 def run_bash(command: str, cwd: Optional[Path] = None, run_in_background: bool = False) -> str:

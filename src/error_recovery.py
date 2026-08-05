@@ -5,7 +5,7 @@ import random
 import time
 from typing import Callable
 
-from config import PRIMARY_MODEL, BASE_DELAY_MS, MAX_RETRIES, MAX_CONSECUTIVE, FALLBACK_MODEL
+from src.config import PRIMARY_MODEL, BASE_DELAY_MS, MAX_RETRIES, MAX_CONSECUTIVE, FALLBACK_MODEL
 
 
 class RecoveryState:

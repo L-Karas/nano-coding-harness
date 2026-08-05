@@ -8,14 +8,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import config
-import message_bus
-import protocol_state
-from base_tools import run_bash, run_read, run_write, call_tool_handler
-from config import client
-from protocol_state import get_request_id, ProtocolState
-from task import TASK_DIR, can_start, claim_task, list_tasks, load_task, complete_task
-from worktree import WORKTREES_DIR
+from src import config
+from src import message_bus
+from src import protocol_state
+from src.base_tools import run_bash, run_read, run_write, call_tool_handler
+from src.config import client
+from src.protocol_state import get_request_id, ProtocolState
+from src.task import TASK_DIR, can_start, claim_task, list_tasks, load_task, complete_task
+from src.worktree import WORKTREES_DIR
 
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60

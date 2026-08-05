@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-from config import WORKDIR
+from src.config import WORKDIR
 
 DURABLE_PATH = WORKDIR / ".scheduled_tasks.json"
 SCHEDULED_JOBS: dict[str, "CronJob"] = {}

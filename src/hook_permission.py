@@ -9,7 +9,7 @@ from typing import Optional
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
-from config import WORKDIR
+from src.config import WORKDIR
 
 HOOKS = {"UserPromptSubmit": [], "PreToolUse": [], "PostToolUse": [], "Stop": []}
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]

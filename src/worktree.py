@@ -10,8 +10,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from config import WORKDIR
-from task import load_task, save_task
+from src.config import WORKDIR
+from src.task import load_task, save_task
 
 WORKTREES_DIR = WORKDIR / ".worktrees"
 WORKTREES_DIR.mkdir(parents=True, exist_ok=True)

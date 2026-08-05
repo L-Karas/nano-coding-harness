@@ -1,6 +1,6 @@
 import threading
 
-from config import CLI_ACTIVE, READLINE_AVAILABLE, PROMPT
+from src.config import CLI_ACTIVE, READLINE_AVAILABLE, PROMPT
 
 if READLINE_AVAILABLE:
     import readline

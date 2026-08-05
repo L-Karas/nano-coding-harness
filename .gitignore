@@ -19,8 +19,10 @@ wheels/
 
 
 # Temp
-/examples
+/examples/*
 /test
+/skills/*
 
 /src/**
+!/src/**/
 !/src/**/*.py

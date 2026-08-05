@@ -5,7 +5,7 @@ import random
 from dataclasses import dataclass, field
 from time import time
 
-import message_bus
+from src import message_bus
 
 PENDING_REQUESTS: dict[str, "ProtocolState"] = {}
 

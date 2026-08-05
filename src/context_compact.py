@@ -11,7 +11,7 @@ from pathlib import Path
 
 from openai.types.chat import ChatCompletionMessage
 
-from config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR, client, SUB_MODEL
+from src.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR, client, SUB_MODEL
 
 
 def estimate_size(messages: list) -> int:

@@ -1,9 +1,8 @@
 """
 Context
 """
-import teammates
-
-from config import WORKDIR
+from src import teammates
+from src.config import WORKDIR
 
 MEMORY_DIR = WORKDIR / ".memory"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"

@@ -3,9 +3,9 @@ Sub Agent
 """
 import json
 
-from base_tools import run_bash, run_read, run_write, run_edit, run_glob, call_tool_handler
-from config import WORKDIR, client, SUB_MODEL
-from hook_permission import trigger_hooks
+from src.base_tools import run_bash, run_read, run_write, run_edit, run_glob, call_tool_handler
+from src.config import WORKDIR, client, SUB_MODEL
+from src.hook_permission import trigger_hooks
 
 SUB_SYSTEM = (f"You are a coding subagent at {WORKDIR}."
               f"Complete the task, then return a concise final summary. "

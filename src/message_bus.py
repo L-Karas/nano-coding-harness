@@ -8,8 +8,8 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 
-from config import WORKDIR
-from utils import terminal_print
+from src.config import WORKDIR
+from src.utils import terminal_print
 
 MAILBOX_DIR = WORKDIR / ".mailboxes"
 MAILBOX_DIR.mkdir(parents=True, exist_ok=True)

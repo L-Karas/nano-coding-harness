@@ -3,7 +3,7 @@ Skills Module
 """
 import yaml
 
-from config import SKILL_DIR
+from src.config import SKILL_DIR
 
 SKILL_REGISTRY: dict[str, dict] = {}
 

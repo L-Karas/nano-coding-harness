@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic.dataclasses import dataclass
 
-from config import WORKDIR
+from src.config import WORKDIR
 
 TASK_DIR = WORKDIR / ".tasks"
 TASK_DIR.mkdir(parents=True, exist_ok=True)

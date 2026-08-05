@@ -8,22 +8,22 @@ import time
 from openai import Stream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-from background_task import collect_background_results, should_run_background, start_background_task
-from base_tool_handlers import BUILTIN_HANDLERS
-from base_tools import call_tool_handler
-from config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
+from src.background_task import collect_background_results, should_run_background, start_background_task
+from src.base_tool_handlers import BUILTIN_HANDLERS
+from src.base_tools import call_tool_handler
+from src.config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
     CONTINUATION_PROMPT
-from context import update_context
-from context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
+from src.context import update_context
+from src.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
     reactive_compact, message_has_tool_use
-from cron_scheduler import consume_cron_queue
-from error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
-from hook_permission import trigger_hooks
-from mcps import get_client_manager
-from prompt import assemble_system_prompt
-from protocol_state import consume_lead_inbox
-from tool_schema import BUILTIN_TOOLS
-from ui import (
+from src.cron_scheduler import consume_cron_queue
+from src.error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
+from src.hook_permission import trigger_hooks
+from src.mcps import get_client_manager
+from src.prompt import assemble_system_prompt
+from src.protocol_state import consume_lead_inbox
+from src.tool_schema import BUILTIN_TOOLS
+from src.ui import (
     render_banner,
     render_user_input,
     render_tool_call,
@@ -273,7 +273,6 @@ def cron_auto_loop(messages: list, context: dict):
 
 
 if __name__ == '__main__':
-    CLI_ACTIVE = True
     render_banner("🤖 Nano-Harness Agent Loop", "Enter a question, press Enter to send. Type /exit or q to quit.")
 
     messages = []
