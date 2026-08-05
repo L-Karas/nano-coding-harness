@@ -34,9 +34,12 @@ from mcp import StdioServerParameters, ClientSessionGroup, ClientSession
 from mcp.client.session_group import SseServerParameters, StreamableHttpParameters
 from mcp_types import TextContent
 
-from config import MCP_CONFIG_FILE
+from src.config import MCP_CONFIG_FILE
 
 _DISALLOWED_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
+_loop: Optional[asyncio.AbstractEventLoop] = None
+_manager_future: Optional[Future["ClientManager"]] = None
+_manager_lock = threading.Lock()
 
 
 class ClientManager:
@@ -46,19 +49,18 @@ class ClientManager:
         self.exit_stack: AsyncExitStack = AsyncExitStack()
         self.session_group: ClientSessionGroup | None = None
         self.tool_handlers: dict = {}
+        self.tool_list: list = []
 
     # todo: only support tools returned text content
     def tool_call(self, tool_name: str, tool_args: Optional[dict] = None) -> str:
-        print(f"Tool name: {tool_name}, Tool Args: {tool_args}")
-        normalized_tool_name = f"mcp_{self._normalize_mcp_name(tool_name)}"
-        if not self.tool_handlers.get(normalized_tool_name):
+        if not self.tool_handlers.get(tool_name):
             return f"Tool '{tool_name}' not found"
 
         try:
             future = asyncio.run_coroutine_threadsafe(
                 self.session_group.call_tool(tool_name, tool_args), _get_loop()
             )
-            tool_result = future.result()
+            tool_result = future.result(timeout=30)
             return "\n".join(
                 block.text
                 for block in tool_result.content if isinstance(block, TextContent)
@@ -68,33 +70,22 @@ class ClientManager:
 
     # todo: only support openai api tool format
     def list_tools(self, tool_schema_type: str = "openai") -> list[dict]:
-        tool_list = []
-        if tool_schema_type == "openai":
-            tool_list = [{
-                "type": "function",
-                "function": {
-                    "name": f"mcp_{self._normalize_mcp_name(tool_name)}",
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                }
-            } for tool_name, tool in self.session_group.tools.items()]
+        if not self.tool_list:
+            if tool_schema_type == "openai":
+                self.tool_list = [{
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema,
+                    }
+                } for tool_name, tool in self.session_group.tools.items()]
 
-        return tool_list
-
-    # todo: update manager
-    def update_client_manager(self) -> "ClientManager":
-        if not MCP_CONFIG_FILE.exists():
-            raise FileNotFoundError(f"MCP server config file not found at {MCP_CONFIG_FILE}")
-
-        config_content = MCP_CONFIG_FILE.read_text(encoding="utf-8").strip()
-        configs = json.loads(config_content)
-        if configs != self.server_configs:
-            pass
+        return self.tool_list
 
     async def _init_tool_handlers(self):
         for tool_name, tool in self.session_group.tools.items():
-            normalized_tool_name = f"mcp_{self._normalize_mcp_name(tool_name)}"
-            self.tool_handlers[normalized_tool_name] = (
+            self.tool_handlers[tool_name] = (
                 lambda *, name=tool_name, **kwargs: self.tool_call(name, kwargs)
             )
 
@@ -102,7 +93,12 @@ class ClientManager:
         """
         Connect to the servers.
         """
-        self.session_group = await self.exit_stack.enter_async_context(ClientSessionGroup())
+        # 对 mcp server 工具名进行处理，防止工具名冲突
+        name_fn = lambda name, server_info: \
+            f"mcp__{_DISALLOWED_CHARS.sub('_', server_info.name)}__{_DISALLOWED_CHARS.sub('_', name)}"
+        self.session_group = await self.exit_stack.enter_async_context(
+            ClientSessionGroup(component_name_hook=name_fn)
+        )
 
         for server_name, server_config in self.server_configs["mcpServers"].items():
             try:
@@ -123,13 +119,7 @@ class ClientManager:
         self.session_group = None
         self.tool_handlers = {}
         self.session_map = {}
-
-    @staticmethod
-    def _normalize_mcp_name(name: str) -> str:
-        """
-        Replace non [a-zA-Z0-9_-] to '_'.
-        """
-        return _DISALLOWED_CHARS.sub('_', name)
+        self.tool_list = []
 
     @staticmethod
     def _validate_server_config(server_name: str, server_config: dict) -> str:
@@ -152,30 +142,41 @@ class ClientManager:
     @classmethod
     async def init_client_manager(cls, server_configs: dict) -> "ClientManager":
         client_manager = cls(server_configs)
-        await client_manager._connect_to_servers()
-        await client_manager._init_tool_handlers()
+        try:
+            await client_manager._connect_to_servers()
+            await client_manager._init_tool_handlers()
+        except Exception:
+            await client_manager.aclose()
+            raise
         return client_manager
+
+
+async def _update_client_manager(client_manager: ClientManager) -> ClientManager:
+    """配置有变化则重建 manager,无变化返回原实例。"""
+    if not MCP_CONFIG_FILE.exists():
+        raise FileNotFoundError(f"MCP server config file not found at {MCP_CONFIG_FILE}")
+
+    new_configs = json.loads(MCP_CONFIG_FILE.read_text(encoding="utf-8").strip())
+
+    if new_configs == client_manager.server_configs:
+        # 释放old client manager资源
+        return client_manager
+
+    await client_manager.aclose()
+    return await ClientManager.init_client_manager(new_configs)
 
 
 async def aget_client_manager() -> ClientManager:
     if not MCP_CONFIG_FILE.exists():
         raise FileNotFoundError(f"MCP server config file not found at {MCP_CONFIG_FILE}")
 
-    try:
-        config_content = MCP_CONFIG_FILE.read_text(encoding="utf-8").strip()
-        server_configs = json.loads(config_content)
+    config_content = MCP_CONFIG_FILE.read_text(encoding="utf-8").strip()
+    server_configs = json.loads(config_content)
 
-        if "mcpServers" not in server_configs:
-            raise ValueError(f"MCP server config invalid: {server_configs}")
+    if "mcpServers" not in server_configs:
+        raise ValueError(f"MCP server config invalid: {server_configs}")
 
-        return await ClientManager.init_client_manager(server_configs)
-    except Exception as e:
-        raise e
-
-
-_loop: Optional[asyncio.AbstractEventLoop] = None
-_manager_future: Optional[Future[ClientManager]] = None
-_manager_lock = threading.Lock()
+    return await ClientManager.init_client_manager(server_configs)
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
@@ -192,42 +193,36 @@ def _get_loop() -> asyncio.AbstractEventLoop:
     return _loop
 
 
-async def _init_manager(future: Future):
-    """
-    Connect once on the background loop. After this task ends the sessions stay
-    alive: the manager's exit stack keeps the transports' reader tasks running.
-    """
-    try:
-        manager = await aget_client_manager()
-    except BaseException as e:
-        future.set_exception(e)
-    else:
-        future.set_result(manager)
-
-
 def get_client_manager() -> ClientManager:
     """
     Lazily build and cache the singleton ClientManager on the background loop.
+    run_coroutine_threadsafe returns a Future that re-raises the coroutine's
+    exception on .result(), so a failed init clears the cache and the next
+    call retries.
     """
     global _manager_future
     if _manager_future is None:
         with _manager_lock:
             if _manager_future is None:
-                future = Future()
-                _manager_future = future
-                asyncio.run_coroutine_threadsafe(_init_manager(future), _get_loop())
+                _manager_future = asyncio.run_coroutine_threadsafe(
+                    aget_client_manager(), _get_loop()
+                )
     try:
+        manager = _manager_future.result()
+        _manager_future = asyncio.run_coroutine_threadsafe(
+            _update_client_manager(manager), _get_loop()
+        )
         return _manager_future.result()
-    except BaseException:
-        _manager_future = None
+    except Exception:
+        with _manager_lock:
+            _manager_future = None
         raise
 
 
 if __name__ == '__main__':
+
     async def main():
         client_manager = await aget_client_manager()
-        if not client_manager:
-            return
 
         print("Available tools:\n")
         for tool_schema in client_manager.list_tools():
@@ -239,4 +234,4 @@ if __name__ == '__main__':
         await client_manager.aclose()
 
 
-    asyncio.run(main())
+    asyncio.run(main(), debug=True)
