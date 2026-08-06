@@ -1,10 +1,17 @@
+import logging
 import threading
 
-from src.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop, print_turn_assistants
+from src.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop
+from src.config import LOG_DIR
 from src.context import update_context
 from src.hook_permission import trigger_hooks
 from src.protocol_state import consume_lead_inbox
 from src.ui import render_banner, get_user_input, render_user_input
+
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(filename=str(LOG_DIR / ".log"), level=logging.INFO, filemode="w")
 
 
 def main():
@@ -34,7 +41,7 @@ def main():
         with AGENT_LOCK:
             agent_loop(messages, context)
             context = update_context(context, messages)
-            print_turn_assistants(messages, turn_start)
+            # print_turn_assistants(messages, turn_start)
 
         inbox = consume_lead_inbox(route_protocol=True)
         if inbox:

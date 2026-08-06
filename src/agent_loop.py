@@ -6,7 +6,7 @@ import threading
 import time
 
 from openai import Stream
-from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from src.background_task import collect_background_results, should_run_background, start_background_task
 from src.base_tool_handlers import BUILTIN_HANDLERS
@@ -15,22 +15,20 @@ from src.config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX_
     CONTINUATION_PROMPT
 from src.context import update_context
 from src.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
-    reactive_compact, message_has_tool_use
+    reactive_compact
 from src.cron_scheduler import consume_cron_queue
 from src.error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
 from src.hook_permission import trigger_hooks
 from src.mcps import get_client_manager
 from src.prompt import assemble_system_prompt
-from src.protocol_state import consume_lead_inbox
 from src.tool_schema import BUILTIN_TOOLS
+from src.ui import render_scope, stream_assistant_response
 from src.ui import (
-    render_banner,
-    render_user_input,
     render_tool_call,
     render_tool_result,
     render_assistant_response,
     render_background_notification,
-    get_user_input, render_thinking_status
+    render_thinking_status, render_tool_calling_status
 )
 
 ROUNDS_SINCE_TODO = 0
@@ -92,6 +90,108 @@ def inject_background_notifications(messages: list) -> list:
         })
 
 
+def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str]:
+    """
+    Consume the full stream, folding tool-call deltas into complete calls.
+    Returns (accumulated_text, tool_calls, finish_reason).
+    """
+    accumulated_text = ""
+    tool_calls: list[dict] = []
+    finish_reason = ""
+    with render_scope():
+        for chunk in stream:
+            choice = chunk.choices[0]
+            if getattr(choice.delta, "reasoning_content", None):
+                continue
+            if choice.delta.content:
+                accumulated_text += choice.delta.content
+                stream_assistant_response(accumulated_text)
+            if choice.delta.tool_calls:
+                for delta in choice.delta.tool_calls:
+                    while len(tool_calls) <= delta.index:
+                        tool_calls.append({
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        })
+                    if delta.id:
+                        tool_calls[delta.index]["id"] = delta.id
+                    if delta.function:
+                        if delta.function.name and not tool_calls[delta.index]["function"]["name"]:
+                            tool_calls[delta.index]["function"]["name"] = delta.function.name
+                        if delta.function.arguments:
+                            tool_calls[delta.index]["function"]["arguments"] += delta.function.arguments
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+
+    return accumulated_text, tool_calls, finish_reason
+
+
+def call_tools(tool_calls: list[dict], messages: list, handlers: dict) -> bool:
+    global ROUNDS_SINCE_TODO
+
+    compact_now = False
+    tool_call_messages = [{"role": "assistant", "tool_calls": []}]
+    tool_call_results = []
+    for tool_call_dict in tool_calls:
+        tool_call = ChatCompletionMessageToolCall(**tool_call_dict)
+        tool_name = tool_call.function.name
+        tool_args = json.loads(tool_call.function.arguments)
+        tool_call_messages[0]["tool_calls"].append(tool_call_dict)
+        render_tool_call(tool_name, tool_args)
+
+        if tool_name == "compact":
+            messages[:] = compact_history(messages)
+            messages.append({
+                "role": "user",
+                "content": "[Compacted. Continue with summarized context.]"
+            })
+            compact_now = True
+
+        blocked = trigger_hooks("PreToolUse", tool_call)
+        if blocked:
+            tool_call_results.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": str(blocked)
+            })
+            continue
+
+        if should_run_background(tool_name, tool_args):
+            bg_id = start_background_task(tool_call, handlers)
+            output = (f"[Background task {bg_id} started] "
+                      f"Result will arrive as a task_notification.")
+            tool_call_results.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": output
+            })
+            continue
+
+        handler = handlers.get(tool_name)
+        with render_tool_calling_status(f"{tool_name}({tool_args})"):
+            output = call_tool_handler(handler, tool_args, tool_name)
+
+        trigger_hooks("PostToolUse", tool_call, output)
+
+        render_tool_result(output)
+
+        if tool_name == "todo_write":
+            ROUNDS_SINCE_TODO = 0
+        else:
+            ROUNDS_SINCE_TODO += 1
+
+        tool_call_results.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": str(output)
+        })
+
+    messages.extend(tool_call_messages + tool_call_results)
+
+    return compact_now
+
+
 def call_llm(
         messages: list,
         context: dict,
@@ -109,6 +209,7 @@ def call_llm(
                 messages=messages,
                 tools=tools,
                 max_tokens=max_tokens,
+                stream=True
             ),
             state
         )
@@ -144,7 +245,7 @@ def agent_loop(messages: list, context: dict):
         tools, handlers = assemble_tool_pool()
 
         try:
-            response = call_llm(messages, context, tools, state, max_tokens)
+            stream = call_llm(messages, context, tools, state, max_tokens)
         except Exception as e:
             if is_prompt_too_long_error(e) and state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(messages)
@@ -156,7 +257,9 @@ def agent_loop(messages: list, context: dict):
             })
             return
 
-        if response.choices[0].finish_reason == "length":
+        accumulated_text, tool_calls, finish_reason = stream_message(stream)
+
+        if finish_reason == "length":
             if not state.has_escalated:
                 max_tokens = ESCALATED_MAX_TOKENS
                 state.has_escalated = True
@@ -164,7 +267,7 @@ def agent_loop(messages: list, context: dict):
                 continue
             messages.append({
                 "role": "assistant",
-                "content": response.choices[0].message.content
+                "content": accumulated_text
             })
 
             if state.recovery_count < MAX_RECOVERY_RETRIES:
@@ -179,70 +282,73 @@ def agent_loop(messages: list, context: dict):
         max_tokens = DEFAULT_MAX_TOKENS
         state.has_escalated = False
 
-        if not message_has_tool_use(response.choices[0].message):
+        if not tool_calls:
             messages.append({
                 "role": "assistant",
-                "content": response.choices[0].message.content
+                "content": accumulated_text
             })
             trigger_hooks("Stop", messages)
             return
 
-        results = []
-        compact_now = False
-        messages.append(response.choices[0].message)
-        for tool_call in response.choices[0].message.tool_calls:
-            tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments)
-            render_tool_call(tool_name, tool_args)
+        compact_now = call_tools(tool_calls, messages, handlers)
 
-            if tool_name == "compact":
-                messages[:] = compact_history(messages)
-                messages.append({
-                    "role": "user",
-                    "content": "[Compacted. Continue with summarized context.]"
-                })
-                compact_now = True
-
-            blocked = trigger_hooks("PreToolUse", tool_call)
-            if blocked:
-                results.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": str(blocked)
-                })
-                continue
-
-            if should_run_background(tool_name, tool_args):
-                bg_id = start_background_task(tool_call, handlers)
-                output = (f"[Background task {bg_id} started] "
-                          f"Result will arrive as a task_notification.")
-                results.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": output
-                })
-                continue
-
-            handler = handlers.get(tool_name)
-            output = call_tool_handler(handler, tool_args, tool_name)
-            trigger_hooks("PostToolUse", tool_call, output)
-            render_tool_result(output)
-
-            if tool_name == "todo_write":
-                ROUNDS_SINCE_TODO = 0
-            else:
-                ROUNDS_SINCE_TODO += 1
-
-            results.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": str(output)
-            })
+        # results = []
+        # compact_now = False
+        # messages.append(response.choices[0].message)
+        # for tool_call in response.choices[0].message.tool_calls:
+        #     tool_name = tool_call.function.name
+        #     tool_args = json.loads(tool_call.function.arguments)
+        #     render_tool_call(tool_name, tool_args)
+        #
+        #     if tool_name == "compact":
+        #         messages[:] = compact_history(messages)
+        #         messages.append({
+        #             "role": "user",
+        #             "content": "[Compacted. Continue with summarized context.]"
+        #         })
+        #         compact_now = True
+        #
+        #     blocked = trigger_hooks("PreToolUse", tool_call)
+        #     if blocked:
+        #         results.append({
+        #             "role": "tool",
+        #             "tool_call_id": tool_call.id,
+        #             "content": str(blocked)
+        #         })
+        #         continue
+        #
+        #     if should_run_background(tool_name, tool_args):
+        #         bg_id = start_background_task(tool_call, handlers)
+        #         output = (f"[Background task {bg_id} started] "
+        #                   f"Result will arrive as a task_notification.")
+        #         results.append({
+        #             "role": "tool",
+        #             "tool_call_id": tool_call.id,
+        #             "content": output
+        #         })
+        #         continue
+        #
+        #     handler = handlers.get(tool_name)
+        #     with render_tool_calling_status(f"{tool_name}({tool_args})"):
+        #         output = call_tool_handler(handler, tool_args, tool_name)
+        #     trigger_hooks("PostToolUse", tool_call, output)
+        #     render_tool_result(output)
+        #
+        #     if tool_name == "todo_write":
+        #         ROUNDS_SINCE_TODO = 0
+        #     else:
+        #         ROUNDS_SINCE_TODO += 1
+        #
+        #     results.append({
+        #         "role": "tool",
+        #         "tool_call_id": tool_call.id,
+        #         "content": str(output)
+        #     })
 
         if compact_now:
             continue
 
-        messages.extend(results)
+        # messages.extend(results)
 
 
 def print_turn_assistants(messages: list, turn_start: int):
@@ -269,55 +375,48 @@ def cron_auto_loop(messages: list, context: dict):
 
             agent_loop(messages, context)
             context.update(update_context(context, messages))
-            print_turn_assistants(messages, turn_start)
+            # print_turn_assistants(messages, turn_start)
 
 
 if __name__ == '__main__':
-    render_banner("🤖 Nano-Harness Agent Loop", "Enter a question, press Enter to send. Type /exit or q to quit.")
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "获取指定地点的天气信息",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "地点名称，例如：北京、上海"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ]
 
-    messages = []
-    context = update_context({}, [])
-    threading.Thread(target=cron_auto_loop, args=(messages, context), daemon=True).start()
+    stream = client.chat.completions.create(
+        model="glm-5.2",
+        messages=[
+            {"role": "user", "content": "北京今天天气怎么样？"}
+        ],
+        stream=True,
+        temperature=0.8,
+        tools=tools,
+    )
 
-    while True:
-        try:
-            query = get_user_input()
-        except (EOFError, KeyboardInterrupt):
-            break
+    for chunk in stream:
+        if hasattr(chunk.choices[0].delta, "reasoning_content") and chunk.choices[0].delta.reasoning_content:
+            print(chunk.choices[0].delta.reasoning_content, end='')
+        if chunk.choices[0].delta.content:
+            print(chunk.choices[0].delta.content, end='')
+        if chunk.choices[0].delta.tool_calls:
+            print(chunk.choices[0].delta.tool_calls, end='')
 
-        if query.strip().lower() in ["q", "quit", "exit", "/exit", "/quit"]:
-            break
+    # stream_message(stream)
 
-        render_user_input(query)
-        trigger_hooks("UserPromptSubmit", query)
-        turn_start = len(messages)
-        messages.append({
-            "role": "user",
-            "content": query
-        })
-
-        with AGENT_LOCK:
-            agent_loop(messages, context)
-            context = update_context(context, messages)
-            print_turn_assistants(messages, turn_start)
-
-        inbox = consume_lead_inbox(route_protocol=True)
-        if inbox:
-            def inbox_label(message):
-                request_id = message.get("metadata", {}).get("request_id", "")
-                suffix = f"  request_id: {request_id}" if request_id else ""
-                return f"{message.get('msg_type', 'message')}{suffix}"
-
-
-            inbox_text = "\n".join(
-                f"From {message['from_agent']} [{inbox_label(message)}]: "
-                f"{message['content']}"
-                for message in inbox
-            )
-
-            messages.append({
-                "role": "user",
-                "content": f"[Inbox messages]\n{inbox_text}"
-            })
-
-        print()
+    print()  # 换行

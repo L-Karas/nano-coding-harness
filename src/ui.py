@@ -5,6 +5,8 @@ Provides Rich-based visual components with color-coded background panels and pro
 
 import json
 import shutil
+import time
+from contextlib import contextmanager
 from typing import Optional, Any, List
 
 from prompt_toolkit import PromptSession, Application
@@ -19,6 +21,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style as PtStyle
 from rich import box
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from textual.document import _history
@@ -61,6 +64,7 @@ pt_style = PtStyle.from_dict({
 })
 
 _session: Optional[PromptSession] = None
+_current_stream_live: Optional[Live] = None
 
 
 def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
@@ -182,6 +186,33 @@ def render_tool_result(output: Any, max_lines: int = 12):
     )
 
 
+@contextmanager
+def render_scope():
+    """控制每轮对话 Live 实例的开启和销毁"""
+    global _current_stream_live
+    with Live(
+            Markdown(""), refresh_per_second=15, vertical_overflow="visible"
+    ) as live:
+        _current_stream_live = live
+        try:
+            yield
+        finally:
+            _current_stream_live = None
+
+
+def stream_assistant_response(accumulated_text: str = ""):
+    if _current_stream_live:
+        panel = Panel(
+            Markdown(accumulated_text),
+            title="[bold #c084fc] 🤖 Assistant Response [/bold #c084fc]",
+            title_align="center",
+            box=LEFT_BAR_BOX,
+            border_style="#c084fc",  # 紫色实线竖条
+            style="on #1e1b2e",  # 暗紫背景色
+        )
+        _current_stream_live.update(panel)
+
+
 def render_assistant_response(content: str):
     """渲染带暗紫背景的 Assistant Markdown 回复卡片（左侧实线竖条纯色块展示）"""
     if not content:
@@ -198,9 +229,14 @@ def render_assistant_response(content: str):
     )
 
 
+def render_tool_calling_status(message: str):
+    """返回 Rich Status Spinner 上下文管理器"""
+    return console.status(f"[bold dim magenta]{message}[/bold dim magenta]")
+
+
 def render_thinking_status(message: str = "Thinking..."):
     """返回 Rich Status Spinner 上下文管理器"""
-    return console.status(f"[bold dim magenta]{message}[/bold dim magenta]", spinner="bouncingBar")
+    return console.status(f"[bold dim magenta]{message}[/bold dim magenta]", spinner="arc")
 
 
 def render_background_notification(message: str, title: str = "🔔 Background Task"):
@@ -215,3 +251,27 @@ def render_background_notification(message: str, title: str = "🔔 Background T
             style="on #0f172a"  # 暗青蓝背景色
         )
     )
+
+
+if __name__ == '__main__':
+    def stream_message(prompt: str):
+        """【要求的方法】：获取 chunk、累加文本，并调用 stream_assistant_response"""
+        print(f"\n[User]: {prompt}")
+
+        # 模拟 LLM API 返回的数据 chunk
+        chunks = [f"## 这是针对【{prompt}】的回答：\n", "### 1. 模块化成功\n", "### 2. 解耦完成",
+                  "\n```python\nprint('Hello word')\n```"]
+        accumulated_text = ""
+
+        # 使用 render_scope 包裹，自动管理当前轮次的 Live 声明周期
+        with render_scope():
+            for chunk in chunks:
+                time.sleep(0.3)  # 模拟 API 延迟
+                accumulated_text += chunk
+
+                # 调用渲染函数，只传累加文本
+                stream_assistant_response(accumulated_text)
+
+
+    stream_message("第一轮问题")
+    stream_message("第二轮问题")

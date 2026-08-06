@@ -2,10 +2,7 @@
 Context
 """
 from src import teammates
-from src.config import WORKDIR
-
-MEMORY_DIR = WORKDIR / ".memory"
-MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
+from src.config import MEMORY_INDEX
 
 
 # todo: mcp connect support

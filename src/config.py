@@ -23,8 +23,10 @@ PRIMARY_MODEL = os.getenv("MODEL")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL")
 
 WORKDIR = Path.cwd()
+LOG_DIR = WORKDIR / "log"
 SKILL_DIR = WORKDIR / "skills"
 MEMORY_DIR = WORKDIR / ".memory"
+MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
 MCP_CONFIG_FILE = WORKDIR / ".mcp" / ".mcp.json"
 TRANSCRIPT_DIR = WORKDIR / ".transcripts"
 TOOL_RESULTS_DIR = WORKDIR / ".task_outputs" / "tool_results"

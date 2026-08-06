@@ -22,6 +22,7 @@ wheels/
 /examples/*
 /test
 /skills/*
+/log
 
 /src/**
 !/src/**/
