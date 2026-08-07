@@ -20,11 +20,11 @@ from prompt_toolkit.layout.processors import BeforeInput
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style as PtStyle
 from rich import box
-from rich.console import Console
+from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
-from textual.document import _history
+from rich.segment import Segment
 
 # 使用 force_terminal 与 legacy_windows=False 防止 Windows 控制台 ANSI/UTF-8 字符宽度错位导致边框撕裂
 console = Console(force_terminal=True, legacy_windows=False)
@@ -65,6 +65,31 @@ pt_style = PtStyle.from_dict({
 
 _session: Optional[PromptSession] = None
 _current_stream_live: Optional[Live] = None
+# 当前流式轮次已累计的完整文本，供 Live 销毁后静态打印完整回复
+_last_stream_text: str = ""
+
+
+class _TailCrop:
+    """底部锚定裁剪渲染器：渲染结果超出终端高度时仅保留末尾若干行。
+
+    Live 原地重绘依赖"光标上移 N 行"；若渲染结果比终端还高，光标上移会在
+    屏幕顶部被钳制，每次刷新都会把面板首行（标题行）刷进滚动历史，产生一列
+    重复的 "Assistant Response" 标题。将帧高裁剪到终端高度内可根除该问题。
+    """
+
+    def __init__(self, renderable: RenderableType) -> None:
+        self.renderable = renderable
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        lines = console.render_lines(self.renderable, options, pad=False)
+        height = options.size.height
+        if len(lines) > height:
+            lines = lines[len(lines) - height:]
+        new_line = Segment.line()
+        for index, line in enumerate(lines):
+            yield from line
+            if index < len(lines) - 1:
+                yield new_line
 
 
 def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
@@ -188,45 +213,50 @@ def render_tool_result(output: Any, max_lines: int = 12):
 
 @contextmanager
 def render_scope():
-    """控制每轮对话 Live 实例的开启和销毁"""
-    global _current_stream_live
-    with Live(
-            Markdown(""), refresh_per_second=15, vertical_overflow="visible"
-    ) as live:
-        _current_stream_live = live
-        try:
-            yield
-        finally:
-            _current_stream_live = None
+    """控制每轮对话 Live 实例的开启和销毁；退出后静态打印一次完整回复"""
+    global _current_stream_live, _last_stream_text
+    _last_stream_text = ""
+    try:
+        with Live(
+                Markdown(""), console=console, refresh_per_second=15, transient=True
+        ) as live:
+            _current_stream_live = live
+            try:
+                yield
+            finally:
+                _current_stream_live = None
+    finally:
+        # Live 帧已擦除，将完整回复静态打印一次，保留在终端滚动历史中
+        if _last_stream_text:
+            render_assistant_response(_last_stream_text)
+            _last_stream_text = ""
+
+
+def _assistant_panel(content: str) -> Panel:
+    """构建 Assistant Markdown 回复面板（流式与静态渲染共用）"""
+    return Panel(
+        Markdown(content),
+        title="[bold #c084fc] 🤖 Assistant Response [/bold #c084fc]",
+        title_align="center",
+        box=LEFT_BAR_BOX,
+        border_style="#c084fc",  # 紫色实线竖条
+        style="on #1e1b2e",  # 暗紫背景色
+    )
 
 
 def stream_assistant_response(accumulated_text: str = ""):
+    global _last_stream_text
     if _current_stream_live:
-        panel = Panel(
-            Markdown(accumulated_text),
-            title="[bold #c084fc] 🤖 Assistant Response [/bold #c084fc]",
-            title_align="center",
-            box=LEFT_BAR_BOX,
-            border_style="#c084fc",  # 紫色实线竖条
-            style="on #1e1b2e",  # 暗紫背景色
-        )
-        _current_stream_live.update(panel)
+        _last_stream_text = accumulated_text
+        # 裁剪到终端高度，防止 Live 重绘区域超高导致标题行重复刷屏
+        _current_stream_live.update(_TailCrop(_assistant_panel(accumulated_text)))
 
 
 def render_assistant_response(content: str):
     """渲染带暗紫背景的 Assistant Markdown 回复卡片（左侧实线竖条纯色块展示）"""
     if not content:
         return
-    console.print(
-        Panel(
-            Markdown(content),
-            title="[bold #c084fc] 🤖 Assistant Response [/bold #c084fc]",
-            title_align="center",
-            box=LEFT_BAR_BOX,
-            border_style="#c084fc",  # 紫色实线竖条
-            style="on #1e1b2e"  # 暗紫背景色
-        )
-    )
+    console.print(_assistant_panel(content))
 
 
 def render_tool_calling_status(message: str):
