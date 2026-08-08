@@ -4,7 +4,7 @@ Base Tool Handlers
 from typing import Optional
 
 from src import message_bus
-from src.base_tools import run_bash, run_read, run_write, run_edit, run_glob, run_todo_write
+from src.base_tools import (run_bash, run_read, run_write, run_edit, run_glob, run_todo_write, run_grep)
 from src.cron_scheduler import run_list_crons, run_cancel_cron, run_schedule_cron
 from src.protocol_state import consume_lead_inbox, run_request_shutdown, run_request_plan, run_review_plan
 from src.skills import load_skill
@@ -95,7 +95,7 @@ def run_connect_mcp(name: str) -> str:
 
 BUILTIN_HANDLERS = {
     "bash": run_bash, "read_file": run_read, "write_file": run_write,
-    "edit_file": run_edit, "glob": run_glob,
+    "edit_file": run_edit, "grep": run_grep, "glob": run_glob,
     "todo_write": run_todo_write, "task": spawn_subagent,
     "load_skill": load_skill,
     "create_task": run_create_task, "list_tasks": run_list_tasks,

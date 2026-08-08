@@ -87,6 +87,31 @@ BUILTIN_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "grep",
+            "description": "Search for a pattern in files within a directory, returning matching lines with file path, line number, and content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The regex pattern to search for in file contents"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The directory to search in. Defaults to the current working directory."
+                    },
+                    "file_pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to filter file names (e.g., '*.txt', '*.py'). Default is '*' (all files).",
+                    },
+                },
+                "required": ["pattern", "path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "todo_write",
             "description": "Create and manage a task list for the current session.",
             "parameters": {

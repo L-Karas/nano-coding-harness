@@ -3,6 +3,8 @@ Base tools
 """
 import ast
 import json
+import pathlib
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -57,9 +59,46 @@ def run_edit(path: str, old_text: str, new_text: str, cwd: Optional[Path] = None
         if old_text not in text:
             return f"Error: text not found in {path}"
         fp.write_text(text.replace(old_text, new_text, 1), encoding="utf-8")
-        return f"Edited {path}"
+        return f"Edited successfully."
     except Exception as e:
         return f"Error: {e}"
+
+
+def run_grep(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optional[Path] = None) -> str:
+    base = cwd or WORKDIR
+    path = pathlib.Path(path)
+
+    try:
+        regex = re.compile(pattern)
+    except Exception as e:
+        return f"Error: {e}"
+
+    if not path.is_absolute():
+        path = path.resolve()
+    if not path.exists():
+        return f"Error: path '{path}' does not exist."
+    if not path.is_dir():
+        path = path.parent
+
+    if not path.is_relative_to(base):
+        return f"Error: path '{path}' escapes work directory '{base}'."
+
+    iterator = path.rglob(file_pattern)
+    output = []
+    for file_path in iterator:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line_no, line in enumerate(f, 1):
+                    if regex.search(line):
+                        output.append(f"file path: \"{file_path}\", line: [{line_no}], content: \"{line}\"")
+        except Exception:
+            continue
+
+    if len(output) > 50:
+        output = output[:50] + ["Results truncated. More than 50 matches found. "
+                                "Consider a more specific path or pattern if needed."]
+
+    return "\n".join(output) if output else "(No matches found)"
 
 
 def run_glob(pattern: str, cwd: Optional[Path] = None) -> str:
@@ -118,3 +157,7 @@ def run_todo_write(todos: list) -> str:
     task.CURRENT_TODOS = todos
     print(f"  \033[33m[Todo Update] updated {len(task.CURRENT_TODOS)} item(s)\033[0m")
     return f"Updated {len(task.CURRENT_TODOS)} todos"
+
+
+if __name__ == '__main__':
+    print(run_grep("print", file_pattern="text_*", cwd=r"E:\AI-Programs\nano-harness"))
