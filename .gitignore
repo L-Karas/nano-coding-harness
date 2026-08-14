@@ -17,12 +17,15 @@ wheels/
 /.claude
 /.memory
 
+# docs
+/docs
 
 # Temp
 /examples/*
 /test
 /skills/*
 /log
+/tests
 
 /src/**
 !/src/**/
