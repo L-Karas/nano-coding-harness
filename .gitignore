@@ -6,16 +6,8 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
-.venv
-.env
+# Dotfiles at any depth (covers .venv, .env, /.idea, /.claude, etc.)
 .*
-
-# IDE config
-/.idea
-/.transcripts
-/.claude
-/.memory
 
 # docs
 /docs
@@ -27,6 +19,7 @@ wheels/
 /log
 /tests
 
+# Track only .py files under src
 /src/**
 !/src/**/
 !/src/**/*.py
