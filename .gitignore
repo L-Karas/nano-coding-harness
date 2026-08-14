@@ -8,6 +8,7 @@ wheels/
 
 # Dotfiles at any depth (covers .venv, .env, /.idea, /.claude, etc.)
 .*
+!.mcp/
 
 # docs
 /docs

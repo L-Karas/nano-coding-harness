@@ -15,8 +15,8 @@ except ImportError:
     READLINE_AVAILABLE = False
 
 client = OpenAI(
-    api_key=os.getenv("BIGMODEL_API_KEY"),
-    base_url=os.getenv("BIGMODEL_BASE_URL")
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL")
 )
 SUB_MODEL = os.getenv("SUB_MODEL")
 PRIMARY_MODEL = os.getenv("MODEL")
