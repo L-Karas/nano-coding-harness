@@ -25,6 +25,7 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.segment import Segment
+from rich.text import Text
 
 # 使用 force_terminal 与 legacy_windows=False 防止 Windows 控制台 ANSI/UTF-8 字符宽度错位导致边框撕裂
 console = Console(force_terminal=True, legacy_windows=False)
@@ -92,11 +93,17 @@ class _TailCrop:
                 yield new_line
 
 
+def _print_panel(panel: Panel) -> None:
+    """打印面板,先输出空行与其他渲染部分间隔"""
+    console.print()
+    console.print(panel)
+
+
 def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
     """获取单例 PromptSession 交互输入会话（提交后自动擦除原始输入行）"""
     global _session
     if _session is None:
-        cmd_list = commands or DEFAULT_COMMANDS
+        cmd_list = DEFAULT_COMMANDS if commands is None else commands
         _session = PromptSession(
             history=InMemoryHistory(),
             completer=WordCompleter(cmd_list, ignore_case=True),
@@ -114,7 +121,8 @@ def get_user_input(prompt_str: str = ">> ", commands: Optional[List[str]] = None
     border = Window(FormattedTextControl([('class:border', '─' * width)]), height=1)
 
     # 2. 输入框 Buffer 及窗口 (严格锁定 height=1，防止被拉伸到屏幕底部)
-    buffer = Buffer(history=_history, completer=WordCompleter(commands or DEFAULT_COMMANDS, ignore_case=True),
+    cmd_list = DEFAULT_COMMANDS if commands is None else commands
+    buffer = Buffer(history=_history, completer=WordCompleter(cmd_list, ignore_case=True),
                     complete_while_typing=True)
     input_win = Window(BufferControl(buffer=buffer, input_processors=[BeforeInput(prompt_str, style='class:prompt')]),
                        height=1)
@@ -144,7 +152,7 @@ def get_user_input(prompt_str: str = ">> ", commands: Optional[List[str]] = None
 def render_banner(title: str = "🤖 Nano-Harness Agent Loop", subtitle: str = "Type /help for commands, /exit to quit"):
     """渲染 Header 顶部 Banner 卡片"""
     banner_text = f"[bold cyan]{title}[/bold cyan]\n[dim]{subtitle}[/dim]"
-    console.print(
+    _print_panel(
         Panel(
             banner_text,
             box=box.HORIZONTALS,
@@ -157,7 +165,7 @@ def render_banner(title: str = "🤖 Nano-Harness Agent Loop", subtitle: str = "
 
 def render_user_input(user_text: str):
     """渲染淡灰色背景的用户输入卡片（左侧实线竖条纯色块展示）"""
-    console.print(
+    _print_panel(
         Panel(
             f"[bold #f9fafb]{user_text}[/bold #f9fafb]",
             title="[bold #e5e7eb] 👤 User Input [/bold #e5e7eb]",
@@ -177,7 +185,7 @@ def render_tool_call(tool_name: str, tool_args: Any):
         args_str = str(tool_args)
 
     tool_content = f"[bold yellow]Tool:[bold white] {tool_name}[/bold white]\n[dim]Args:\n{args_str}[/dim]"
-    console.print(
+    _print_panel(
         Panel(
             tool_content,
             title="[bold #f59e0b] 🛠️ Tool Action [/bold #f59e0b]",
@@ -187,6 +195,13 @@ def render_tool_call(tool_name: str, tool_args: Any):
             style="on #261f0d"  # 暖黄/暗金背景色
         )
     )
+
+
+def _result_panel(content: RenderableType, title: str) -> Panel:
+    """绿色工具结果面板，render_tool_result 与 render_tool_result_diff 共用"""
+    return Panel(content, title=title, title_align="center", box=LEFT_BAR_BOX,
+                 border_style="#10b981",  # 绿色实线竖条
+                 style="on #11221b")  # 暗绿背景色
 
 
 def render_tool_result(output: Any, max_lines: int = 12):
@@ -199,15 +214,25 @@ def render_tool_result(output: Any, max_lines: int = 12):
     else:
         display_text = output_str
 
-    console.print(
-        Panel(
-            f"[dim #e2e8f0]{display_text}[/dim #e2e8f0]",
-            title="[bold #10b981] 📄 Tool Result [/bold #10b981]",
-            title_align="center",
-            box=LEFT_BAR_BOX,
-            border_style="#10b981",  # 绿色实线竖条
-            style="on #11221b"  # 暗绿背景色
-        )
+    _print_panel(
+        _result_panel(f"[dim #e2e8f0]{display_text}[/dim #e2e8f0]",
+                      "[bold #10b981] 📄 Tool Result [/bold #10b981]")
+    )
+
+
+DIFF_STYLE = {"+": "green", "-": "red", " ": "dim"}
+
+
+def render_tool_result_diff(rows: list[tuple[str, int, str]]):
+    """渲染变化行预览：' ' 上下文(淡) / '-' 删除(红) / '+' 新增(绿)，均带行号"""
+    width = max(len(str(n)) for _, n, _ in rows)
+    styled = []
+    for kind, n, line in rows:
+        styled.append(Text(f"{kind}{n:>{width}} │ {line}", style=DIFF_STYLE.get(kind, "dim")))
+    content = Text("\n").join(styled)
+
+    _print_panel(
+        _result_panel(content, "[bold #10b981] 📄 Tool Call (git diff) [/bold #10b981]")
     )
 
 
@@ -256,7 +281,7 @@ def render_assistant_response(content: str):
     """渲染带暗紫背景的 Assistant Markdown 回复卡片（左侧实线竖条纯色块展示）"""
     if not content:
         return
-    console.print(_assistant_panel(content))
+    _print_panel(_assistant_panel(content))
 
 
 def render_tool_calling_status(message: str):
@@ -271,7 +296,7 @@ def render_thinking_status(message: str = "Thinking..."):
 
 def render_background_notification(message: str, title: str = "🔔 Background Task"):
     """渲染多线程后台任务通知卡片（左侧实线竖条深青暗蓝纯色块展示）"""
-    console.print(
+    _print_panel(
         Panel(
             f"[dim #e2e8f0]{message}[/dim #e2e8f0]",
             title=f"[bold cyan] {title} [/bold cyan]",
@@ -281,6 +306,21 @@ def render_background_notification(message: str, title: str = "🔔 Background T
             style="on #0f172a"  # 暗青蓝背景色
         )
     )
+
+
+def ask_permission(message: str, prompt_str: str = "  Allowed? [y/N] ") -> str:
+    """渲染权限确认面板（暖黄警示色）并通过 UI 获取用户 y/N 输入，返回原始输入文本"""
+    _print_panel(
+        Panel(
+            f"[bold #fef3c7]{message}[/bold #fef3c7]",
+            title="[bold #f59e0b] 🔒 Permission Required [/bold #f59e0b]",
+            title_align="center",
+            box=LEFT_BAR_BOX,
+            border_style="#f59e0b",  # 暖黄实线竖条
+            style="on #3b2a10"  # 暗琥珀背景色
+        )
+    )
+    return get_user_input(prompt_str, commands=[])
 
 
 if __name__ == '__main__':

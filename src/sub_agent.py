@@ -3,7 +3,7 @@ Sub Agent
 """
 import json
 
-from src.base_tools import run_bash, run_read, run_write, run_edit, run_glob, call_tool_handler
+from src.base_tools import run_bash, run_read, run_write, run_edit, run_glob, call_tool_handler, run_grep
 from src.config import WORKDIR, client, SUB_MODEL
 from src.hook_permission import trigger_hooks
 
@@ -60,6 +60,31 @@ SUB_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "grep",
+            "description": "Search for a pattern in files within a directory, returning matching lines with file path, line number, and content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The regex pattern to search for in file contents"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The directory to search in. Defaults to the current working directory."
+                    },
+                    "file_pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to filter file names (e.g., '*.txt', '*.py'). Default is '*' (all files).",
+                    },
+                },
+                "required": ["pattern", "path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "glob",
             "description": "Find files matching a glob pattern.",
             "parameters": {
@@ -76,7 +101,7 @@ SUB_TOOLS = [
 
 SUB_HANDLERS = {
     "bash": run_bash, "read_file": run_read, "write_file": run_write, "edit_file": run_edit,
-    "glob": run_glob
+    "glob": run_glob, "grep": run_grep
 }
 
 

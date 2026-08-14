@@ -1,4 +1,3 @@
-import logging
 import threading
 
 from src.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop
@@ -10,8 +9,6 @@ from src.ui import render_banner, get_user_input, render_user_input
 
 if not LOG_DIR.exists():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-logging.basicConfig(filename=str(LOG_DIR / ".log"), level=logging.INFO, filemode="w")
 
 
 def main():
@@ -32,7 +29,6 @@ def main():
 
         render_user_input(query)
         trigger_hooks("UserPromptSubmit", query)
-        turn_start = len(messages)
         messages.append({
             "role": "user",
             "content": query
@@ -41,7 +37,6 @@ def main():
         with AGENT_LOCK:
             agent_loop(messages, context)
             context = update_context(context, messages)
-            # print_turn_assistants(messages, turn_start)
 
         inbox = consume_lead_inbox(route_protocol=True)
         if inbox:

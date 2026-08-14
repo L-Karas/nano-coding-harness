@@ -10,6 +10,7 @@ from typing import Optional
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from src.config import WORKDIR
+from src.ui import ask_permission
 
 HOOKS = {"UserPromptSubmit": [], "PreToolUse": [], "PostToolUse": [], "Stop": []}
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
@@ -29,6 +30,11 @@ def trigger_hooks(event: str, *args):
     return None
 
 
+def _confirm(question: str) -> bool:
+    """通过 UI 面板询问用户，确认（y/yes）返回 True，其余一律拒绝"""
+    return ask_permission(question).strip().lower() in ("y", "yes")
+
+
 def permission_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None):
     # The permission layer sees the raw tool_use before dispatch. It can deny,
     # ask the user, or allow execution to continue.
@@ -41,19 +47,13 @@ def permission_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = No
                 return f"Permission denied: '{pattern}' is on the deny list."
 
         if any(item in command for item in DESTRUCTIVE):
-            print(f"\n\033[33m[Permission] destructive command:\033[0m")
-            print(f"\n\033[33m             '{command}'\033[0m")
-            choice = input(" Allowed? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
+            if not _confirm(f"Destructive command detected:\n\n{command}"):
                 return "Permission denied by user"
 
     if tool_call.function.name in ("read_file", "write_file", "edit_file"):
         path = tool_args.get("path", "")
         if not (WORKDIR / path).resolve().is_relative_to(WORKDIR):
-            print(f"\n\033[33m[Permission] Access outside workspace:\033[0m")
-            print(f"\n\033[33m             {tool_call.function.name}: {path}\033[0m")
-            choice = input(" Allowed? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
+            if not _confirm(f"Access outside workspace:\n\n{tool_call.function.name}: {path}"):
                 return "Permission denied by user"
 
     # todo: mcp tool
