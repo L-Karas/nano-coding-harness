@@ -7,21 +7,86 @@ Context Compaction
 """
 import json
 import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
+from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
 
 from src.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR, client, SUB_MODEL
+from src.log.log import get_logger
+
+REMAIN_TOOL_RESULT_THRESHOLD = 120
+
+_loger = get_logger(__name__)
 
 
-def estimate_size(messages: list) -> int:
-    return len(json.dumps(messages, default=str))
+@dataclass
+class CompactConfig:
+    # Minimum number of tokens to preserve after compaction
+    min_tokens: int = 1_000
+    # Maximum number of tokens to preserve after compaction (truncation)
+    max_tokens: int = 3_000
+    # Minimum number of text messages to keep (for dialog continuation)
+    text_messages: int = 5
 
 
-def message_has_tool_use(message: ChatCompletionMessage) -> bool:
+@contextmanager
+def log_information(fun_name: str):
+    try:
+        _loger.info(f"Running {fun_name} ...")
+        yield
+        _loger.info(f"Finished {fun_name}.")
+    except Exception as e:
+        _loger.exception(e)
+
+
+def log_compact_info(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        _loger.info(f"Running {func.__name__} ...")
+        try:
+            result = func(*args, **kwargs)
+        except Exception as e:
+            _loger.exception(e)
+            raise e
+        _loger.info(f"Finished {func.__name__}.")
+        return result
+
+    return wrapper
+
+
+def estimate_token(text: str) -> int:
+    """
+    Roughly count tokens
+    """
+    return int(len(text) * 0.75)
+
+
+# todo: messages token counter
+def estimate_size(messages: list[Union[dict, ChatCompletionMessage]]) -> int:
+    total_tokens = 0
+    for message in messages:
+        if isinstance(message, dict):
+            total_tokens += estimate_token(message["content"])
+        else:
+            total_tokens += estimate_token(message.content) if message.content else 0
+
+    return total_tokens
+
+
+def message_has_tool_call(message: Union[dict, ChatCompletionMessage]) -> bool:
     if isinstance(message, dict):
-        return False
+        return bool(message.get("tool_calls"))
     return message.tool_calls is not None
+
+
+def message_has_content(message: Union[dict, ChatCompletionMessage]) -> bool:
+    if isinstance(message, dict):
+        return bool(message.get("content"))
+    return bool(message.content)
 
 
 def is_tool_result_message(message: dict) -> bool:
@@ -31,16 +96,29 @@ def is_tool_result_message(message: dict) -> bool:
     return False
 
 
-def collect_tool_results(messages: list):
-    found = []
-    for i, message in enumerate(messages):
-        if isinstance(message, dict) and message.get("role") == "tool":
-            found.append((i, 0, message))
+def collect_tool_results(messages: list) -> list[dict]:
+    """
+    Collect tool result messages, return (tool call index, tool result index, tool result message)
+    """
+    founds = []
+    i = 0
+    while i < len(messages):
+        if message_has_tool_call(messages[i]):
+            j = i + 1
+            while j < len(messages) and is_tool_result_message(messages[j]):
+                founds.append((i, j, messages[j]))
+                j += 1
+            i = j
+        else:
+            i += 1
 
-    return found
+    return founds
 
 
 def persist_large_output(tool_use_id: str, output: str) -> str:
+    """
+    When tool result too large, persist large output to file and remain truncated content.
+    """
     if len(output) <= PERSIST_THRESHOLD:
         return output
 
@@ -49,11 +127,15 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
     if not path.exists():
         path.write_text(output, encoding="utf-8")
 
-    return (f"<persisted-output>\nFull output: {path}\n"
-            f"Preview:\n{output[:2000]}\n</persisted-output>")
+    return (f"<persisted-output>\nFull output saved in: {path}\n"
+            f"Preview content:\n{output[:2000]}\n</persisted-output>")
 
 
+# todo: tool result budge
 def tool_result_budget(messages: list, max_bytes: int = int(2e6)) -> list:
+    """
+
+    """
     if not messages:
         return messages
 
@@ -84,19 +166,21 @@ def tool_result_budget(messages: list, max_bytes: int = int(2e6)) -> list:
     return messages
 
 
+# todo: snip middle messages
+@log_compact_info
 def snip_compact(messages: list, max_messages: int = 50) -> list:
     """
-    Compact middle messages
+    Snip middle messages
     """
     if len(messages) <= max_messages:
         return messages
     head_end, tail_start = 3, len(messages) - max_messages + 3
-    if head_end > 0 and message_has_tool_use(messages[head_end - 1]):
+    if message_has_tool_call(messages[head_end - 1]):
         while head_end < len(messages) and is_tool_result_message(messages[head_end]):
             head_end += 1
 
     if 0 < tail_start < len(messages) and is_tool_result_message(messages[tail_start]):
-        while not message_has_tool_use(messages[tail_start - 1]):
+        while not message_has_tool_call(messages[tail_start - 1]):
             tail_start += 1
 
     if head_end >= tail_start:
@@ -106,6 +190,7 @@ def snip_compact(messages: list, max_messages: int = 50) -> list:
     return messages[:head_end] + [{"role": "user", "content": f"[snipped {snipped} messages]"}] + messages[tail_start:]
 
 
+@log_compact_info
 def micro_compact(messages: list) -> list:
     """
     Compact earlier tool call result messages.
@@ -113,13 +198,16 @@ def micro_compact(messages: list) -> list:
     tool_results = collect_tool_results(messages)
     if len(tool_results) <= KEEP_RECENT_TOOL_RESULTS:
         return messages
-    for _, _, message in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
-        if len(message["content"]) > 120:
-            message["content"] = "[Earlier tool result compacted. Re-run if needed.]"
+    for _, index, message in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
+        if estimate_token(message.get("content", "")) > REMAIN_TOOL_RESULT_THRESHOLD:
+            message["content"] = "[Old tool result content cleared. Re-run if needed.]"
+
+            _loger.info(f"Cleared old tool result, index: {index}, result: {message['content'][:100]}")
 
     return messages
 
 
+@log_compact_info
 def write_transcript(messages: list) -> Path:
     """
     Write messages to a transcript JSONL file.
@@ -133,9 +221,12 @@ def write_transcript(messages: list) -> Path:
             else:
                 f.write(message.model_dump_json(ensure_ascii=False) + "\n")
 
+    _loger.info(f"Wrote messages to {path}")
+
     return path
 
 
+@log_compact_info
 def summarize_history(messages: list) -> str:
     """
     Summarize history messages
@@ -159,22 +250,24 @@ def summarize_history(messages: list) -> str:
     return response.choices[0].message.content
 
 
+@log_compact_info
 def compact_history(messages: list) -> list:
     """
     Summarize history messages
     """
     transcript = write_transcript(messages)
-    print(f"  \033[36m[Compact] transcript saved: {transcript}\033[0m")
+    # print(f"  \033[36m[Compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages[1:])
     return messages[:1] + [{"role": "user", "content": f"<compacted-messages>{summary}</compacted-messages>"}]
 
 
+@log_compact_info
 def reactive_compact(messages: list) -> list:
     transcript = write_transcript(messages)
     print(f"  \033[31m[Reactive compact] transcript saved: {transcript}\033[0m")
     tail = max(0, len(messages) - 5)
     if 0 < tail < len(messages) and is_tool_result_message(messages[tail]):
-        while not message_has_tool_use(messages[tail - 1]):
+        while not message_has_tool_call(messages[tail - 1]):
             tail -= 1
 
     try:
@@ -185,3 +278,13 @@ def reactive_compact(messages: list) -> list:
     return (messages[:1] +
             [{"role": "user", "content": f"<compacted-messages>{summary}</compacted-messages>"}] +
             messages[tail:])
+
+
+if __name__ == "__main__":
+    @log_compact_info
+    def fun():
+        print("Hello world! ..........")
+        return (10, 10)
+
+
+    print(fun())
