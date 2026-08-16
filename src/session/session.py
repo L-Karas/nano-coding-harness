@@ -9,10 +9,10 @@ Session 模块
 {"message": {...}, usage: {}}
 """
 import json
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from pathlib import Path
 from typing import Literal
 
 from config import SESSION_DIR, SESSION_INDEX, client, PRIMARY_MODEL
@@ -33,6 +33,9 @@ def safe_open_file():
 
 @dataclass
 class MessageUsage:
+    """
+    Message Usage 类，用于记录消息 token 消耗量
+    """
     prompt_tokens: int = 0
     completion_tokens: int = 0
     reasoning_tokens: int = 0
@@ -41,6 +44,9 @@ class MessageUsage:
 
 @dataclass
 class Message:
+    """
+    Message 类，记录消息内容
+    """
     role: Literal["user", "assistant", "tool"]
     content: str = ""
     tool_call_id: str = ""
@@ -50,28 +56,40 @@ class Message:
 
 @dataclass
 class Session:
+    """
+    Session 类，记录会话消息列表，会话标题，会话保存路径
+    """
+    id: str = ""
     messages: list[Message] = field(default_factory=list)
     title: str = ""
     timestamp: str = field(default_factory=_get_timestamp)
-    path: str = ""
 
 
 class SessionManager:
+    """
+    会话管理器，用于创建、更新、删除和保存会话
+    """
 
     def __init__(self):
         self.session_map: dict[str, Session] = {}
-        self.current_session: str = f"session-{int(time.time()):06d}.jsonl"
-        self.session_map[self.current_session] = Session(path=self.current_session)
+        self.current_session: str = ""
 
         if not SESSION_DIR.exists():
             SESSION_DIR.mkdir(parents=True, exist_ok=True)
         if not SESSION_INDEX.exists():
             SESSION_INDEX.touch()
 
-    def _get_session_id(self):
+    @staticmethod
+    def _get_session_id():
         return f"session-{int(time.time()):06d}.jsonl"
 
     def add_message(self, message: dict) -> bool:
+        """
+        新增并保存消息，若当前会话不存在，则创建新会话；
+        """
+        if not self.current_session:
+            self.new_session()
+
         if isinstance(message, dict):
             message = Message(**message)
 
@@ -80,6 +98,12 @@ class SessionManager:
         return True
 
     def load_messages(self) -> list[dict]:
+        """
+        加载当前会话消息列表，若当前会话不存在，则创建新会话
+        """
+        if not self.current_session:
+            self.new_session()
+
         messages = []
         for message in self.session_map[self.current_session].messages:
             message_dict = {
@@ -95,7 +119,12 @@ class SessionManager:
         return messages
 
     def _update_session_index(self) -> bool:
-        self.session_map[self.current_session].timestamp = _get_timestamp()
+        """
+        更新会话索引文件，若删除当前会话后更新，则无需更新当前会话时间戳
+        """
+        if self.current_session:
+            self.session_map[self.current_session].timestamp = _get_timestamp()
+
         try:
             f = open(SESSION_INDEX, "x", encoding="utf-8")
         except FileExistsError:
@@ -114,6 +143,9 @@ class SessionManager:
         return True
 
     def _update_session_messages(self) -> bool:
+        """
+        更新会话文件
+        """
         session_path = SESSION_DIR / self.current_session
         try:
             f = open(session_path, "x", encoding="utf-8")
@@ -131,9 +163,25 @@ class SessionManager:
             f.close()
         return True
 
+    def delete_session(self, session_id: str) -> bool:
+        """
+        删除会话，若删除当前会话，则将当前会话置空
+        """
+        if self.current_session == session_id:
+            self.current_session = ""
+
+        session_path = SESSION_DIR / session_id
+        session_path.unlink(missing_ok=True)
+        self.session_map.pop(session_id)
+        self._update_session_index()
+        return True
+
     def update_session(self) -> bool:
+        """
+        更新会话文件和会话索引文件，若当前会话为空，则创建新会话
+        """
         if not self.current_session:
-            self.current_session = self._get_session_id()
+            self.new_session()
 
         self._update_session_messages()
         self._update_session_index()
@@ -141,15 +189,24 @@ class SessionManager:
         return True
 
     def new_session(self) -> Session:
+        """
+        创建新会话，更新会话映射表，创建新会话文件，更新会话索引文件
+        """
         self.current_session = self._get_session_id()
+
+        path = SESSION_DIR / self.current_session
+        path.touch(exist_ok=True)
+
         self.load_session_list()
-        self.session_map[self.current_session] = Session(path=self.current_session)
+        self.session_map[self.current_session] = Session(id=self.current_session)
+        self._update_session_index()
         return self.session_map[self.current_session]
 
     def load_session_list(self) -> list[Session]:
+        """
+        加载所有会话，更新会话影射表
+        """
         session_index = SESSION_DIR / "session_index.jsonl"
-        if not SESSION_DIR.exists() or (not session_index.exists()):
-            return []
 
         try:
             with open(session_index, "r", encoding="utf-8") as f:
@@ -158,7 +215,7 @@ class SessionManager:
             for line in content_lines:
                 session = Session(**json.loads(line.strip()))
                 sessions.append(session)
-                self.session_map[session.path] = session
+                self.session_map[session.id] = session
 
             return sessions
         except Exception as e:
@@ -166,9 +223,17 @@ class SessionManager:
 
         return []
 
-    def load_session(self, session_path: str) -> Session:
-        self.current_session = session_path
-        path = Path(session_path)
+    def load_session(self, session_id: str = "") -> Session:
+        """
+        加载会话，若提供会话 id，则加载对应会话，否则加载当前会话
+        """
+        if session_id:
+            self.current_session = session_id
+
+        if not self.current_session:
+            self.new_session()
+
+        path = SESSION_DIR / self.current_session
         if not path.exists():
             _LOGER.exception(path)
             return None
@@ -177,28 +242,12 @@ class SessionManager:
             with open(path, "r", encoding="utf-8") as f:
                 content_lines = f.readlines()
 
-            self.session_map[session_path].messages = [Message(**json.loads(line.strip())) for line in content_lines]
-            return self.session_map[session_path]
+            self.session_map[self.current_session].messages = [Message(**json.loads(line.strip())) for line in
+                                                               content_lines]
+            return self.session_map[self.current_session]
         except Exception as e:
             _LOGER.exception(e)
             return None
-
-    def load_sessions(self) -> list[dict]:
-        if not SESSION_DIR.exists():
-            return []
-        session_paths = SESSION_DIR.glob("*.jsonl")
-
-        session_list = []
-        for path in session_paths:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    content_lines = f.readlines()
-                session = [json.loads(line.strip()) for line in content_lines]
-                session_list.append(session)
-            except Exception:
-                continue
-
-        return session_list
 
 
 if __name__ == '__main__':
@@ -232,9 +281,11 @@ if __name__ == '__main__':
     is_tool_call = False
     while True:
         if not is_tool_call:
-            q = input(">>> ")
+            q = input(">>> ").strip()
             if q == "/new":
                 session = session_manager.new_session()
+                os.system('cls' if os.name == 'nt' else 'clear')
+                continue
             if q == "/quit":
                 break
 
