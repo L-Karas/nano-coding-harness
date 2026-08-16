@@ -7,7 +7,6 @@ Context Compaction
 """
 import json
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
@@ -31,16 +30,6 @@ class CompactConfig:
     max_tokens: int = 3_000
     # Minimum number of text messages to keep (for dialog continuation)
     text_messages: int = 5
-
-
-@contextmanager
-def log_information(fun_name: str):
-    try:
-        _loger.info(f"Running {fun_name} ...")
-        yield
-        _loger.info(f"Finished {fun_name}.")
-    except Exception as e:
-        _loger.exception(e)
 
 
 def log_compact_info(func):

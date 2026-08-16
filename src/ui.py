@@ -11,7 +11,7 @@ from typing import Optional, Any, List
 
 from prompt_toolkit import PromptSession, Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Window, FormattedTextControl, BufferControl, Layout, FloatContainer, HSplit, Float, \
@@ -57,7 +57,24 @@ LEFT_BAR_BOX = box.Box(
 )
 
 # 默认斜杠命令补全列表
-DEFAULT_COMMANDS = ['/help', '/clear', '/model', '/compact', '/tools', '/exit', '/quit']
+DEFAULT_COMMANDS = ['/new', '/sessions', '/clear', '/model', '/compact', '/quit']
+
+
+class _SlashOnlyCompleter(Completer):
+    """斜杠指令补全器：仅当输入框内容恰好为 "/"（且光标位于末尾）时才给出补全候选。
+
+    避免在普通文本中间键入空格或 "/" 时误弹出指令补全菜单。
+    """
+
+    def __init__(self, commands: List[str]) -> None:
+        self._commands = commands
+
+    def get_completions(self, document, complete_event):
+        if document.text == "/" and document.cursor_position == 1:
+            # start_position=-1：用完整指令文本替换输入框中的 "/" 本身
+            for cmd in self._commands:
+                yield Completion(cmd, start_position=-1)
+
 
 # Prompt 输入样式（淡灰色/中灰色背景，淡灰文字）
 pt_style = PtStyle.from_dict({
@@ -99,6 +116,11 @@ def _print_panel(panel: Panel) -> None:
     console.print(panel)
 
 
+def clear_screen() -> None:
+    """清空终端屏幕，删除先前会话的所有 TUI 渲染内容"""
+    console.clear()
+
+
 def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
     """获取单例 PromptSession 交互输入会话（提交后自动擦除原始输入行）"""
     global _session
@@ -106,7 +128,7 @@ def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
         cmd_list = DEFAULT_COMMANDS if commands is None else commands
         _session = PromptSession(
             history=InMemoryHistory(),
-            completer=WordCompleter(cmd_list, ignore_case=True),
+            completer=_SlashOnlyCompleter(cmd_list),
             style=pt_style,
             erase_when_done=True  # 回车提交后自动擦除原始 Prompt 文本
         )
@@ -122,7 +144,7 @@ def get_user_input(prompt_str: str = ">> ", commands: Optional[List[str]] = None
 
     # 2. 输入框 Buffer 及窗口 (严格锁定 height=1，防止被拉伸到屏幕底部)
     cmd_list = DEFAULT_COMMANDS if commands is None else commands
-    buffer = Buffer(history=_history, completer=WordCompleter(cmd_list, ignore_case=True),
+    buffer = Buffer(history=_history, completer=_SlashOnlyCompleter(cmd_list),
                     complete_while_typing=True)
     input_win = Window(BufferControl(buffer=buffer, input_processors=[BeforeInput(prompt_str, style='class:prompt')]),
                        height=1)
@@ -161,6 +183,135 @@ def render_banner(title: str = "🤖 Nano-Harness Agent Loop", subtitle: str = "
             expand=False
         )
     )
+
+
+def _session_label(session) -> str:
+    """会话显示名：标题为空时回退为 session id"""
+    return session.title if session.title else session.id
+
+
+def _sort_sessions(sessions: list) -> list:
+    """按时间戳从新到旧排序（YYYY-MM-DD HH:MM:SS 可直接按字典序比较）"""
+    return sorted(sessions, key=lambda s: s.timestamp, reverse=True)
+
+
+def render_sessions(sessions: list) -> None:
+    """静态渲染会话列表卡片：显示时间戳与标题，按时间戳从新到旧排列；空列表显示提示"""
+    lines = [f"[bold #f8fafc]{_session_label(s)}[/bold #f8fafc]  [dim #94a3b8]{s.timestamp}[/dim #94a3b8]"
+             for s in _sort_sessions(sessions)]
+    _print_panel(
+        Panel(
+            "\n".join(lines) if lines else "[dim #e2e8f0]暂无会话[/dim #e2e8f0]",
+            title="[bold #38bdf8] 📂 Sessions [/bold #38bdf8]",
+            title_align="center",
+            box=LEFT_BAR_BOX,
+            border_style="#38bdf8",  # 天蓝色实线竖条
+            style="on #0c1a2e"  # 暗蓝背景色
+        )
+    )
+
+
+def select_session(sessions: list, on_delete: Optional[Any] = None) -> tuple:
+    """交互式会话选择器：↑/↓ 移动，Enter 切换，Delete 删除，Esc/q 取消。
+    on_delete 为删除回调（接收 session id，如 SessionManager.delete_session）。
+    返回 (选中的 Session 或 None, 结束时剩余的会话列表)。"""
+    if not sessions:
+        return None, []
+
+    sorted_sessions = _sort_sessions(sessions)
+    selected = 0
+    width = console.width or shutil.get_terminal_size().columns
+
+    def _fragments() -> list:
+        frags = []
+        for i, s in enumerate(sorted_sessions):
+            sel = i == selected
+            frags.append(("class:sel" if sel else "class:item", f"{'▶' if sel else ' '} {_session_label(s)}"))
+            frags.append(("class:dim", f"  {s.timestamp}"))
+            frags.append(("", "\n"))
+        return frags
+
+    control = FormattedTextControl(text=_fragments())
+
+    def _redraw() -> None:
+        # 事件循环在按键后自动重绘，文本缓存按 render_counter 失效
+        control.text = _fragments()
+
+    def _move(delta: int) -> None:
+        nonlocal selected
+        selected = (selected + delta) % len(sorted_sessions)
+        _redraw()
+
+    def _delete(event) -> None:
+        """删除选中会话并重绘；删空后退出选择器"""
+        nonlocal selected
+        session = sorted_sessions.pop(selected)
+        if on_delete:
+            on_delete(session.id)
+        if not sorted_sessions:
+            event.app.exit(result=(None, sorted_sessions))
+            return
+        selected = min(selected, len(sorted_sessions) - 1)
+        _redraw()
+
+    def _border() -> Window:
+        return Window(FormattedTextControl([('class:border', '─' * width)]), height=1)
+
+    hint = Window(FormattedTextControl([('class:hint', '  ↑/↓ 选择    Enter 切换    Delete 删除    Esc/q 取消')]), height=1)
+    list_height = min(len(sorted_sessions), max(1, (console.height or shutil.get_terminal_size().lines) - 4))
+    layout = Layout(HSplit([_border(), Window(control, height=list_height, wrap_lines=False), hint, _border()]))
+
+    kb = KeyBindings()
+
+    @kb.add('up')
+    def _(event): _move(-1)
+
+    @kb.add('down')
+    def _(event): _move(1)
+
+    @kb.add('enter')
+    def _(event): event.app.exit(result=(sorted_sessions[selected], sorted_sessions))
+
+    @kb.add('delete')
+    def _(event): _delete(event)
+
+    @kb.add('escape')
+    @kb.add('q')
+    def _(event): event.app.exit(result=(None, sorted_sessions))
+
+    @kb.add('c-c')
+    def _(event): event.app.exit(exception=KeyboardInterrupt)
+
+    app = Application(layout=layout, key_bindings=kb, full_screen=False,
+                      style=PtStyle.from_dict({
+                          'border': 'dim',
+                          'item': 'bold #f8fafc',
+                          'sel': 'bold #38bdf8',
+                          'dim': 'dim #94a3b8',
+                          'hint': 'dim #94a3b8',
+                      }))
+
+    with patch_stdout(raw=True):
+        return app.run()
+
+
+def render_session_history(session) -> None:
+    """按消息顺序重放会话历史：用户输入 / 工具调用 / 工具结果 / 助手回复"""
+    for message in session.messages:
+        if message.role == "user":
+            render_user_input(message.content)
+        elif message.role == "assistant":
+            for tool_call in (message.tool_calls or []):
+                fn = tool_call.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments", ""))
+                except (TypeError, ValueError):
+                    args = fn.get("arguments", "")
+                render_tool_call(fn.get("name", "tool"), args)
+            if message.content:
+                render_assistant_response(message.content)
+        elif message.role == "tool":
+            render_tool_result(message.content)
 
 
 def render_user_input(user_text: str):

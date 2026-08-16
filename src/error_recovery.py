@@ -6,6 +6,9 @@ import time
 from typing import Callable
 
 from src.config import PRIMARY_MODEL, BASE_DELAY_MS, MAX_RETRIES, MAX_CONSECUTIVE, FALLBACK_MODEL
+from src.log.log import get_logger
+
+_LOGER = get_logger(__name__)
 
 
 class RecoveryState:
@@ -35,8 +38,8 @@ def with_retry(fn: Callable, state: RecoveryState):
             error_msg = str(e).lower().strip()
             if "429" in error_msg and "1302" in error_msg:
                 delay = retry_delay(attempt)
-                print(f"  \033[33m[Access rate limit] retry {attempt + 1}/{MAX_RETRIES} "
-                      f"after {delay:.1f}s\033[0m")
+                _LOGER.info(f"[Access rate limit] retry {attempt + 1}/{MAX_RETRIES} "
+                            f"after {delay:.1f}s")
                 time.sleep(delay)
                 continue
             if "429" in error_msg and "1305" in error_msg:
@@ -44,10 +47,10 @@ def with_retry(fn: Callable, state: RecoveryState):
                 if state.consecutive_1305 >= MAX_CONSECUTIVE and FALLBACK_MODEL:
                     state.current_model = FALLBACK_MODEL
                     state.consecutive_1305 = 0
-                    print(f"  \033[31m[Model overload] switching to {FALLBACK_MODEL}\033[0m")
+                    _LOGER.info(f"[Model overload] switching to {FALLBACK_MODEL}")
                 delay = retry_delay(attempt)
-                print(f"  \033[33m[Model overload] retry {attempt + 1}/{MAX_RETRIES} "
-                      f"after {delay:.1f}s\033[0m")
+                _LOGER.info(f"[Model overload] retry {attempt + 1}/{MAX_RETRIES} "
+                            f"after {delay:.1f}s")
                 time.sleep(delay)
                 continue
 
