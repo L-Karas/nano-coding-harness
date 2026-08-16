@@ -23,7 +23,8 @@ def _reset_ui() -> None:
 def _handle_sessions() -> None:
     """处理 /sessions：交互选择会话（Delete 删除），Enter 切换为当前会话并重放历史"""
     sessions = SESSION_MANAGER.load_session_list()
-    selected, remaining = select_session(sessions, on_delete=SESSION_MANAGER.delete_session)
+    selected, remaining = select_session(sessions, on_delete=SESSION_MANAGER.delete_session,
+                                         current_session_id=SESSION_MANAGER.current_session)
     if selected is None:
         if not remaining:
             render_sessions([])

@@ -117,8 +117,11 @@ def _print_panel(panel: Panel) -> None:
 
 
 def clear_screen() -> None:
-    """清空终端屏幕，删除先前会话的所有 TUI 渲染内容"""
-    console.clear()
+    """清空终端屏幕与滚动缓冲区，删除先前会话的所有 TUI 渲染内容"""
+    console.clear()  # \x1b[2J 清空可视区 + \x1b[H 光标归位
+    # \x1b[3J 清空滚动缓冲区，防止旧会话渲染残留在终端回滚中（Windows Terminal/xterm 支持）
+    console.file.write("\x1b[3J")
+    console.file.flush()
 
 
 def get_prompt_session(commands: Optional[List[str]] = None) -> PromptSession:
@@ -195,10 +198,21 @@ def _sort_sessions(sessions: list) -> list:
     return sorted(sessions, key=lambda s: s.timestamp, reverse=True)
 
 
-def render_sessions(sessions: list) -> None:
-    """静态渲染会话列表卡片：显示时间戳与标题，按时间戳从新到旧排列；空列表显示提示"""
-    lines = [f"[bold #f8fafc]{_session_label(s)}[/bold #f8fafc]  [dim #94a3b8]{s.timestamp}[/dim #94a3b8]"
-             for s in _sort_sessions(sessions)]
+def _is_current(session, current_session_id: str) -> bool:
+    """判断会话是否为当前会话"""
+    return bool(current_session_id) and session.id == current_session_id
+
+
+def render_sessions(sessions: list, current_session_id: str = "") -> None:
+    """静态渲染会话列表卡片：显示时间戳与标题，按时间戳从新到旧排列；
+    当前会话在行尾以 (current session) 标明；空列表显示提示"""
+    lines = []
+    for s in _sort_sessions(sessions):
+        line = f"[bold #f8fafc]{_session_label(s)}[/bold #f8fafc]  [dim #94a3b8]{s.timestamp}[/dim #94a3b8]"
+        if _is_current(s, current_session_id):
+            line += "  [bold #34d399](current session)[/bold #34d399]"
+        lines.append(line)
+
     _print_panel(
         Panel(
             "\n".join(lines) if lines else "[dim #e2e8f0]暂无会话[/dim #e2e8f0]",
@@ -211,9 +225,11 @@ def render_sessions(sessions: list) -> None:
     )
 
 
-def select_session(sessions: list, on_delete: Optional[Any] = None) -> tuple:
+def select_session(sessions: list, on_delete: Optional[Any] = None,
+                   current_session_id: str = "") -> tuple:
     """交互式会话选择器：↑/↓ 移动，Enter 切换，Delete 删除，Esc/q 取消。
-    on_delete 为删除回调（接收 session id，如 SessionManager.delete_session）。
+    on_delete 为删除回调（接收 session id，如 SessionManager.delete_session）；
+    current_session_id 用于在列表中标注当前会话。
     返回 (选中的 Session 或 None, 结束时剩余的会话列表)。"""
     if not sessions:
         return None, []
@@ -228,6 +244,8 @@ def select_session(sessions: list, on_delete: Optional[Any] = None) -> tuple:
             sel = i == selected
             frags.append(("class:sel" if sel else "class:item", f"{'▶' if sel else ' '} {_session_label(s)}"))
             frags.append(("class:dim", f"  {s.timestamp}"))
+            if _is_current(s, current_session_id):
+                frags.append(("class:current", "  (current session)"))
             frags.append(("", "\n"))
         return frags
 
@@ -287,6 +305,7 @@ def select_session(sessions: list, on_delete: Optional[Any] = None) -> tuple:
                           'border': 'dim',
                           'item': 'bold #f8fafc',
                           'sel': 'bold #38bdf8',
+                          'current': 'bold #34d399',
                           'dim': 'dim #94a3b8',
                           'hint': 'dim #94a3b8',
                       }))
