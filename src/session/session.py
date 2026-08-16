@@ -79,6 +79,13 @@ class SessionManager:
     def _get_session_id():
         return f"session-{int(time.time()):06d}.jsonl"
 
+    def _update_session_title(self, user_query: str):
+        if not self.current_session:
+            return
+        if user_query.startswith(("<", "[")):
+            return
+        self.session_map[self.current_session].title = f"{user_query[:30]}" + ("" if len(user_query) < 30 else "...")
+
     def add_message(self, message: dict) -> bool:
         """
         新增并保存消息，若当前会话不存在，则创建新会话；
@@ -88,6 +95,8 @@ class SessionManager:
 
         if isinstance(message, dict):
             message = Message(**message)
+            if message.role == "user":
+                self._update_session_title(message.content)
 
         self.session_map[self.current_session].messages.append(message)
         self.update_session()
