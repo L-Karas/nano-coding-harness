@@ -1,0 +1,31 @@
+from pathlib import Path
+from typing import Optional
+
+from pydantic import Field
+
+from src.config import WORKDIR
+from tools.tool_base import BaseTool
+
+
+class ReadFile(BaseTool):
+    """Read a file from the filesystem."""
+    path: str = Field(description="Path to the file to read.")
+    limit: int = Field(default=None, description="Max lines to read.")
+    offset: int = Field(default=None, description="Line offset to start reading from.")
+
+    agent_level: str = "sub"
+
+
+def run_read(path: str, limit: Optional[int] = None, offset: Optional[int] = 0, cwd: Optional[Path] = None) -> str:
+    try:
+        base = cwd or WORKDIR
+        fp = (base / path).resolve()
+        lines = fp.read_text(encoding="utf-8").splitlines()
+        offset = max(int(offset or 0), 0)
+        limit = int(limit) if limit is not None else None
+        lines = lines[offset:]
+        if limit is not None and limit < len(lines):
+            lines = lines[:limit] + [f"... ({len(lines) - limit}) more lines)"]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"

@@ -8,7 +8,7 @@ from src.config import WORKDIR, client, SUB_MODEL
 from src.hook_permission import trigger_hooks
 
 SUB_SYSTEM = (f"You are a coding subagent at {WORKDIR}."
-              f"Complete the task, then return a concise final summary. "
+              f"Complete the task, then return a concise final conclusion. "
               f"Do not spawn more agents.")
 
 SUB_TOOLS = [
@@ -145,4 +145,4 @@ def spawn_subagent(description: str) -> str:
             if summary:
                 return summary
 
-    return "Subagent finished without a text summary."
+    return "Subagent finished without a text conclusion."
