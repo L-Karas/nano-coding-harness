@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from tools.utils import to_openai_tool
+from src.tools.utils import to_openai_tool
 
 
 class BaseTool(BaseModel):

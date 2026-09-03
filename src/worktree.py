@@ -10,8 +10,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from log import get_logger
 from src.config import WORKDIR
+from src.log import get_logger
 from src.task import load_task, save_task
 
 WORKTREES_DIR = WORKDIR / ".worktrees"

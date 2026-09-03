@@ -10,7 +10,6 @@ from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from src.background_task import collect_background_results, should_run_background, start_background_task
-from src.base_tool_handlers import BUILTIN_HANDLERS
 from src.base_tools import call_tool_handler, DIFF_TOOLS, preview_write, preview_edit
 from src.compact.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
     reactive_compact
@@ -24,16 +23,9 @@ from src.log.log import get_logger
 from src.mcps import get_client_manager
 from src.prompt import assemble_system_prompt
 from src.session.session import SESSION_MANAGER
-from src.tool_schema import BUILTIN_TOOLS
-from task import list_tasks
-from tui.ui import render_scope, stream_assistant_response
-from tui.ui import (
-    render_tool_call,
-    render_tool_result,
-    render_tool_result_diff,
-    render_background_notification,
-    render_thinking_status, render_tool_calling_status
-)
+from src.tools import get_builtin_tools, get_builtin_tool_handlers
+from src.tui.ui import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
+    render_tool_result_diff, render_background_notification, render_thinking_status, render_tool_calling_status
 
 ROUNDS_SINCE_TODO = 0
 AGENT_LOCK = threading.Lock()
@@ -44,8 +36,10 @@ def assemble_tool_pool():
     """
     Merge builtin tools + all MCP tools into a single tool pool.
     """
-    tools = list(BUILTIN_TOOLS)
-    handlers = BUILTIN_HANDLERS
+    # tools = list(BUILTIN_TOOLS)
+    # handlers = BUILTIN_HANDLERS
+    tools = get_builtin_tools("main")
+    handlers = get_builtin_tool_handlers("main")
 
     try:
         mcp_client_manager = get_client_manager()

@@ -275,30 +275,37 @@ def select_session(sessions: list, on_delete: Optional[Any] = None,
     def _border() -> Window:
         return Window(FormattedTextControl([('class:border', '─' * width)]), height=1)
 
-    hint = Window(FormattedTextControl([('class:hint', '  ↑/↓ 选择    Enter 切换    Delete 删除    Esc/q 取消')]), height=1)
+    hint = Window(FormattedTextControl([('class:hint', '  ↑/↓ 选择    Enter 切换    Delete 删除    Esc/q 取消')]),
+                  height=1)
     list_height = min(len(sorted_sessions), max(1, (console.height or shutil.get_terminal_size().lines) - 4))
     layout = Layout(HSplit([_border(), Window(control, height=list_height, wrap_lines=False), hint, _border()]))
 
     kb = KeyBindings()
 
     @kb.add('up')
-    def _(event): _move(-1)
+    def _(event):
+        _move(-1)
 
     @kb.add('down')
-    def _(event): _move(1)
+    def _(event):
+        _move(1)
 
     @kb.add('enter')
-    def _(event): event.app.exit(result=(sorted_sessions[selected], sorted_sessions))
+    def _(event):
+        event.app.exit(result=(sorted_sessions[selected], sorted_sessions))
 
     @kb.add('delete')
-    def _(event): _delete(event)
+    def _(event):
+        _delete(event)
 
     @kb.add('escape')
     @kb.add('q')
-    def _(event): event.app.exit(result=(None, sorted_sessions))
+    def _(event):
+        event.app.exit(result=(None, sorted_sessions))
 
     @kb.add('c-c')
-    def _(event): event.app.exit(exception=KeyboardInterrupt)
+    def _(event):
+        event.app.exit(exception=KeyboardInterrupt)
 
     app = Application(layout=layout, key_bindings=kb, full_screen=False,
                       style=PtStyle.from_dict({

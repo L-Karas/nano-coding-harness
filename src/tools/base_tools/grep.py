@@ -4,8 +4,8 @@ from typing import Optional
 
 from pydantic import Field
 
-from config import WORKDIR
-from tools.tool_base import BaseTool
+from src.config import WORKDIR
+from src.tools.tool_base import BaseTool
 
 
 class Grep(BaseTool):

@@ -1,10 +1,10 @@
 import sys
 from typing import Any, Literal
 
-from tools import base_tools  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类
-from tools import extra_tools  # noqa: F401  # import extra tools
-from tools.tool_base import BaseTool
-from tools.utils import _camel_to_snake
+from src.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
+from src.tools.extra_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
+from src.tools.tool_base import BaseTool
+from src.tools.utils import _camel_to_snake
 
 
 def _builtin_tool_classes(agent_level: Literal["main", "sub-agent", "teammate"]) -> list[type[BaseTool]]:

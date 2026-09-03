@@ -2,8 +2,8 @@ from typing import Optional
 
 from pydantic import Field
 
-from compact.context_compact import compact_history
-from tools.tool_base import BaseTool
+from src.compact.context_compact import compact_history
+from src.tools.tool_base import BaseTool
 
 
 class Compact(BaseTool):

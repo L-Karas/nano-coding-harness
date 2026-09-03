@@ -3,9 +3,9 @@ import json
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from src.tools.tool_base import BaseTool
 
-import task
-from tools.tool_base import BaseTool
+import src.task as task
 
 
 class TodoItem(BaseModel):

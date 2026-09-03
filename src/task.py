@@ -9,8 +9,8 @@ from pathlib import Path
 
 from pydantic.dataclasses import dataclass
 
-from log import get_logger
 from src.config import WORKDIR
+from src.log import get_logger
 
 TASK_DIR = WORKDIR / ".tasks"
 TASK_DIR.mkdir(parents=True, exist_ok=True)

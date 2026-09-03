@@ -3,8 +3,8 @@ from typing import Optional
 
 from pydantic import Field
 
-from tools.base_tools.git import _resolve, _read_old
-from tools.tool_base import BaseTool
+from src.tools.base_tools.git import _resolve, _read_old
+from src.tools.tool_base import BaseTool
 
 
 class EditFile(BaseTool):

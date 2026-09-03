@@ -1,7 +1,7 @@
 from pydantic import Field
 
-from sub_agent import spawn_subagent
-from tools.tool_base import BaseTool
+from src.sub_agent import spawn_subagent
+from src.tools.tool_base import BaseTool
 
 
 class SpawnSubagent(BaseTool):

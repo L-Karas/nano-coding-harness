@@ -9,9 +9,8 @@ import threading
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
-from log import get_logger
 from src.base_tools import call_tool_handler
-from src.hook_permission import trigger_hooks
+from src.log import get_logger
 
 BG_COUNTER = 0
 BACKGROUND_TASKS: dict[str, dict] = {}

@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import Field
 
-import memory
-from tools.tool_base import BaseTool
+from src import memory
+from src.tools.tool_base import BaseTool
 
 
 class SaveMemory(BaseTool):

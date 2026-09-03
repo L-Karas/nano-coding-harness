@@ -5,7 +5,7 @@ from typing import Optional
 from pydantic import Field
 
 from src.config import WORKDIR
-from tools.tool_base import BaseTool
+from src.tools.tool_base import BaseTool
 
 
 class Bash(BaseTool):

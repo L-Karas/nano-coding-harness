@@ -1,9 +1,9 @@
 from typing import Optional
 
 from pydantic import Field
+from src.tools.tool_base import BaseTool
 
 from src.task import create_task, list_tasks, get_task_json, claim_task, complete_task
-from tools.tool_base import BaseTool
 
 
 class CreateTask(BaseTool):

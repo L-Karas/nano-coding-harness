@@ -1,10 +1,9 @@
+import src.message_bus as message_bus
+import src.protocol_state as protocol_state
+from src.protocol_state import consume_lead_inbox
 from pydantic import Field
-
-import message_bus
-import protocol_state
-from protocol_state import consume_lead_inbox
-from teammates import spawn_teammate_thread
-from tools.tool_base import BaseTool
+from src.teammates import spawn_teammate_thread
+from src.tools.tool_base import BaseTool
 
 
 class SpawnTeammate(BaseTool):

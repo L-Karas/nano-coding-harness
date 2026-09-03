@@ -8,8 +8,8 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 
-from log import get_logger
 from src.config import WORKDIR
+from src.log import get_logger
 
 MAILBOX_DIR = WORKDIR / ".mailboxes"
 MAILBOX_DIR.mkdir(parents=True, exist_ok=True)

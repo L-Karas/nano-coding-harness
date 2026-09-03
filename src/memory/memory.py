@@ -8,8 +8,8 @@ import uuid
 from dataclasses import dataclass, asdict
 from typing import Literal, Optional
 
-from config import MEMORY_DIR
-from log import get_logger
+from src.config import MEMORY_DIR
+from src.log import get_logger
 
 _LOGGER = get_logger(__name__)
 
