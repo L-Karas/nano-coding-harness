@@ -17,7 +17,7 @@ class Grep(BaseTool):
     file_pattern: str = Field(default="*", description="Glob pattern to filter file names (e.g., '*.txt', '*.py'). "
                                                        "Default is '*' (all files).")
 
-    agent_level: str = "sub"
+    agent_level: set = {"main", "sub-agent", "teammate"}
 
 
 def run_grep(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optional[Path] = None) -> str:

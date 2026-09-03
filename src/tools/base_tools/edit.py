@@ -13,10 +13,10 @@ class EditFile(BaseTool):
     old_text: str = Field(description="The exact text to find and replace.")
     new_text: str = Field(description="The replacement text.")
 
-    agent_level: str = "sub"
+    agent_level: set = {"main", "sub-agent", "teammate"}
 
 
-def run_edit(path: str, old_text: str, new_text: str, cwd: Optional[Path] = None) -> str:
+def run_edit_file(path: str, old_text: str, new_text: str, cwd: Optional[Path] = None) -> str:
     try:
         fp = _resolve(path, cwd)
         text = _read_old(fp)

@@ -13,10 +13,10 @@ class ReadFile(BaseTool):
     limit: int = Field(default=None, description="Max lines to read.")
     offset: int = Field(default=None, description="Line offset to start reading from.")
 
-    agent_level: str = "sub"
+    agent_level: set = {"main", "sub-agent", "teammate"}
 
 
-def run_read(path: str, limit: Optional[int] = None, offset: Optional[int] = 0, cwd: Optional[Path] = None) -> str:
+def run_read_file(path: str, limit: Optional[int] = None, offset: Optional[int] = 0, cwd: Optional[Path] = None) -> str:
     try:
         base = cwd or WORKDIR
         fp = (base / path).resolve()

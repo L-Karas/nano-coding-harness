@@ -12,10 +12,10 @@ class WriteFile(BaseTool):
     path: str = Field(description="Path to the file to write.")
     content: str = Field(description="Content to write to the file.")
 
-    agent_level: str = "sub"
+    agent_level: set = {"main", "sub-agent", "teammate"}
 
 
-def run_write(path: str, content: str, cwd: Optional[Path] = None) -> str:
+def run_write_file(path: str, content: str, cwd: Optional[Path] = None) -> str:
     try:
         fp = _resolve(path, cwd)
         if fp.exists() and _read_old(fp) == content:
