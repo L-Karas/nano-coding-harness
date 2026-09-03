@@ -5,6 +5,9 @@ import colorlog
 
 from src.config import LOG_DIR
 
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 # ----- 定义带颜色的格式 -----
 # 在 fmt 中直接插入颜色占位符：
 #   %(log_color)s 和 %(reset)s 控制 levelname 颜色（由 log_colors 映射）

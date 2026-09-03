@@ -26,11 +26,6 @@ MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
 TRANSCRIPT_DIR = HARNESS_CONFIG_DIR / ".transcripts"
 TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
 
-if not HARNESS_CONFIG_DIR.exists():
-    HARNESS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-if not LOG_DIR.exists():
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
 DEFAULT_MAX_TOKENS = int(8e3)
 ESCALATED_MAX_TOKENS = int(16e3)
 MAX_RETRIES = 3
