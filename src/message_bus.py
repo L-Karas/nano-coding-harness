@@ -8,10 +8,10 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 
-from src.config import WORKDIR
+from src.config import WORKDIR, HARNESS_CONFIG_DIR
 from src.log import get_logger
 
-MAILBOX_DIR = WORKDIR / ".mailboxes"
+MAILBOX_DIR = HARNESS_CONFIG_DIR / ".mailboxes"
 MAILBOX_DIR.mkdir(parents=True, exist_ok=True)
 _LOGGER = get_logger(__name__)
 
