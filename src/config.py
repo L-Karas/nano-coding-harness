@@ -15,15 +15,21 @@ PRIMARY_MODEL = os.getenv("MODEL")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL")
 
 WORKDIR = Path.cwd()
-LOG_DIR = WORKDIR / "log"
-SKILL_DIR = WORKDIR / "skills"
-MEMORY_DIR = WORKDIR / ".memory"
-SESSION_DIR = WORKDIR / ".session"
-SESSION_INDEX = WORKDIR / ".session" / "session_index.jsonl"
+HARNESS_CONFIG_DIR = WORKDIR / ".harness"
+LOG_DIR = HARNESS_CONFIG_DIR / "log"
+SKILL_DIR = HARNESS_CONFIG_DIR / "skills"
+MEMORY_DIR = HARNESS_CONFIG_DIR / ".memory"
+SESSION_DIR = HARNESS_CONFIG_DIR / ".session"
+SESSION_INDEX = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
-MCP_CONFIG_FILE = WORKDIR / ".mcp" / ".mcp.json"
-TRANSCRIPT_DIR = WORKDIR / ".transcripts"
-TOOL_RESULTS_DIR = WORKDIR / ".task_outputs" / "tool_results"
+MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
+TRANSCRIPT_DIR = HARNESS_CONFIG_DIR / ".transcripts"
+TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
+
+if not HARNESS_CONFIG_DIR.exists():
+    HARNESS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_MAX_TOKENS = int(8e3)
 ESCALATED_MAX_TOKENS = int(16e3)

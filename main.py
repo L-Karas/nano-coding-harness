@@ -1,15 +1,13 @@
 import threading
 
+from src.config import LOG_DIR, HARNESS_CONFIG_DIR
 from src.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop
-from src.config import LOG_DIR
 from src.context import update_context
 from src.protocol_state import consume_lead_inbox
 from src.session.session import SESSION_MANAGER
 from src.tui.ui import (render_banner, get_user_input, render_user_input, clear_screen,
                         render_sessions, select_session, render_session_history)
 
-if not LOG_DIR.exists():
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 _BANNER = ("🤖 Nano-Harness Agent Loop", "Enter a question, press Enter to send. Type /exit or q to quit.")
 
