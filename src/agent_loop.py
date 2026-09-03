@@ -25,8 +25,9 @@ from src.mcps import get_client_manager
 from src.prompt import assemble_system_prompt
 from src.session.session import SESSION_MANAGER
 from src.tool_schema import BUILTIN_TOOLS
-from src.ui import render_scope, stream_assistant_response
-from src.ui import (
+from task import list_tasks
+from tui.ui import render_scope, stream_assistant_response
+from tui.ui import (
     render_tool_call,
     render_tool_result,
     render_tool_result_diff,
@@ -45,7 +46,7 @@ def assemble_tool_pool():
     """
     tools = list(BUILTIN_TOOLS)
     handlers = BUILTIN_HANDLERS
-    # todo: mcp tools
+
     try:
         mcp_client_manager = get_client_manager()
     except Exception as e:
@@ -135,6 +136,7 @@ def call_tools(tool_calls: list[dict], messages: list, handlers: dict) -> None:
         tool_call = ChatCompletionMessageToolCall(**tool_call_dict)
         tool_name = tool_call.function.name
         tool_args = json.loads(tool_call.function.arguments)
+
         render_tool_call(tool_name, tool_args)
 
         if tool_name == "compact":
@@ -246,6 +248,7 @@ def agent_loop(messages: list, context: dict):
 
         inject_background_notifications(messages)
 
+        # todo: 当有待办 todo 时才使用该提示信息插入
         if ROUNDS_SINCE_TODO >= 3:
             # messages.append({
             #     "role": "user",

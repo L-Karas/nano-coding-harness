@@ -19,7 +19,7 @@ from src.log.log import get_logger
 
 REMAIN_TOOL_RESULT_THRESHOLD = 120
 
-_loger = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 
 
 @dataclass
@@ -35,13 +35,13 @@ class CompactConfig:
 def log_compact_info(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        _loger.info(f"Running {func.__name__} ...")
+        _LOGGER.info(f"Running {func.__name__} ...")
         try:
             result = func(*args, **kwargs)
         except Exception as e:
-            _loger.exception(e)
+            _LOGGER.exception(e)
             raise e
-        _loger.info(f"Finished {func.__name__}.")
+        _LOGGER.info(f"Finished {func.__name__}.")
         return result
 
     return wrapper
@@ -54,7 +54,6 @@ def estimate_token(text: str) -> int:
     return int(len(text) * 0.75)
 
 
-# todo: messages token counter
 def estimate_size(messages: list[Union[dict, ChatCompletionMessage]]) -> int:
     total_tokens = 0
     for message in messages:
@@ -191,7 +190,7 @@ def micro_compact(messages: list) -> list:
         if estimate_token(message.get("content", "")) > REMAIN_TOOL_RESULT_THRESHOLD:
             message["content"] = "[Old tool result content cleared. Re-run if needed.]"
 
-            _loger.info(f"Cleared old tool result, index: {index}, result: {message['content'][:100]}")
+            _LOGGER.info(f"Cleared old tool result, index: {index}, result: {message['content'][:100]}")
 
     return messages
 
@@ -210,7 +209,7 @@ def write_transcript(messages: list) -> Path:
             else:
                 f.write(message.model_dump_json(ensure_ascii=False) + "\n")
 
-    _loger.info(f"Wrote messages to {path}")
+    _LOGGER.info(f"Wrote messages to {path}")
 
     return path
 
@@ -244,7 +243,7 @@ def compact_history(messages: list) -> list:
     """
     Summarize history messages
     """
-    transcript = write_transcript(messages)
+    write_transcript(messages)
     # print(f"  \033[36m[Compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages[1:])
     return messages[:1] + [{"role": "user", "content": f"<compacted-messages>{summary}</compacted-messages>"}]
@@ -253,7 +252,7 @@ def compact_history(messages: list) -> list:
 @log_compact_info
 def reactive_compact(messages: list) -> list:
     transcript = write_transcript(messages)
-    print(f"  \033[31m[Reactive compact] transcript saved: {transcript}\033[0m")
+    _LOGGER.info(f"[Reactive compact] transcript saved: {transcript}")
     tail = max(0, len(messages) - 5)
     if 0 < tail < len(messages) and is_tool_result_message(messages[tail]):
         while not message_has_tool_call(messages[tail - 1]):

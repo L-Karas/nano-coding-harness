@@ -5,7 +5,7 @@ from src.config import LOG_DIR
 from src.context import update_context
 from src.protocol_state import consume_lead_inbox
 from src.session.session import SESSION_MANAGER
-from src.ui import (render_banner, get_user_input, render_user_input, clear_screen,
+from tui.ui import (render_banner, get_user_input, render_user_input, clear_screen,
                     render_sessions, select_session, render_session_history)
 
 if not LOG_DIR.exists():

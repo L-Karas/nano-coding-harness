@@ -8,11 +8,12 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 
+from log import get_logger
 from src.config import WORKDIR
-from src.utils import terminal_print
 
 MAILBOX_DIR = WORKDIR / ".mailboxes"
 MAILBOX_DIR.mkdir(parents=True, exist_ok=True)
+_LOGGER = get_logger(__name__)
 
 
 @dataclass
@@ -33,7 +34,8 @@ class MessageBus:
         inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
         with inbox.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(msg), ensure_ascii=False) + "\n")
-            terminal_print(f"  \033[33m[Message BUS] {from_agent} → {to_agent}: ({msg_type}) {content[:50]}\033[0m")
+            _LOGGER.info(f"[Message BUS] {from_agent} → {to_agent}: ({msg_type}) {content[:50]}")
+            # terminal_print(f"  \033[33m[Message BUS] {from_agent} → {to_agent}: ({msg_type}) {content[:50]}\033[0m")
 
     def read(self, agent: str) -> list[dict]:
         inbox = MAILBOX_DIR / f"{agent}.jsonl"
@@ -42,6 +44,9 @@ class MessageBus:
 
         msgs = [json.loads(msg) for msg in inbox.read_text(encoding="utf-8").splitlines() if msg.strip()]
         inbox.unlink(missing_ok=True)
+
+        _LOGGER.info(f"[Message BUS] {agent} read {len(msgs)} messages")
+
         return msgs
 
 

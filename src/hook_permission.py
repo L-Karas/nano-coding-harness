@@ -10,7 +10,7 @@ from typing import Optional
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from src.config import WORKDIR
-from src.ui import ask_permission
+from tui.ui import ask_permission
 
 HOOKS = {"UserPromptSubmit": [], "PreToolUse": [], "PostToolUse": [], "Stop": []}
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]

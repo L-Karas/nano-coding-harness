@@ -96,7 +96,7 @@ def run_connect_mcp(name: str) -> str:
 BUILTIN_HANDLERS = {
     "bash": run_bash, "read_file": run_read, "write_file": run_write,
     "edit_file": run_edit, "grep": run_grep, "glob": run_glob,
-    "todo_write": run_todo_write, "task": spawn_subagent,
+    "todo_write": run_todo_write, "spawn_subagent": spawn_subagent,
     "load_skill": load_skill,
     "create_task": run_create_task, "list_tasks": run_list_tasks,
     "get_task": run_get_task,

@@ -141,8 +141,8 @@ BUILTIN_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "task",
-            "description": "Launch a focused subagent. Returns only its final summary.",
+            "name": "spawn_subagent",
+            "description": "Launch a subagent to handle a complex subtask. Returns only the final conclusion.",
             "parameters": {
                 "type": "object",
                 "properties": {

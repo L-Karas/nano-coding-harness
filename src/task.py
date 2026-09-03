@@ -9,11 +9,13 @@ from pathlib import Path
 
 from pydantic.dataclasses import dataclass
 
+from log import get_logger
 from src.config import WORKDIR
 
 TASK_DIR = WORKDIR / ".tasks"
 TASK_DIR.mkdir(parents=True, exist_ok=True)
 CURRENT_TODOS: list[dict] = []
+_LOGGER = get_logger(__name__)
 
 
 @dataclass
@@ -73,6 +75,9 @@ def create_task(
         blockedBy=blockedBy or []
     )
     save_task(task)
+
+    _LOGGER.info(f"[Create Task] {task.subject} (Blocked by tasks: {', '.join(blockedBy)})")
+
     return task
 
 
@@ -98,7 +103,9 @@ def claim_task(task_id: str, owner: str = "agent") -> str:
     task.owner = owner
     task.status = "in_progress"
     save_task(task)
-    print(f"  \033[36m[Claim Task] {owner} claimed task {task_id}, {task.subject} → in_progress\033[0m")
+
+    _LOGGER.info(f"[Claim Task] {owner} claimed task {task_id}, {task.subject} → in_progress")
+
     return f"Claimed Task {task_id} ({task.subject})"
 
 
@@ -111,7 +118,9 @@ def complete_task(task_id: str) -> str:
 
     unblocked_tasks = [f"Task {task.id} ({task.subject})" for task in list_tasks()
                        if task.status == "pending" and task.blockedBy and can_start(task.id)]
-    print(f"  \033[32m[Complete Task] {task.owner} completed task {task_id}, ({task.subject}) ✓\033[0m")
+
+    _LOGGER.info(f"[Complete Task] {task.owner} completed task {task_id}, ({task.subject}) ✓")
+
     msg = f"Completed Task {task_id} ({task.subject})."
     if unblocked_tasks:
         msg += f"Unblocked Tasks: {'\n'.join(unblocked_tasks)}"

@@ -6,14 +6,6 @@ from openai import OpenAI
 
 dotenv.load_dotenv()
 
-try:
-    import readline
-
-    readline.parse_and_bind('set bind-tty-special-chars off')
-    READLINE_AVAILABLE = True
-except ImportError:
-    READLINE_AVAILABLE = False
-
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL")
@@ -45,6 +37,3 @@ KEEP_RECENT_TOOL_RESULTS = 3
 PERSIST_THRESHOLD = int(3e4)
 
 CONTINUATION_PROMPT = "Continue from the previous response. Do not repeat completed work."
-
-PROMPT = "\033[36ms20 >> \033[0m"
-CLI_ACTIVE = True

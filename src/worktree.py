@@ -10,11 +10,13 @@ import subprocess
 import time
 from pathlib import Path
 
+from log import get_logger
 from src.config import WORKDIR
 from src.task import load_task, save_task
 
 WORKTREES_DIR = WORKDIR / ".worktrees"
 WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
+_LOGGER = get_logger(__name__)
 
 VALID_WT_NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -83,7 +85,9 @@ def create_worktree(name: str, task_id: str = "") -> str:
         bind_task2worktree(task_id, name)
 
     log_event("create", name, task_id)
-    print(f"  \033[33m[Worktree Create] created: {name} at {path}\033[0m")
+    # print(f"  \033[33m[Worktree Create] created: {name} at {path}\033[0m")
+    _LOGGER.info(f"[Worktree Create] created: {name} at {path}")
+
     return f"Worktree '{name}' created at {path}."
 
 
@@ -134,7 +138,9 @@ def remove_worktree(name: str, discard_changes: bool = False) -> str:
 
     run_git(["branch", "-D", f"wt/{name}"])
     log_event("remove", name)
-    print(f"  \033[33m[Worktree Remove] removed worktree '{name}' at '{path}'\033[0m")
+    # print(f"  \033[33m[Worktree Remove] removed worktree '{name}' at '{path}'\033[0m")
+    _LOGGER.info(f"[Worktree Remove] removed worktree '{name}' at '{path}'")
+
     return f"Worktree '{name}' removed at '{path}'."
 
 
