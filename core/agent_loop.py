@@ -24,7 +24,7 @@ from core.mcps import get_client_manager
 from core.prompt import assemble_system_prompt
 from core.session.session import SESSION_MANAGER
 from core.tools import get_builtin_tools, get_builtin_tool_handlers
-from core.tui.ui import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
+from core.tui.ui_textual import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
     render_tool_result_diff, render_background_notification, render_thinking_status, render_tool_calling_status
 
 ROUNDS_SINCE_TODO = 0
@@ -91,6 +91,11 @@ def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str,
     usage = None
     with render_scope():
         for chunk in stream:
+            if not chunk.choices:
+                # 代理（one-api/new-api 等）常在流末尾附 usage-only 尾块：choices 为空，仅记录 usage
+                if chunk.usage:
+                    usage = chunk.usage
+                continue
             choice = chunk.choices[0]
             if getattr(choice.delta, "reasoning_content", None):
                 continue
@@ -243,16 +248,16 @@ def agent_loop(messages: list, context: dict):
         inject_background_notifications(messages)
 
         # todo: 当有待办 todo 时才使用该提示信息插入
-        if ROUNDS_SINCE_TODO >= 3:
+        # if ROUNDS_SINCE_TODO >= 3:
             # messages.append({
             #     "role": "user",
             #     "content": "<reminder>Update your todos.</reminder>",
             # })
-            SESSION_MANAGER.add_message({
-                "role": "user",
-                "content": "<reminder>Update your todos.</reminder>",
-            })
-            ROUNDS_SINCE_TODO = 0
+            # SESSION_MANAGER.add_message({
+            #     "role": "user",
+            #     "content": "<reminder>Update your todos.</reminder>",
+            # })
+            # ROUNDS_SINCE_TODO = 0
 
         prepare_context(SESSION_MANAGER.load_messages())
         SESSION_MANAGER.update_messages(messages)
