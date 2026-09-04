@@ -35,6 +35,9 @@ from mcp.client.session_group import SseServerParameters, StreamableHttpParamete
 from mcp_types import TextContent
 
 from core.config import MCP_CONFIG_FILE
+from core.log.log import get_logger
+
+_LOGER = get_logger(__name__)
 
 _DISALLOWED_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
 _loop: Optional[asyncio.AbstractEventLoop] = None
@@ -112,7 +115,7 @@ class ClientManager:
                 session = await self.session_group.connect_to_server(server_params)
                 self.session_map[server_name] = session
             except Exception as e:
-                print(e)
+                _LOGER.warning(f"[MCP] connect {server_name} failed: {e}")
 
     async def aclose(self):
         await self.exit_stack.aclose()

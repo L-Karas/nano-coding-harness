@@ -4,7 +4,10 @@ Base Tool Handlers
 from typing import Optional
 
 from core import message_bus
+from core.log.log import get_logger
 from core.base_tools import (run_bash, run_read, run_write, run_edit, run_glob, run_todo_write, run_grep)
+
+_LOGER = get_logger(__name__)
 from core.cron_scheduler import run_list_crons, run_cancel_cron, run_schedule_cron
 from core.protocol_state import consume_lead_inbox, run_request_shutdown, run_request_plan, run_review_plan
 from core.skills import load_skill
@@ -29,7 +32,7 @@ def run_keep_worktree(name: str) -> str:
 def run_create_task(subject: str, description: str, blockedBy: Optional[list[str]] = None) -> str:
     task = create_task(subject, description, blockedBy)
     dependencies = f" (Blocked by tasks: {', '.join(blockedBy) if blockedBy else ''})"
-    print(f"  \033[34m[Create Task] {task.subject}{dependencies}\033[0m")
+    _LOGER.info(f"[Create Task] {task.subject}{dependencies}")
     return f"Created {task.id}: {task.subject}{dependencies}"
 
 

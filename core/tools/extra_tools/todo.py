@@ -4,8 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from core.tools.tool_base import BaseTool
+from core.log.log import get_logger
 
 import core.task as task
+
+_LOGER = get_logger(__name__)
 
 
 class TodoItem(BaseModel):
@@ -53,5 +56,5 @@ def run_todo_write(todos: list) -> str:
     if error:
         return error
     task.CURRENT_TODOS = todos
-    print(f"  \033[33m[Todo Update] updated {len(task.CURRENT_TODOS)} item(s)\033[0m")
+    _LOGER.info(f"[Todo Update] updated {len(task.CURRENT_TODOS)} item(s)")
     return f"Updated {len(task.CURRENT_TODOS)} todos"

@@ -11,9 +11,12 @@ from typing import Optional
 from core import config, message_bus, protocol_state
 from core.base_tools import run_bash, run_read, run_write, call_tool_handler
 from core.config import client
+from core.log.log import get_logger
 from core.protocol_state import get_request_id, ProtocolState
 from core.task import TASK_DIR, can_start, claim_task, list_tasks, load_task, complete_task
 from core.worktree import WORKTREES_DIR
+
+_LOGER = get_logger(__name__)
 
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
@@ -336,8 +339,8 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     for tool_call in response_message.tool_calls:
                         tool_name = tool_call.function.name
                         tool_args = json.loads(tool_call.function.arguments)
-                        print(f"\033[90m>   [Call tool] (Teammate: {name}) {tool_name}\033[0m")
-                        print(f"\033[90m>   [Tool arguments] (Teammate: {name}) {tool_args}\033[0m")
+                        _LOGER.info(f">   [Call tool] (Teammate: {name}) {tool_name}")
+                        _LOGER.info(f">   [Tool arguments] (Teammate: {name}) {tool_args}")
 
                         if tool_name == "submit_plan":
                             output = _teammate_submit_plan(**tool_args)
@@ -353,8 +356,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                             "content": str(output),
                         })
 
-                        print(f"\033[90m>   [Tool result] (Teammate: {name}) {output[:100]}\033[0m")
-
+                        _LOGER.info(f">   [Tool result] (Teammate: {name}) {output[:100]}")
                         if protocol_ctx["waiting_plan"]:
                             # Ignore later tool_calls from the same model
                             # response; they belong after approval, not before.

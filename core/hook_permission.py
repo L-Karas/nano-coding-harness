@@ -10,7 +10,10 @@ from typing import Optional
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from core.config import WORKDIR
-from core.tui.ui import ask_permission
+from core.log.log import get_logger
+from core.tui.ui_textual import ask_permission
+
+_LOGER = get_logger(__name__)
 
 HOOKS = {"UserPromptSubmit": [], "PreToolUse": [], "PostToolUse": [], "Stop": []}
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
@@ -64,19 +67,19 @@ def permission_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = No
 
 
 def log_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None):
-    print(f"\033[90m[HOOK] {tool_call.function.name}\033[0m")
+    _LOGER.info(f"[HOOK] {tool_call.function.name}")
     return None
 
 
 def large_output_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None, tool_output: str = ""):
     if len(str(tool_output)) > 1e5:
-        print(f"\033[33m[HOOK] large output from {tool_call.function.name}: "
-              f"{len(str(tool_output))} chars\033[0m")
+        _LOGER.warning(f"[HOOK] large output from {tool_call.function.name}: "
+                       f"{len(str(tool_output))} chars")
     return None
 
 
 def user_prompt_hook(query: str):
-    print(f"\033[90m[HOOK] UserPromptSubmit: {query}\033[0m")
+    _LOGER.info(f"[HOOK] UserPromptSubmit: {query}")
     return None
 
 
@@ -85,7 +88,7 @@ def stop_hook(messages: list):
     for message in messages:
         if not isinstance(message, dict):
             tool_count += len(message.tool_calls)
-    print(f"\033[90m[HOOK] Stop: {tool_count} tool result(s)\033[0m")
+    _LOGER.info(f"[HOOK] Stop: {tool_count} tool result(s)")
     return None
 
 

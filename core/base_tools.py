@@ -12,6 +12,9 @@ from typing import Optional
 
 from core import task
 from core.config import WORKDIR
+from core.log.log import get_logger
+
+_LOGER = get_logger(__name__)
 
 
 def run_bash(command: str, cwd: Optional[Path] = None, run_in_background: bool = False) -> str:
@@ -207,7 +210,7 @@ def run_todo_write(todos: list) -> str:
     if error:
         return error
     task.CURRENT_TODOS = todos
-    print(f"  \033[33m[Todo Update] updated {len(task.CURRENT_TODOS)} item(s)\033[0m")
+    _LOGER.info(f"[Todo Update] updated {len(task.CURRENT_TODOS)} item(s)")
     return f"Updated {len(task.CURRENT_TODOS)} todos"
 
 

@@ -12,6 +12,9 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from core.config import WORKDIR
+from core.log.log import get_logger
+
+_LOGER = get_logger(__name__)
 
 DURABLE_PATH = WORKDIR / ".scheduled_tasks.json"
 SCHEDULED_JOBS: dict[str, "CronJob"] = {}
@@ -191,7 +194,7 @@ def cron_scheduler_loop():
                             if job.durable:
                                 save_durable_jobs()
                 except Exception as e:
-                    print(f"  \033[31m[Cron error] {job.id}: {e}\033[0m")
+                    _LOGER.warning(f"[Cron error] {job.id}: {e}")
 
 
 def consume_cron_queue() -> list[CronJob]:

@@ -24,3 +24,4 @@ wheels/
 /core/**
 !/core/**/
 !/core/**/*.py
+!/_repro_sessions.py
