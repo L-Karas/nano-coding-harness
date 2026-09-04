@@ -21,6 +21,6 @@ wheels/
 /tests
 
 # Track only .py files under src
-/src/**
-!/src/**/
-!/src/**/*.py
+/core/**
+!/core/**/
+!/core/**/*.py

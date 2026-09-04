@@ -1,12 +1,12 @@
 import threading
 
-from src.config import HARNESS_CONFIG_DIR
-from src.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop
-from src.context import update_context
-from src.protocol_state import consume_lead_inbox
-from src.session.session import SESSION_MANAGER
-from src.tui.ui import (render_banner, get_user_input, render_user_input, clear_screen,
-                        render_sessions, select_session, render_session_history)
+from core.config import HARNESS_CONFIG_DIR
+from core.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop
+from core.context import update_context
+from core.protocol_state import consume_lead_inbox
+from core.session.session import SESSION_MANAGER
+from core.tui.ui import (render_banner, get_user_input, render_user_input, clear_screen,
+                         render_sessions, select_session, render_session_history)
 
 if not HARNESS_CONFIG_DIR.exists():
     HARNESS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
