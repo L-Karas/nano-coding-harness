@@ -24,7 +24,7 @@ from core.mcps import get_client_manager
 from core.prompt import assemble_system_prompt
 from core.session.session import SESSION_MANAGER
 from core.tools import get_builtin_tools, get_builtin_tool_handlers
-from core.tui.ui_textual import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
+from core.tui.render import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
     render_tool_result_diff, render_background_notification, render_thinking_status, render_tool_calling_status
 
 ROUNDS_SINCE_TODO = 0
@@ -101,7 +101,7 @@ def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str,
                 continue
             if choice.delta.content:
                 accumulated_text += choice.delta.content
-                stream_assistant_response(accumulated_text)
+                stream_assistant_response(choice.delta.content)  # 只传新增片段，UI 端增量追加渲染
             if choice.delta.tool_calls:
                 for delta in choice.delta.tool_calls:
                     while len(tool_calls) <= delta.index:

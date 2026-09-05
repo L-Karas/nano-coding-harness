@@ -1,0 +1,180 @@
+"""线程安全渲染 API：把任意线程的渲染调用桥接进 ChatApp 事件循环。
+
+模块级函数与 ChatApp 内部方法一一对应（签名对齐原 core/tui/ui.py）：
+卡片渲染 / 流式回复 / 状态行上下文 / 会话历史回放 / 权限询问。
+App 线程内直接执行，其它线程经 app.call_from_thread 桥接；
+run()（core.tui.ui_textual）启动期间持有本模块的 _APP 全局，
+未启动时调用渲染函数抛 RuntimeError。
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+from rich.markup import escape
+from rich.text import Text
+
+from core.tui.theme import _markup
+
+if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免与 ui_textual 循环导入
+    from core.tui.ui_textual import ChatApp
+
+# 模块级桥接：渲染函数可在任意线程调用（App 线程内直连，其余桥接进事件循环）
+
+_APP: Optional[ChatApp] = None
+
+
+def _exec(fn: Callable[[ChatApp], Any]) -> Any:
+    """在 App 线程中执行 fn(app)；调用方线程为 App 线程时直接执行。"""
+    app = _APP
+    if app is None:
+        raise RuntimeError("Textual UI 未运行：请先调用 run()（或自行 ChatApp().run()）再执行渲染函数")
+    if threading.get_ident() == app._thread_id:
+        return fn(app)
+    try:
+        return app.call_from_thread(fn, app)
+    except RuntimeError:
+        return None  # App 退出竞态
+
+
+def _dim_body(text: str) -> Text:
+    """暗灰正文卡片体。先 escape 再嵌标记：方括号会被 Rich 解析成样式标签，
+    不转义会导致渲染期 MissingStyle（如样式 'truncated 8 lines'）崩溃。"""
+    return _markup(f"[dim #e2e8f0]{escape(text)}[/dim #e2e8f0]")
+
+
+def _require_worker_thread() -> None:
+    app = _APP
+    if app is not None and threading.get_ident() == app._thread_id:
+        raise RuntimeError("ask_permission 必须在非 App 线程调用（如 handle_query 回调内部）")
+
+
+def render_user_input(user_text: str) -> None:
+    _exec(lambda app: app._add_card("user", _markup(f"[bold #f9fafb]{escape(user_text)}[/bold #f9fafb]")))
+
+
+def render_tool_call(tool_name: str, tool_args: Any) -> None:
+    try:
+        args_str = json.dumps(tool_args, ensure_ascii=False, indent=2) if isinstance(tool_args, (dict, list)) \
+            else str(tool_args)
+    except Exception:
+        args_str = str(tool_args)
+    head = _markup(f"[bold #fde68a]Tool:[/bold #fde68a] [bold white]{escape(tool_name)}[/bold white]\n")
+    _exec(lambda app: app._add_card("tool", head + _dim_body(args_str)))
+
+
+def render_tool_result(output: Any, max_lines: int = 12) -> None:
+    """工具输出卡片：超过 max_lines 的行折叠为 "... [truncated N lines]" 提示。"""
+    output_str = str(output)
+    lines = output_str.splitlines()
+    body = _dim_body(output_str if len(lines) <= max_lines else "\n".join(lines[:max_lines]))
+    if len(lines) > max_lines:  # 截断提示自身含方括号，同样需 escape（见 _dim_body）
+        body += _markup(f"\n[dim yellow]{escape(f'... [truncated {len(lines) - max_lines} lines]')}[/dim yellow]")
+    _exec(lambda app: app._add_card("result", body))
+
+
+def render_tool_result_diff(rows: list[tuple[str, int, str]]) -> None:
+    width = max(len(str(n)) for _, n, _ in rows)
+    styled = [Text(f"{kind}{n:>{width}} │ {line}",
+                   style={"+": "green", "-": "red", " ": "dim"}.get(kind, "dim")) for kind, n, line in rows]
+    _exec(lambda app: app._add_card("result", Text("\n").join(styled)))
+
+
+def render_background_notification(message: str, title: str = "🔔 Background Task") -> None:
+    """后台任务通知卡片：加粗标题行 + 暗灰正文（对齐原 ui.py 的面板标题渲染）。"""
+    body = _markup(f"[bold #f8fafc]{escape(title)}[/bold #f8fafc]\n") + _dim_body(message)
+    _exec(lambda app: app._add_card("notice", body))
+
+
+def render_sessions() -> None:
+    """空会话提示卡片（非空列表的展示与选择在 SessionPickerScreen）"""
+    _exec(lambda app: app._add_card("sessions", _dim_body("暂无会话")))
+
+
+def render_session_history(session) -> None:
+    """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复"""
+    for message in session.messages:
+        if message.role == "user":
+            render_user_input(message.content)
+        elif message.role == "assistant":
+            for tool_call in (message.tool_calls or []):
+                fn = tool_call.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments", ""))
+                except (TypeError, ValueError):
+                    args = fn.get("arguments", "")
+                render_tool_call(fn.get("name", "tool"), args)
+            if message.content:
+                render_assistant_response(message.content)
+        elif message.role == "tool":
+            render_tool_result(message.content)
+
+
+@contextmanager
+def render_scope():
+    """标记一轮流式输出的结束：停掉当前 Markdown 流（App 内卡片常驻，无需二次静态打印）"""
+    try:
+        yield
+    finally:
+        _exec(lambda app: app._stop_stream())
+
+
+def stream_assistant_response(chunk: str = "") -> None:
+    """流式增量更新当前 Assistant 卡片（首次调用自动建卡）：chunk 为本次新增片段，勿传累计全量文本"""
+    if not chunk:
+        return
+    _exec(lambda app: app._stream_update(chunk))
+
+
+def render_assistant_response(content: str) -> None:
+    """渲染一张静态 Assistant Markdown 卡片（链接可点击：系统默认浏览器打开）"""
+    if not content:
+        return
+    _exec(lambda app: app._add_markdown_card(content))
+
+
+@contextmanager
+def _status_context(text: str):
+    """状态行加载动画上下文：进入后 text 前轮播 spinner 帧（由 App 内 interval 驱动），
+    退出后恢复进入前的状态（文本 + 是否动画），busy「处理中…」动画因此无缝续播。"""
+    previous = _exec(lambda app: app._status_swap(text, spin=True))
+    try:
+        yield
+    finally:
+        if previous is not None:
+            _exec(lambda app: app._set_status_text(*previous))
+
+
+def render_thinking_status(message: str = "Thinking..."):
+    """返回状态行上下文管理器：spinner 加载动画 · 思考中"""
+    return _status_context(message)
+
+
+def render_tool_calling_status(message: str):
+    """返回状态行上下文管理器：spinner 加载动画 · 工具执行中"""
+    return _status_context(message)
+
+
+def ask_permission(message: str, prompt_str: str = "  Allowed? [y/N] ") -> str:
+    """渲染权限确认卡片并阻塞等待回答（只能在非 App 线程调用），返回原始输入文本"""
+    _require_worker_thread()
+    app = _APP
+    if app is None:
+        raise RuntimeError("Textual UI 未运行：请先调用 run()")
+    done = threading.Event()
+    holder: dict[str, Any] = {"value": ""}
+
+    def _ask(app: ChatApp) -> None:
+        app._perm_holder = holder
+        app._perm_done = done
+        app._begin_permission(message, prompt_str)
+
+    try:
+        _exec(_ask)
+        done.wait()
+    except Exception:
+        return ""
+    return holder["value"]

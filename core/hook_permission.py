@@ -11,7 +11,7 @@ from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from core.config import WORKDIR
 from core.log.log import get_logger
-from core.tui.ui_textual import ask_permission
+from core.tui.render import ask_permission
 
 _LOGER = get_logger(__name__)
 

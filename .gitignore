@@ -24,4 +24,4 @@ wheels/
 /core/**
 !/core/**/
 !/core/**/*.py
-!/_repro_sessions.py
+/core/tui/demo.py

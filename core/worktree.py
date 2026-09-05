@@ -10,11 +10,11 @@ import subprocess
 import time
 from pathlib import Path
 
-from core.config import WORKDIR
+from core.config import WORKDIR, HARNESS_CONFIG_DIR
 from core.log import get_logger
 from core.task import load_task, save_task
 
-WORKTREES_DIR = WORKDIR / ".worktrees"
+WORKTREES_DIR = HARNESS_CONFIG_DIR / ".worktrees"
 WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
 _LOGGER = get_logger(__name__)
 
