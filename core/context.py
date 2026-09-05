@@ -2,14 +2,13 @@
 Context
 """
 from core import teammates
-from core.config import MEMORY_INDEX
+from core.memory.memory import MEMORY_MANAGER
 
 
-# todo: mcp connect support
 def update_context(context: dict, messages: list) -> dict:
-    memories = ""
-    if MEMORY_INDEX.exists():
-        memories = str(MEMORY_INDEX.read_text(encoding="utf-8"))
+    memories = MEMORY_MANAGER.load_memories()
+    if memories:
+        memories = "\n".join(f"- {mem.content}" for mem in memories)
     return {
         "memories": memories,
         "connect_mcp": [],
