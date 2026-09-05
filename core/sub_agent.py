@@ -5,7 +5,7 @@ import json
 
 from core.base_tools import call_tool_handler
 from core.config import WORKDIR, client, SUB_MODEL
-from core.hook_permission import trigger_hooks
+from core.permission.hook_permission import trigger_hooks
 
 SUB_SYSTEM = (f"You are a coding subagent at {WORKDIR}."
               f"Complete the task, then return a concise final conclusion. "

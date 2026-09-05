@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from core.skills import load_skill
+from core.skill import load_skill
 from core.tools.tool_base import BaseTool
 
 

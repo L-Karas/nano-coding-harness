@@ -15,7 +15,7 @@ from core.tui.render import ask_permission
 
 _LOGER = get_logger(__name__)
 
-HOOKS = {"UserPromptSubmit": [], "PreToolUse": [], "PostToolUse": [], "Stop": []}
+HOOKS = {"PreToolUse": [], "PostToolUse": []}
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
 DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777"]
 
@@ -60,7 +60,7 @@ def permission_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = No
                 return "Permission denied by user"
 
     # todo: mcp tool
-    if tool_call.function.name.startswith("mcp_") and "deploy" in tool_call.function.name:
+    if tool_call.function.name.startswith("mcp_"):
         pass
 
     return None

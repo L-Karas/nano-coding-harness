@@ -17,10 +17,10 @@ from core.config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX
     CONTINUATION_PROMPT
 from core.context import update_context
 from core.cron_scheduler import consume_cron_queue
-from core.error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
-from core.hook_permission import trigger_hooks
+from core.recovery.error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
+from core.permission.hook_permission import trigger_hooks
 from core.log.log import get_logger
-from core.mcps import get_client_manager
+from core.mcp.mcps import get_client_manager
 from core.prompt import assemble_system_prompt
 from core.session.session import SESSION_MANAGER
 from core.tools import get_builtin_tools, get_builtin_tool_handlers
@@ -36,8 +36,6 @@ def assemble_tool_pool():
     """
     Merge builtin tools + all MCP tools into a single tool pool.
     """
-    # tools = list(BUILTIN_TOOLS)
-    # handlers = BUILTIN_HANDLERS
     tools = get_builtin_tools("main")
     handlers = get_builtin_tool_handlers("main")
 

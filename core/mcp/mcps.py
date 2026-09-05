@@ -26,6 +26,7 @@ import asyncio
 import json
 import re
 import threading
+import time
 from concurrent.futures import Future
 from contextlib import AsyncExitStack
 from typing import Optional
@@ -43,6 +44,11 @@ _DISALLOWED_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
 _loop: Optional[asyncio.AbstractEventLoop] = None
 _manager_future: Optional[Future["ClientManager"]] = None
 _manager_lock = threading.Lock()
+# 有界等待策略：一次调用最多阻塞 _MANAGER_WAIT_TIMEOUT，且每个 _RETRY_INTERVAL 窗口内至多一次；
+# 慢速建连只会拖住一个 agent 轮次一次，不会每轮都卡。
+_MANAGER_WAIT_TIMEOUT = 5.0
+_RETRY_INTERVAL = 30.0
+_last_attempt_at = 0.0
 
 
 class ClientManager:
@@ -196,13 +202,8 @@ def _get_loop() -> asyncio.AbstractEventLoop:
     return _loop
 
 
-def get_client_manager() -> ClientManager:
-    """
-    Lazily build and cache the singleton ClientManager on the background loop.
-    run_coroutine_threadsafe returns a Future that re-raises the coroutine's
-    exception on .result(), so a failed init clears the cache and the next
-    call retries.
-    """
+def _kick_manager() -> None:
+    """Create the singleton init future if absent. Thread-safe, idempotent."""
     global _manager_future
     if _manager_future is None:
         with _manager_lock:
@@ -210,8 +211,45 @@ def get_client_manager() -> ClientManager:
                 _manager_future = asyncio.run_coroutine_threadsafe(
                     aget_client_manager(), _get_loop()
                 )
+
+
+def get_client_manager() -> ClientManager:
+    """
+    Lazily build and cache the singleton ClientManager on the background loop.
+
+    调用方永远不会被无限期卡住：首次获取最多等 _MANAGER_WAIT_TIMEOUT，且每个
+    _RETRY_INTERVAL 窗口内至多等一次；建连仍未完成时抛 RuntimeError（由调用方
+    记录日志并回退到内置工具）——工具池每轮都会重组装，下一轮建连完成自然带上 MCP 工具。
+    run_coroutine_threadsafe returns a Future that re-raises the coroutine's
+    exception on .result(), so a failed init clears the cache and the next
+    call retries. A timed-out wait keeps the pending future (connect continues
+    in the background) and clears nothing.
+    """
+    global _manager_future, _last_attempt_at
+
+    _kick_manager()
+
+    with _manager_lock:
+        wait = 0.0 if time.monotonic() - _last_attempt_at < _RETRY_INTERVAL else _MANAGER_WAIT_TIMEOUT
+
     try:
-        manager = _manager_future.result()
+        manager = _manager_future.result(timeout=wait)
+    except TimeoutError:
+        # 建连仍在后台进行：保留 pending future，不清理缓存；
+        # 刚等过一轮，窗口内后续轮次不再等，避免每轮都被拖住
+        with _manager_lock:
+            _last_attempt_at = time.monotonic()
+        raise RuntimeError(
+            "MCP manager still connecting, falling back to builtin tools this round"
+        ) from None
+    except Exception:
+        # 建连本身失败：清缓存，下次调用重试
+        with _manager_lock:
+            _manager_future = None
+        raise
+
+    # Ready: rebuild only when the config file changed.
+    try:
         _manager_future = asyncio.run_coroutine_threadsafe(
             _update_client_manager(manager), _get_loop()
         )
@@ -220,6 +258,18 @@ def get_client_manager() -> ClientManager:
         with _manager_lock:
             _manager_future = None
         raise
+
+
+def warmup() -> None:
+    """
+    阻塞直至 MCP 建连完成或失败；由调用方（main.py）在 daemon 线程里执行，
+    使首个 agent 轮次通常已就绪。
+    """
+    _kick_manager()
+    try:
+        _manager_future.result()
+    except Exception as e:
+        _LOGER.warning(f"[MCP] warmup failed: {e}")
 
 
 if __name__ == '__main__':

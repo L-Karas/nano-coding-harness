@@ -3,6 +3,7 @@ import threading
 from core.config import HARNESS_CONFIG_DIR
 from core.agent_loop import cron_auto_loop, AGENT_LOCK, agent_loop
 from core.context import update_context
+from core.mcp.mcps import warmup
 from core.protocol_state import consume_lead_inbox
 from core.session.session import SESSION_MANAGER
 from core.tui.ui_textual import run
@@ -10,7 +11,7 @@ from core.tui.ui_textual import run
 if not HARNESS_CONFIG_DIR.exists():
     HARNESS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-_BANNER = ("🤖 Nano-Harness Agent Loop", "Enter a question, press Enter to send. Type /exit or q to quit.")
+_BANNER = ("🤖 Nano-Harness Agent", "Enter a question, press Enter to send. Type /exit or q to quit.")
 
 
 def make_agent_turn(messages: list, context: dict):
@@ -46,6 +47,8 @@ def make_agent_turn(messages: list, context: dict):
 def main():
     messages = []
     context = update_context({}, [])
+    # 后台线程预热 MCP 连接（阻塞至就绪或失败），避免首个 agent 轮次被慢建连卡住
+    threading.Thread(target=warmup, name="mcp-warmup", daemon=True).start()
     threading.Thread(target=cron_auto_loop, args=(messages, context), daemon=True).start()
     run(handle_query=make_agent_turn(messages, context), session_manager=SESSION_MANAGER, banner=_BANNER)
 

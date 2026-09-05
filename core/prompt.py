@@ -4,7 +4,7 @@ Prompt Assemble
 from datetime import datetime
 
 from core.config import WORKDIR
-from core.skills import list_skills
+from core.skill import list_skills
 
 PROMPT_SECTIONS = {
     "identity": "You are a coding agent. Act, don't explain.",
