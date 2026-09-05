@@ -1,0 +1,169 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Nano-Harness 全局样式表
+   （原 core/tui/theme.py 的 _APP_CSS，ChatApp 经 CSS_PATH="app.css" 加载）
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 全局底色 ──
+   根与整屏都用终端默认色 / 透明，透出 terminal 原生底色；
+   否则 Textual 会垫 #121212 主题色（DOM 根用 SGR 49 终端默认色）。 */
+App {
+    background: ansi_default;
+}
+
+Screen {
+    background: transparent;
+}
+
+/* ── 主界面 ── */
+
+/* 标题栏 */
+#titlebar {
+    width: 1fr;
+    height: auto;
+    background: #0c1a2e;
+    padding: 0 2;
+}
+#titlebar > * { width: 1fr; }
+
+/* 聊天画板：1fr 撑满视口，仅内容超出时出现纵向滑块。
+   滑块 1 列宽：拖动拇指 / 点击轨道翻页 / 滚轮浏览历史；
+   颜色与卡片边框一致，hover/拖动高亮。 */
+#chat {
+    width: 1fr;
+    height: 1fr;
+    background: transparent;
+    padding: 1 0;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: transparent;
+    scrollbar-background-hover: transparent;
+    scrollbar-background-active: transparent;
+    scrollbar-color: #475569;
+    scrollbar-color-hover: #94a3b8;
+    scrollbar-color-active: #38bdf8;
+}
+
+/* 底部停靠区：状态行 + 输入条 */
+#dock {
+    dock: bottom;
+    width: 1fr;
+    height: auto;
+    background: transparent;
+}
+
+#status {
+    width: 1fr;
+    height: 1;
+    background: transparent;
+    color: #a5b4fc;
+    padding: 0 2;
+}
+
+/* ── 输入区 ── */
+
+/* 输入框两侧的补全浮层（/ 指令与 @ 文件候选）：默认隐藏，键入时由代码显示 */
+#cmd-suggest,
+#file-suggest {
+    display: none;
+    width: 1fr;
+    height: auto;
+    margin: 0 2;
+    background: transparent;
+    border: solid #475569;
+}
+#cmd-suggest  { max-height: 6; }   /* / 指令候选最多 6 行 */
+#file-suggest { max-height: 10; }  /* @ 文件候选最多 10 行 */
+#cmd-suggest ListItem,
+#file-suggest ListItem { height: 1; padding: 0 1; }
+
+#inputbar {
+    width: 1fr;
+    height: auto;
+    background: transparent;
+    border-top: heavy #475569;
+    border-bottom: heavy #475569;
+}
+
+#prompt-mark {
+    width: auto;
+    color: #7dd3fc;
+    padding: 0 0 0 2;
+}
+
+/* height:auto：空值 1 行；内容超出终端宽度自动换行、多行伸缩；超 10 行时内部滚动 */
+#prompt {
+    width: 1fr;
+    height: auto;
+    max-height: 10;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 0 1 0 1;
+}
+
+/* 输入条正下方的信息行：当前工作目录 (git 分支)，文本靠最左 */
+#footer {
+    width: 1fr;
+    height: 1;
+    background: transparent;
+    color: #64748b;
+    padding: 0 2;
+}
+
+/* ── 消息卡片 ── */
+
+/* height:auto 才能随内容量伸缩（Vertical 默认 height:1fr 会按视口均分并裁掉超出内容）；
+   padding 1 2 让内容与边界留白；无左右 margin 保证卡片与终端同宽 */
+.card {
+    width: 1fr;
+    height: auto;
+    margin: 0 0 1 0;
+    padding: 1 2;
+}
+.card > * { width: 1fr; }
+.card .card-body { text-align: left; }
+
+/* Markdown 自带 padding:0 2，去掉使内容与其它卡片对齐 */
+.card.assistant > Markdown { padding: 0; }
+
+/* 每类消息卡片：左边实线色 + 背景色（对齐原 ui.py 配色；标题行已去除，靠色条/底色区分类型）
+   user=用户 · tool=工具调用 · result=工具结果 · assistant=回复 · notice=提示 · sessions=会话列表 · perm=权限确认 */
+.card.user      { background: #374151; border-left: heavy #6b7280; }
+.card.tool      { background: #261f0d; border-left: heavy #f59e0b; }
+.card.result    { background: #11221b; border-left: heavy #10b981; }
+.card.assistant { background: #1e1b2e; border-left: heavy #c084fc; }
+.card.notice    { background: #0f172a; border-left: heavy #22d3ee; }
+.card.sessions  { background: #0c1a2e; border-left: heavy #38bdf8; }
+.card.perm      { background: #3b2a10; border-left: heavy #f59e0b; }
+
+/* ── 会话选择弹窗 ── */
+
+.picker {
+    width: 76%;
+    height: 80%;
+    padding: 1 2;
+    background: transparent;  /* 背景透出终端原生底色（与聊天区一致）；会话列表本身透明，行高亮仍可见 */
+    border: round #38bdf8;
+}
+
+/* 去掉默认的主题色半透明遮罩，整屏保持 terminal 底色 */
+ModalScreen { background: transparent; }
+
+.picker-title {
+    width: 1fr;
+    text-align: center;
+    color: #38bdf8;
+    padding: 0 0 1 0;
+}
+
+.picker-hint {
+    width: 1fr;
+    color: #64748b;
+    padding: 1 0 0 0;
+}
+
+#sess-list {
+    border: none;
+    background: transparent;
+    height: 1fr;
+    margin-top: 1;
+}

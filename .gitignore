@@ -25,3 +25,4 @@ wheels/
 !/core/**/
 !/core/**/*.py
 /core/tui/demo.py
+!/core/tui/app.css

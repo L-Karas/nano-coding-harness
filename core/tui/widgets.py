@@ -14,6 +14,7 @@ from rich.console import Console, ConsoleOptions, RenderResult
 from rich.measure import Measurement
 from rich.text import Text
 from textual import events
+from textual.app import ComposeResult
 from textual.containers import CenterMiddle, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, OptionList, Static, TextArea
@@ -244,7 +245,7 @@ class _CommandInput(TextArea):
                             if value.startswith("/") and " " not in value
                             and c.startswith(value) and c != value]
         self._hl = 0
-        for item, cmd in zip(lv.children, SLASH_COMMANDS):  # 4 个子项固定挂载，仅切换 display
+        for item, cmd in zip(lv.children, SLASH_COMMANDS):  # 子项固定挂载，仅切换 display
             item.styles.display = "block" if cmd in self._candidates else "none"
         if self._candidates:
             lv.styles.display = "block"

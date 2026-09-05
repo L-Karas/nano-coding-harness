@@ -7,7 +7,7 @@ import os
 import subprocess
 
 # Tab 补全的指令表（/quit 是 /exit 的别名，不列入以免循环重复）
-SLASH_COMMANDS = ["/exit", "/clear", "/new", "/sessions"]
+SLASH_COMMANDS = ["/new", "/sessions", "/exit"]
 
 # 遍历时整棵剪掉的目录名（.venv 等点开头目录由下方 dot 规则覆盖，不重复列）
 _SKIP_DIR_NAMES = frozenset({"venv", "__pycache__", "build", "dist", "node_modules"})

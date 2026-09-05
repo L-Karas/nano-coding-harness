@@ -6,7 +6,8 @@ Textual 版终端界面（core/tui/ui.py 的 Textual 重构，独立新模块，
 不再依赖 Live 原地重绘 / prompt_toolkit 行输入。
 
 模块划分（按逻辑边界拆自本文件，见各模块 docstring）：
-- theme.py    主题常量与全局 CSS（卡片配色 / 动画帧 / _markup 安全解析）
+- theme.py    主题常量（标题文案 / 动画帧 / _markup 安全解析）
+- app.css     全局样式表（原 theme._APP_CSS，ChatApp 经 CSS_PATH 加载）
 - widgets.py  部件：会话选择弹窗、带 / 指令与 @ 文件补全的输入框
 - render.py   线程安全渲染 API：任意线程可调，驱动 ChatApp 内部方法
 - demo.py     无 handle_query 时的内置演示 Agent
@@ -40,8 +41,27 @@ from rich.markup import escape
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Input, Label, ListItem, ListView, Markdown, OptionList, Static, TextArea, Footer, Header
+from textual.widgets import Input, Label, ListItem, ListView, Markdown, OptionList, Static, TextArea
 from textual.widgets.markdown import MarkdownStream
+
+import core.tui.render as _render  # run() 期间把 ChatApp 实例挂到渲染桥接的 _APP 全局（见 run()）
+from core.tui.demo import _demo_agent
+from core.tui.render import (
+    render_background_notification,
+    render_sessions,
+    render_session_history,
+    render_tool_result,
+    render_user_input,
+)
+from core.tui.theme import (
+    DEFAULT_SUBTITLE,
+    DEFAULT_TITLE,
+    _PLACEHOLDER,
+    _SPINNER_FRAMES,
+    _markup,
+)
+from core.tui.utils import SLASH_COMMANDS, current_git_branch, working_directory
+from core.tui.widgets import SessionPickerScreen, _CommandInput, _match_project_entries
 
 
 class _ChatBoard(VerticalScroll):
@@ -59,26 +79,6 @@ class _ChatBoard(VerticalScroll):
             value = 0
         super().set_reactive(reactive, value)
 
-import core.tui.render as _render  # run() 期间把实例挂到渲染桥接的 _APP 全局
-from core.tui.demo import _demo_agent
-from core.tui.render import (
-    render_background_notification,
-    render_sessions,
-    render_session_history,
-    render_tool_result,
-    render_user_input,
-)
-from core.tui.theme import (
-    DEFAULT_SUBTITLE,
-    DEFAULT_TITLE,
-    _APP_CSS,
-    _PLACEHOLDER,
-    _SPINNER_FRAMES,
-    _markup,
-)
-from core.tui.utils import SLASH_COMMANDS, current_git_branch, working_directory
-from core.tui.widgets import SessionPickerScreen, _CommandInput, _match_project_entries
-
 
 class ChatApp(App):
     """Nano-Harness 对话主界面：标题栏 + 卡片式聊天记录 + 状态行 + 输入框。
@@ -88,7 +88,7 @@ class ChatApp(App):
                      load_session / add_message / current_session 的对象（如 core.session 的 SESSION_MANAGER）。
     """
 
-    CSS = _APP_CSS
+    CSS_PATH = "app.css"  # 同目录样式表，路径相对本模块文件
     TITLE = "Nano-Harness"
     SUB_TITLE = "Textual UI"
 
@@ -222,7 +222,7 @@ class ChatApp(App):
     def _run_stream_task(self, coro: Any, what: str) -> None:
         """把流协程挂到当前事件循环后台执行（调用方必在 App 线程，_exec 保证）。
         MarkdownStream 内部合并过密 chunk、后台串行解析未解析行，长文档不再每 chunk 整篇重建块；
-        失败仅记录（卡片已被 /clear 移除等竞态）。"""
+        失败仅记录（卡片可能已被清屏移除等竞态）。"""
         async def _guarded() -> None:
             try:
                 await coro
@@ -232,7 +232,7 @@ class ChatApp(App):
         asyncio.get_running_loop().create_task(_guarded())
 
     def _stop_stream(self) -> None:
-        """停掉当前流卡片的 MarkdownStream 后台任务并复位句柄（回合结束 / /clear），防后台任务泄漏"""
+        """停掉当前流卡片的 MarkdownStream 后台任务并复位句柄（回合结束 / 清屏），防后台任务泄漏"""
         self._active_stream = None
         if self._markdown_stream is not None:
             stream, self._markdown_stream = self._markdown_stream, None
@@ -268,22 +268,17 @@ class ChatApp(App):
         cmd = query.lower()
         if cmd in ("/exit", "/quit"):
             self.exit()
-        elif cmd == "/clear":
-            self._clear_cards()
-        elif cmd == "/new":
-            if self._busy:
-                # 回合进行中不允许 /new：清空会话指针会让本轮后续 add_message 自动建出不属于本轮的会话
-                render_background_notification("上一轮仍在运行，请稍候…", title="⏳ Busy")
-            else:
-                # 延迟创建：仅丢弃当前会话指针，下一条用户消息到达时由 add_message() 自动建新会话
-                # （见 session.py：add_message 在 current_session 为空时调用 new_session），避免空会话
-                if self._manager is not None:
-                    self._manager.current_session = ""
-                self._clear_cards()
         elif cmd == "/sessions":
             self._open_sessions()
         elif self._busy:
+            # 回合进行中拒绝 /new 与普通消息：/new 若清空会话指针，本轮后续 add_message
+            # 会把回话写进新建的会话（见 session.py：current_session 为空时自动 new_session）
             render_background_notification("上一轮仍在运行，请稍候…", title="⏳ Busy")
+        elif cmd == "/new":
+            # 延迟创建：仅丢弃当前会话指针，下一条用户消息到达时由 add_message() 自动建新会话，避免空会话
+            if self._manager is not None:
+                self._manager.current_session = ""
+            self._clear_cards()
         else:
             self._busy = True
             self._prompt().disabled = True
@@ -388,7 +383,11 @@ if __name__ == "__main__":
             app = ChatApp(handle_query=_demo_agent)
             _render._APP = app  # 冒烟不经 run()：直接把实例挂到渲染桥接全局
             try:
-                async with app.run_test() as pilot:
+                async with app.run_test() as pilot:                    async def settle(pilot, times=10, delay=0.02) -> None:
+                        """等 UI 稳定：连做几次短 pause 让事件循环推进（异步挂载/渲染完成）"""
+                        for _ in range(times):
+                            await pilot.pause(delay)
+
                     await pilot.pause(0.2)
                     prompt = app.query_one("#prompt", _CommandInput)
                     # 输入框宽度应占满终端宽度（与 terminal 一致，不随内容变化）
@@ -405,8 +404,7 @@ if __name__ == "__main__":
                             break
                     assert not app._busy, "回合未结束"
                     render_tool_result("line\n" * 15)  # 触发截断提示（含方括号），回归渲染期 MissingStyle
-                    for _ in range(10):
-                        await pilot.pause(0.05)
+                    await settle(pilot, 10, 0.05)
                     assert app._exception is None, f"渲染异常: {app._exception}"
                     cards = list(app.query("#chat .card"))
                     assert len(cards) >= 5, f"卡片数量不足: {len(cards)}"
@@ -419,14 +417,12 @@ if __name__ == "__main__":
                     parts = ["## 标题\n", "第一段文字\n\n", "```python\nprint(1)\n```\n", "结尾"]
                     for p in parts:
                         app._stream_update(p)
-                        for _ in range(10):
-                            await pilot.pause(0.02)
+                        await settle(pilot)
                     md = list(app.query("#chat .card.assistant Markdown"))[-1]  # 本轮新卡（demo 卡在前）
                     assert md.source == "".join(parts), \
                         f"增量流式内容不一致: {md.source!r}"
                     app._stop_stream()  # 停掉本轮 MarkdownStream 后台任务
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     print("[smoke] markdown incremental stream OK (chunk append, no drop)")
                     chat = app.query_one("#chat", VerticalScroll)
                     # 卡片 height:auto 后内容超出视口才可滚动；回归 1fr 均分时 max_scroll_y 恒为 0
@@ -434,8 +430,7 @@ if __name__ == "__main__":
                     # 右侧滑块：内容溢出时必须可见（曾 scrollbar-size-vertical:0 隐藏）；1 列宽便于拖动拇指浏览历史
                     assert chat.show_vertical_scrollbar, "内容溢出时未显示纵向滑块"
                     assert chat.styles.scrollbar_size_vertical == 1, "滑块宽度应为 1 列"
-                    for _ in range(5):
-                        await pilot.pause(0.02)
+                    await settle(pilot, 5)
                     assert chat.vertical_scrollbar.region.height >= 1, "滑块未渲染出可见区域"
                     # 滚动钉底：回合结束后仍钉在底部（无用户滚动，anchor 不应解除）
                     assert chat._anchored and not chat._anchor_released, \
@@ -447,8 +442,7 @@ if __name__ == "__main__":
                     assert chat._anchor_released, "用户上滚后应解除钉底"
                     pos = chat.scroll_y
                     render_user_input("browse-mid-stream")  # 追加新卡片
-                    for _ in range(10):
-                        await pilot.pause(0.05)
+                    await settle(pilot, 10, 0.05)
                     assert chat.scroll_y == pos, f"浏览中追加内容不应拉动视口: {chat.scroll_y} != {pos}"
                     chat.scroll_end(animate=False, immediate=True)
                     await pilot.pause(0.1)
@@ -458,38 +452,31 @@ if __name__ == "__main__":
                     prompt.focus()
                     suggest = app.query_one("#cmd-suggest", ListView)
                     prompt.text = "/"
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert suggest.styles.display != "none", "输入 / 未弹出候选 ListView"
-                    assert prompt._candidates == ["/exit", "/clear", "/new", "/sessions"], prompt._candidates
+                    assert prompt._candidates == ["/exit", "/new", "/sessions"], prompt._candidates
                     visible = [c for c in suggest.children if c.styles.display != "none"]
-                    assert len(visible) == 4, f"候选条数错误: {len(visible)}"
-                    await pilot.press("down")
+                    assert len(visible) == 3, f"候选条数错误: {len(visible)}"
                     await pilot.press("down")
                     await pilot.press("tab")
                     assert prompt.text == "/new", f"Tab 接受高亮失败: {prompt.text!r}"
-                    for _ in range(5):
-                        await pilot.pause(0.02)
+                    await settle(pilot, 5)
                     assert suggest.styles.display == "none", "完整指令后列表应隐藏"
                     prompt.text = "/s"
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt._candidates == ["/sessions"], prompt._candidates
                     visible = [c for c in suggest.children if c.styles.display != "none"]
                     assert len(visible) == 1, f"过滤候选条数错误: {len(visible)}"
                     await pilot.press("enter")  # Enter 应用高亮项并提交
-                    for _ in range(20):
-                        await pilot.pause(0.02)
+                    await settle(pilot, 20)
                     assert not app._busy, "Enter 应提交补全后的 /sessions（走会话分支，不起 agent 回合）"
                     bodies = [str(w.render()) for w in app.query(".card-body")]
                     assert any("未接入 SessionManager" in b for b in bodies), "Enter 未提交 /sessions"
                     prompt.text = "/xyz"
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert suggest.styles.display == "none", "无匹配不应显示列表"
                     prompt.text = "hello world"
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert suggest.styles.display == "none", "普通消息不应显示列表"
                     print(f"[smoke] OK, {len(cards)} cards rendered, scrollable, listview completion OK")
 
@@ -501,8 +488,7 @@ if __name__ == "__main__":
                     prompt.text = "看看 @core/tu"
                     prompt.cursor_location = (0, len(prompt.text))
                     prompt._refresh_suggestions()
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     expected = _match_project_entries("core/tu")
                     assert prompt._file_candidates == expected and expected, prompt._file_candidates
                     assert flv.styles.display != "none", "输入 @ 前缀未弹出文件列表"
@@ -511,8 +497,7 @@ if __name__ == "__main__":
                     assert all(c.endswith("/") for c in expected), \
                         f"同级规则：只应展示目录 core/tui/，实际 {expected}"
                     await pilot.press("tab")  # 选中 core/tui/ → 补全为 @core/tui/ 并展开其内容
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt.text == "看看 @core/tui/", prompt.text
                     inner = _match_project_entries("core/tui/")
                     assert prompt._file_candidates == inner and inner, prompt._file_candidates
@@ -524,8 +509,7 @@ if __name__ == "__main__":
                     prompt.text = "看 @ui"
                     prompt.cursor_location = (0, len(prompt.text))
                     prompt._refresh_suggestions()
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     fuzzy = _match_project_entries("ui")
                     assert prompt._file_candidates == fuzzy and len(fuzzy) >= 2, prompt._file_candidates
                     assert fuzzy[0] == "core/tui/"  # 短路径在前
@@ -537,37 +521,31 @@ if __name__ == "__main__":
                     prompt.text = "看 @TUI"  # 大小写不敏感
                     prompt.cursor_location = (0, len(prompt.text))
                     prompt._refresh_suggestions()
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt._file_candidates == ["core/tui/"], prompt._file_candidates
                     await pilot.press("enter")  # 选中目录：补全 @core/tui/ 并展开其同级内容
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt.text == "看 @core/tui/", prompt.text
                     assert prompt._file_candidates == _match_project_entries("core/tui/"), \
                         prompt._file_candidates
                     prompt.text = "@zz_not_exists"  # 无匹配 → 列表隐藏
                     prompt.cursor_location = (0, len(prompt.text))
                     prompt._refresh_suggestions()
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt._file_candidates == [] and flv.styles.display == "none"
                     prompt.text = "改 @core/tui/util"
                     prompt.cursor_location = (0, len(prompt.text))
                     prompt._refresh_suggestions()
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt._file_candidates == ["core/tui/utils.py"], prompt._file_candidates
                     await pilot.press("enter")  # 选中文件：补全，不发送
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert prompt.text == "改 @core/tui/utils.py", prompt.text
                     assert flv.styles.display == "none", "补全为完整文件名后列表应隐藏"
                     assert not app._busy, "Enter 选中 @ 文件不应提交回合"
-                    prompt.text = "/clear"  # 复位（/clear 不触发 agent 回合）
+                    prompt.text = "/new"  # 复位（指令提交不触发 agent 回合）
                     await pilot.press("enter")
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert not app._busy and flv.styles.display == "none"
                     print("[smoke] @ file completion OK: same-level list, / drill-down, full-path insert")
 
@@ -586,16 +564,14 @@ if __name__ == "__main__":
                     app._manager = fake
                     prompt.text = "/new"
                     await pilot.press("enter")
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert fake.created == 0 and fake.current_session == "", \
                         "/new 应立即创建会话（延迟到首条消息，由 add_message 建）"
                     assert not app._busy
                     app._busy = True  # 模拟回合进行中：/new 应提示并保持会话指针不动
                     prompt.text = "/new"
                     await pilot.press("enter")
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert fake.created == 0 and fake.current_session == "", \
                         "忙碌中 /new 不应清空会话指针"
                     bodies = [str(w.render()) for w in app.query(".card-body")]
@@ -626,8 +602,7 @@ if __name__ == "__main__":
                             return next((s for s in self.sessions if s.id == sid), None)
 
                     app.push_screen(SessionPickerScreen(_FakeManager()))
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     scr = app.screen_stack[-1]
                     olist = scr.query_one("#sess-list", OptionList)
                     picker = olist.parent
@@ -656,8 +631,7 @@ if __name__ == "__main__":
                     newest_last = sorted(_FakeManager.sessions, key=lambda s: s.timestamp, reverse=True)[-1]
                     assert olist.get_option_at_index(149).id == newest_last.id
                     await pilot.press("escape")
-                    for _ in range(10):
-                        await pilot.pause(0.02)
+                    await settle(pilot)
                     assert app._exception is None, f"渲染异常: {app._exception}"
                     print("[smoke] sessions picker OK: 150 sessions, all reachable, no clipping")
             finally:
