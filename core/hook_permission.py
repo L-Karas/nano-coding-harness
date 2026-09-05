@@ -67,7 +67,7 @@ def permission_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = No
 
 
 def log_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None):
-    _LOGER.info(f"[HOOK] {tool_call.function.name}")
+    _LOGER.info(f"[HOOK] call tool {tool_call.function.name} with arguments: {tool_call.function.arguments}")
     return None
 
 
@@ -78,22 +78,6 @@ def large_output_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = 
     return None
 
 
-def user_prompt_hook(query: str):
-    _LOGER.info(f"[HOOK] UserPromptSubmit: {query}")
-    return None
-
-
-def stop_hook(messages: list):
-    tool_count = 0
-    for message in messages:
-        if not isinstance(message, dict):
-            tool_count += len(message.tool_calls)
-    _LOGER.info(f"[HOOK] Stop: {tool_count} tool result(s)")
-    return None
-
-
-register_hook("UserPromptSubmit", user_prompt_hook)
-register_hook("Stop", stop_hook)
 register_hook("PreToolUse", permission_hook)
 register_hook("PreToolUse", log_hook)
 register_hook("PostToolUse", large_output_hook)
