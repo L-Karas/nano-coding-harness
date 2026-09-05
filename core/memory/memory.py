@@ -115,4 +115,7 @@ if __name__ == '__main__':
     assert manager.load_memory(mid).title == "always_respond_in_chinese"
     assert manager.delete_memory(mid)
     assert not manager.delete_memory(mid)
+
+    memories = manager.load_memories()
+
     print("memory self-check OK")

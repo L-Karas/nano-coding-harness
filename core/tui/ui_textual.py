@@ -40,7 +40,7 @@ from rich.markup import escape
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Input, Label, ListItem, ListView, Markdown, OptionList, Static, TextArea
+from textual.widgets import Input, Label, ListItem, ListView, Markdown, OptionList, Static, TextArea, Footer, Header
 from textual.widgets.markdown import MarkdownStream
 
 
@@ -271,12 +271,15 @@ class ChatApp(App):
         elif cmd == "/clear":
             self._clear_cards()
         elif cmd == "/new":
-            if self._manager is not None:
-                try:
-                    self._manager.new_session()
-                except Exception as exc:
-                    render_background_notification(f"新建会话失败：{exc}", title="⚠️ Session Error")
-            self._clear_cards()
+            if self._busy:
+                # 回合进行中不允许 /new：清空会话指针会让本轮后续 add_message 自动建出不属于本轮的会话
+                render_background_notification("上一轮仍在运行，请稍候…", title="⏳ Busy")
+            else:
+                # 延迟创建：仅丢弃当前会话指针，下一条用户消息到达时由 add_message() 自动建新会话
+                # （见 session.py：add_message 在 current_session 为空时调用 new_session），避免空会话
+                if self._manager is not None:
+                    self._manager.current_session = ""
+                self._clear_cards()
         elif cmd == "/sessions":
             self._open_sessions()
         elif self._busy:
@@ -567,6 +570,40 @@ if __name__ == "__main__":
                         await pilot.pause(0.02)
                     assert not app._busy and flv.styles.display == "none"
                     print("[smoke] @ file completion OK: same-level list, / drill-down, full-path insert")
+
+                    # /new 延迟建会话：只清空 current_session 指针，不立即 new_session（防空会话）；
+                    # 忙碌中 /new 被拒绝（否则本轮后续 add_message 会把回话写进新建会话）
+                    class _FakeMgr:
+                        def __init__(self):
+                            self.current_session = "session-old.jsonl"
+                            self.created = 0
+
+                        def new_session(self):
+                            self.created += 1
+                            self.current_session = f"session-new-{self.created}.jsonl"
+
+                    fake = _FakeMgr()
+                    app._manager = fake
+                    prompt.text = "/new"
+                    await pilot.press("enter")
+                    for _ in range(10):
+                        await pilot.pause(0.02)
+                    assert fake.created == 0 and fake.current_session == "", \
+                        "/new 应立即创建会话（延迟到首条消息，由 add_message 建）"
+                    assert not app._busy
+                    app._busy = True  # 模拟回合进行中：/new 应提示并保持会话指针不动
+                    prompt.text = "/new"
+                    await pilot.press("enter")
+                    for _ in range(10):
+                        await pilot.pause(0.02)
+                    assert fake.created == 0 and fake.current_session == "", \
+                        "忙碌中 /new 不应清空会话指针"
+                    bodies = [str(w.render()) for w in app.query(".card-body")]
+                    assert any("上一轮仍在运行" in b for b in bodies), "忙碌中 /new 应提示"
+                    app._busy = False
+                    app._manager = None
+                    app._clear_cards()
+                    print("[smoke] /new defers session creation until first message OK")
 
                     # 会话选择弹窗：大量会话时弹窗不得超出屏幕/裁剪列表，↓ 可滚动到最后一个会话
                     class _FakeSession:
