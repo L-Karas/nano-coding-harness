@@ -9,12 +9,13 @@ Textual 版终端界面（core/tui/ui.py 的 Textual 重构，独立新模块，
 - theme.py    主题常量（标题文案 / 动画帧 / _markup 安全解析）
 - app.css     全局样式表（原 theme._APP_CSS，ChatApp 经 CSS_PATH 加载）
 - widgets.py  部件：会话选择弹窗、带 / 指令与 @ 文件补全的输入框
+- panels.py   主界面分区部件：标题栏 / 聊天画板 / 底部停靠区
 - render.py   线程安全渲染 API：任意线程可调，驱动 ChatApp 内部方法
 - demo.py     无 handle_query 时的内置演示 Agent
 - utils.py    终端环境信息与指令表（原有）
 
-本模块保留：ChatApp 主界面、run() 入口，以及 `python -m core.tui.ui_textual`
-演示与 --smoke 自检。
+本模块保留：ChatApp（compose 只留左右分栏骨架，分区部件见 panels.py）、
+run() 入口，以及 `python -m core.tui.ui_textual` 演示与 --smoke 自检。
 
 运行演示（无需 LLM/网络）:
     python -m core.tui.ui_textual
@@ -41,7 +42,7 @@ from rich.markup import escape
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Input, Label, ListItem, ListView, Markdown, OptionList, Static, TextArea
+from textual.widgets import Input, Label, ListView, Markdown, OptionList, Static, TextArea
 from textual.widgets.markdown import MarkdownStream
 
 import core.tui.render as _render  # run() 期间把 ChatApp 实例挂到渲染桥接的 _APP 全局（见 run()）
@@ -60,24 +61,9 @@ from core.tui.theme import (
     _SPINNER_FRAMES,
     _markup,
 )
+from core.tui.panels import _ChatBoard, _ChatDock, _TitleBar
 from core.tui.utils import SLASH_COMMANDS, current_git_branch, working_directory
 from core.tui.widgets import SessionPickerScreen, _CommandInput, _match_project_entries
-
-
-class _ChatBoard(VerticalScroll):
-    """聊天画板滚动容器：不满一屏时消息从顶部向下填充。
-
-    Textual 的 anchor()（钉底）由 compositor 在每次布局把滚动压到「内容底 - 视口高」：
-    内容不满一屏时为负值，卡片被钉在画板底边、上方整片留白（先前的消息只有等新渲染
-    出现才被顶上去）。compositor 经 set_reactive 直写滚动、绕过 ≥0 的 validate_scroll_y，
-    这里把钉底的负滚动钳制为 0：未溢出时从顶部向下填充；溢出后钉底跟随、
-    浏览历史解除 / 滚回底部自动恢复等 native anchor 行为全部不变。
-    """
-
-    def set_reactive(self, reactive, value) -> None:
-        if reactive.name in ("scroll_y", "scroll_target_y") and value < 0:
-            value = 0
-        super().set_reactive(reactive, value)
 
 
 class ChatApp(App):
@@ -114,22 +100,17 @@ class ChatApp(App):
 
     def compose(self) -> ComposeResult:
         title, subtitle = self._banner
-        with Vertical():
-            yield Static(_markup(f"[bold cyan]{title}[/bold cyan]\n[dim]{subtitle}[/dim]", justify="center"),
-                         id="titlebar", markup=False)
-            yield _ChatBoard(id="chat")
-            with Vertical(id="dock"):  # 底部固定区：状态行 + 指令补全列表（按需显示）+ 输入框
-                yield Static("", id="status")
-                yield ListView(*(ListItem(Label(cmd)) for cmd in SLASH_COMMANDS), id="cmd-suggest")
-                yield ListView(id="file-suggest")  # @ 文件补全列表（仅 @ 提及编辑时可见）
-                with Horizontal(id="inputbar"):  # 上下粗实线输入条：>> 前缀 + 输入框
-                    yield Static(">> ", id="prompt-mark")
-                    yield _CommandInput(placeholder=_PLACEHOLDER, id="prompt")
-                yield Static("", id="footer", markup=False)  # 最底行：当前工作目录 (git 分支)
+        with Horizontal(id="main"):  # 左右分栏：左 4fr 现有聊天界面，右 1fr 预留（比例见 app.css）
+            with Vertical(id="left"):
+                yield _TitleBar(title, subtitle)
+                yield _ChatBoard(id="chat")
+                yield _ChatDock(id="dock")
+            with Vertical(id="right"):  # 预留右栏：Information 标题 + 后续内容
+                yield Static("Information", id="right-title")
 
     def on_mount(self) -> None:
-        self.query_one("#prompt", TextArea).focus()
-        self._chat().anchor()  # 钉底：溢出后追加的卡片/流式内容由 compositor 布局时自动保持在底部；不满一屏时由 _ChatBoard 把负滚动钳回 0，从顶部向下填充
+        self._prompt().focus()
+        self._chat().anchor()  # 钉底：溢出时新内容由 compositor 布局自动保持贴底；用户上滚解除、滚回底部自动恢复（机制见 panels._ChatBoard docstring）
         self._refresh_footer()
         self.set_interval(10.0, self._refresh_footer)  # 轮询刷新 cwd/git（用户可能另开终端切目录/分支）；单次 ~毫秒级
 
@@ -166,13 +147,6 @@ class ChatApp(App):
         branch = current_git_branch()
         label = f"{cwd} ({branch})" if branch else cwd
         self.query_one("#footer", Static).update(Text(label, no_wrap=True, style="#64748b"))
-
-    # ---------- 滚动钉底（Textual 原生 anchor + _ChatBoard 负滚动钳制） ----------
-    # anchor(): 聊天区保持钉在底部，新卡片/流式追加由 compositor 每次布局自动钉底；
-    # 用户滚轮上滚、点/拖右侧滑块（ScrollBar 抓取即 release_anchor）任意滚动即解除钉底，
-    # 浏览历史时新内容不再把人拉回底部；滚回底部自动恢复钉底。
-    # 不满一屏时 compositor 的钉底会把滚动压成负值（卡片贴底边、顶部留白），
-    # _ChatBoard.set_reactive 把负滚动钳为 0：消息从画板顶部向下填充。
 
     # ---------- 卡片 ----------
 
@@ -383,15 +357,24 @@ if __name__ == "__main__":
             app = ChatApp(handle_query=_demo_agent)
             _render._APP = app  # 冒烟不经 run()：直接把实例挂到渲染桥接全局
             try:
-                async with app.run_test() as pilot:                    async def settle(pilot, times=10, delay=0.02) -> None:
+                async with app.run_test() as pilot:
+                    async def settle(pilot, times=10, delay=0.02) -> None:
                         """等 UI 稳定：连做几次短 pause 让事件循环推进（异步挂载/渲染完成）"""
                         for _ in range(times):
                             await pilot.pause(delay)
 
+                    async def type_query(prompt, pilot, text) -> None:
+                        """程序化输入并刷新补全候选（赋值不触达键入事件路径，须手动刷新）"""
+                        prompt.text = text
+                        prompt.cursor_location = (0, len(text))
+                        prompt._refresh_suggestions()
+                        await settle(pilot)
+
                     await pilot.pause(0.2)
                     prompt = app.query_one("#prompt", _CommandInput)
-                    # 输入框宽度应占满终端宽度（与 terminal 一致，不随内容变化）
-                    assert prompt.size.width >= app.size.width - 10, f"输入框宽度未占满终端: {prompt.size.width}"
+                    left_w = app.query_one("#left").region.width  # 左栏宽（4:1 分栏后为终端 80%）
+                    # 输入框宽度应占满左栏宽度（不随内容变化）
+                    assert prompt.size.width >= left_w - 10, f"输入框宽度未占满左栏: {prompt.size.width}"
                     # 长文本超过终端宽度应自动换行、多行加高（height:auto）
                     prompt.text = "y" * 300
                     await pilot.pause(0.05)
@@ -408,9 +391,9 @@ if __name__ == "__main__":
                     assert app._exception is None, f"渲染异常: {app._exception}"
                     cards = list(app.query("#chat .card"))
                     assert len(cards) >= 5, f"卡片数量不足: {len(cards)}"
-                    # 消息卡片宽度 = 终端 - 1（内容超出视口时右侧滑块占 1 列）；无溢出时仍占满终端
-                    assert app.size.width - 2 <= cards[0].region.width <= app.size.width, \
-                        f"卡片宽度异常: {cards[0].region.width} (终端 {app.size.width})"
+                    # 消息卡片宽度 = 左栏 - 1（内容超出视口时右侧滑块占 1 列）；无溢出时仍占满左栏
+                    assert left_w - 2 <= cards[0].region.width <= left_w, \
+                        f"卡片宽度异常: {cards[0].region.width} (左栏 {left_w})"
                     assert any("assistant" in c.classes for c in cards), "缺少 Assistant 卡片"
                     # 增量流式自检：每 chunk 只传新增片段 → 内容逐字拼接，不丢不重
                     app._stop_stream()
@@ -454,12 +437,12 @@ if __name__ == "__main__":
                     prompt.text = "/"
                     await settle(pilot)
                     assert suggest.styles.display != "none", "输入 / 未弹出候选 ListView"
-                    assert prompt._candidates == ["/exit", "/new", "/sessions"], prompt._candidates
+                    assert prompt._candidates == ["/new", "/sessions", "/exit"], prompt._candidates
                     visible = [c for c in suggest.children if c.styles.display != "none"]
                     assert len(visible) == 3, f"候选条数错误: {len(visible)}"
                     await pilot.press("down")
                     await pilot.press("tab")
-                    assert prompt.text == "/new", f"Tab 接受高亮失败: {prompt.text!r}"
+                    assert prompt.text == "/sessions", f"Tab 接受高亮失败: {prompt.text!r}"
                     await settle(pilot, 5)
                     assert suggest.styles.display == "none", "完整指令后列表应隐藏"
                     prompt.text = "/s"
@@ -485,10 +468,7 @@ if __name__ == "__main__":
                     prompt.focus()
                     flv = app.query_one("#file-suggest", ListView)
                     assert flv.styles.display == "none", "未输入 @ 不应显示文件列表"
-                    prompt.text = "看看 @core/tu"
-                    prompt.cursor_location = (0, len(prompt.text))
-                    prompt._refresh_suggestions()
-                    await settle(pilot)
+                    await type_query(prompt, pilot, "看看 @core/tu")
                     expected = _match_project_entries("core/tu")
                     assert prompt._file_candidates == expected and expected, prompt._file_candidates
                     assert flv.styles.display != "none", "输入 @ 前缀未弹出文件列表"
@@ -506,10 +486,7 @@ if __name__ == "__main__":
                     shown = [str(it.query_one(Label).render()) for it in flv.children]
                     assert shown == inner, f"展开目录展示不一致: {shown} != {inner}"
                     # 无 / 的 query：全树相似匹配（名称包含 ui），命中深层文件 → 展示完整路径
-                    prompt.text = "看 @ui"
-                    prompt.cursor_location = (0, len(prompt.text))
-                    prompt._refresh_suggestions()
-                    await settle(pilot)
+                    await type_query(prompt, pilot, "看 @ui")
                     fuzzy = _match_project_entries("ui")
                     assert prompt._file_candidates == fuzzy and len(fuzzy) >= 2, prompt._file_candidates
                     assert fuzzy[0] == "core/tui/"  # 短路径在前
@@ -518,25 +495,17 @@ if __name__ == "__main__":
                         f"相似匹配应只含名称带 ui 的条目: {fuzzy}"
                     shown = [str(it.query_one(Label).render()) for it in flv.children]
                     assert shown == fuzzy, f"列表展示与相似匹配不一致: {shown} != {fuzzy}"
-                    prompt.text = "看 @TUI"  # 大小写不敏感
-                    prompt.cursor_location = (0, len(prompt.text))
-                    prompt._refresh_suggestions()
-                    await settle(pilot)
+                    # 大小写不敏感
+                    await type_query(prompt, pilot, "看 @TUI")
                     assert prompt._file_candidates == ["core/tui/"], prompt._file_candidates
                     await pilot.press("enter")  # 选中目录：补全 @core/tui/ 并展开其同级内容
                     await settle(pilot)
                     assert prompt.text == "看 @core/tui/", prompt.text
                     assert prompt._file_candidates == _match_project_entries("core/tui/"), \
                         prompt._file_candidates
-                    prompt.text = "@zz_not_exists"  # 无匹配 → 列表隐藏
-                    prompt.cursor_location = (0, len(prompt.text))
-                    prompt._refresh_suggestions()
-                    await settle(pilot)
+                    await type_query(prompt, pilot, "@zz_not_exists")  # 无匹配 → 列表隐藏
                     assert prompt._file_candidates == [] and flv.styles.display == "none"
-                    prompt.text = "改 @core/tui/util"
-                    prompt.cursor_location = (0, len(prompt.text))
-                    prompt._refresh_suggestions()
-                    await settle(pilot)
+                    await type_query(prompt, pilot, "改 @core/tui/util")
                     assert prompt._file_candidates == ["core/tui/utils.py"], prompt._file_candidates
                     await pilot.press("enter")  # 选中文件：补全，不发送
                     await settle(pilot)
@@ -628,8 +597,8 @@ if __name__ == "__main__":
                         await pilot.press("down")
                     await pilot.pause(0.05)
                     assert olist.highlighted == 149, f"↓ 无法到达最后一个会话: {olist.highlighted}"
-                    newest_last = sorted(_FakeManager.sessions, key=lambda s: s.timestamp, reverse=True)[-1]
-                    assert olist.get_option_at_index(149).id == newest_last.id
+                    # 末行 = 最旧会话（列表新到旧排列，order[-1] 即末尾行）
+                    assert olist.get_option_at_index(149).id == order[-1].id
                     await pilot.press("escape")
                     await settle(pilot)
                     assert app._exception is None, f"渲染异常: {app._exception}"

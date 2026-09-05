@@ -14,16 +14,50 @@ Screen {
     background: transparent;
 }
 
+/* ── 主分栏 ──
+   从左到右两部分：左 4fr 现有聊天界面（标题栏 + 画板 + 底部停靠区全部收纳其内），
+   右 1fr 预留信息栏（默认 4:1，改比例只动这里）。
+   两栏之间仅一条单实线边界（左栏右缘；右栏不加边框以免叠成双线）。 */
+#main {
+    width: 1fr;
+    height: 1fr;
+}
+
+#left {
+    width: 4fr;
+    height: 1fr;
+    border-right: solid #475569;
+}
+
+#right {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* 右栏标题：置于面板左上角，距左边界（分栏线）1 列 */
+#right-title {
+    height: auto;
+    padding: 0 0 0 1;
+    color: #7dd3fc;
+    text-style: bold;
+}
+
 /* ── 主界面 ── */
 
-/* 标题栏 */
+/* 标题栏：只保留最外部单线圆角框；内部直接是标题蓝底文本块（背景只在框内，
+   不遮圆角字形），整块被框线包裹 */
 #titlebar {
+    width: 1fr;
+    height: auto;
+    border: round #38bdf8;
+}
+
+#titlebar-text {
     width: 1fr;
     height: auto;
     background: #0c1a2e;
     padding: 0 2;
 }
-#titlebar > * { width: 1fr; }
 
 /* 聊天画板：1fr 撑满视口，仅内容超出时出现纵向滑块。
    滑块 1 列宽：拖动拇指 / 点击轨道翻页 / 滚轮浏览历史；
