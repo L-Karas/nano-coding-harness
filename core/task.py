@@ -14,7 +14,6 @@ from core.log import get_logger
 
 TASK_DIR = HARNESS_CONFIG_DIR / ".tasks"
 TASK_DIR.mkdir(parents=True, exist_ok=True)
-CURRENT_TODOS: list[dict] = []
 _LOGGER = get_logger(__name__)
 
 

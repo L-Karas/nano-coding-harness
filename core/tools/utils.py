@@ -3,10 +3,21 @@ from typing import Any
 from pydantic import BaseModel
 
 
+def _inline_refs(schema: dict, defs: dict) -> dict:
+    """Replace #/$defs/X references recursively so the schema is self-contained."""
+    if isinstance(schema, dict):
+        if (ref := schema.get("$ref")) and ref.startswith("#/$defs/"):
+            return _inline_refs(defs[ref.removeprefix("#/$defs/")], defs)
+        return {k: _inline_refs(v, defs) for k, v in schema.items()}
+    if isinstance(schema, list):
+        return [_inline_refs(v, defs) for v in schema]
+    return schema
+
+
 def _json_schema_to_openai_params(schema: dict) -> dict:
     return {
         "type": "object",
-        "properties": schema.get("properties", {}),
+        "properties": _inline_refs(schema.get("properties", {}), schema.get("$defs", {})),
         "required": schema.get("required", []),
     }
 
