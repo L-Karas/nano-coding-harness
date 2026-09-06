@@ -171,9 +171,9 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
                     _LOGER.exception(f"[Diff exception] {e}]")
 
             output = call_tool_handler(handler, tool_args, tool_name)
-            # 工具失败统一以 "Error:"/"Unknown:" 开头返回（run_* / call_tool_handler 约定）；
+            # 工具失败统一以 "[Tool Error]:"/"[Unknown Tool]:" 开头返回（call_tool_handler 约定）；
             # 失败时 diff 只是未落地的预览：不渲染、不记录 payload，回放才不会把未应用改动显示成已应用。
-            tool_failed = str(output).startswith(("Error:", "Unknown:"))
+            tool_failed = str(output).startswith(("[Tool Error]:", "[Unknown Tool]:"))
             if diff and not tool_failed:
                 render_tool_result_diff(diff)
 

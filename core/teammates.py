@@ -2,6 +2,7 @@
 Teammates
 """
 import json
+import re
 import threading
 import time
 from functools import partial
@@ -221,13 +222,13 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                         _LOGER.info(f">   [Call tool] (Teammate: {name}) {tool_name}")
                         _LOGER.info(f">   [Tool arguments] (Teammate: {name}) {tool_args}")
 
+                        handler = handlers.get(tool_name)
+                        output = call_tool_handler(handler, tool_args, tool_name)
                         if tool_name == "submit_plan":
-                            output = _teammate_submit_plan(**tool_args)
+                            # run_submit_plan 返回 "Plan submitted (req_xxx)"; 命中即关闭
+                            # approval gate, 等待 lead 的 plan_approval_response
                             match = re.search(r"\((req_\d+)\)", output)
                             protocol_ctx["waiting_plan"] = match.group(1) if match else output
-                        else:
-                            handler = handlers.get(tool_name)
-                            output = call_tool_handler(handler, tool_args, tool_name)
 
                         messages.append({
                             "role": "tool",

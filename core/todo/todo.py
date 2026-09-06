@@ -25,18 +25,18 @@ def _normalize_todos(todos):
                 # ast.literal_eval 支持 Python 字面量（支持元组、集合、None、布尔等）
                 todos = ast.literal_eval(todos)
             except (SyntaxError, ValueError):
-                return None, "Error: todos must be a list or JSON array string"
+                return None, "todos must be a list or JSON array string"
 
     if not isinstance(todos, list):
-        return None, "Error: todos must be a list"
+        return None, "todos must be a list"
 
     for i, todo in enumerate(todos):
         if not isinstance(todo, dict):
-            return None, f"Error: todos[{i}] must be an object"
+            return None, f"todos[{i}] must be an object"
         if "content" not in todo or "status" not in todo:
-            return None, f"Error: todos[{i}] must contain 'content' or 'status'"
+            return None, f"todos[{i}] must contain 'content' or 'status'"
         if todo["status"] not in ["pending", "in_progress", "completed"]:
-            return None, f"Error: todos[{i}] has invalid status '{todo['status']}'"
+            return None, f"todos[{i}] has invalid status '{todo['status']}'"
 
     todos = [Todo(**todo) for todo in todos]
 

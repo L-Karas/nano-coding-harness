@@ -17,15 +17,12 @@ class ReadFile(BaseTool):
 
 
 def run_read_file(path: str, limit: Optional[int] = None, offset: Optional[int] = 0, cwd: Optional[Path] = None) -> str:
-    try:
-        base = cwd or WORKDIR
-        fp = (base / path).resolve()
-        lines = fp.read_text(encoding="utf-8").splitlines()
-        offset = max(int(offset or 0), 0)
-        limit = int(limit) if limit is not None else None
-        lines = lines[offset:]
-        if limit is not None and limit < len(lines):
-            lines = lines[:limit] + [f"... ({len(lines) - limit}) more lines)"]
-        return "\n".join(lines)
-    except Exception as e:
-        raise e
+    base = cwd or WORKDIR
+    fp = (base / path).resolve()
+    lines = fp.read_text(encoding="utf-8").splitlines()
+    offset = max(int(offset or 0), 0)
+    limit = int(limit) if limit is not None else None
+    lines = lines[offset:]
+    if limit is not None and limit < len(lines):
+        lines = lines[:limit] + [f"... ({len(lines) - limit}) more lines)"]
+    return "\n".join(lines)

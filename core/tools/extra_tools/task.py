@@ -63,19 +63,19 @@ def run_list_tasks() -> str:
 def run_get_task(task_id: str) -> str:
     try:
         return get_task_json(task_id)
-    except FileNotFoundError as e:
-        return f"Error: Task {task_id} not found"
+    except FileNotFoundError:
+        raise Exception(f"Task {task_id} not found")
 
 
 def run_claim_task(task_id: str) -> str:
     try:
         return claim_task(task_id, owner="agent")
-    except FileNotFoundError as e:
-        return f"Error: Task {task_id} not found"
+    except FileNotFoundError:
+        raise Exception(f"Task {task_id} not found")
 
 
 def run_complete_task(task_id: str) -> str:
     try:
         return complete_task(task_id)
-    except FileNotFoundError as e:
-        return f"Error: Task {task_id} not found"
+    except FileNotFoundError:
+        raise Exception(f"Task {task_id} not found")
