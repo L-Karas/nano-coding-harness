@@ -161,16 +161,21 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
             continue
 
         handler = handlers.get(tool_name)
+        diff = ""
         with render_tool_calling_status(f"{tool_name}({tool_args})"):
             if tool_name in DIFF_TOOLS:
                 try:
                     diff = (preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file"
                             else preview_edit(tool_args["path"], tool_args["old_text"], tool_args["new_text"]))
-                except Exception:
-                    diff = ""
-                if diff:
-                    render_tool_result_diff(diff)
+                except Exception as e:
+                    _LOGER.exception(f"[Diff exception] {e}]")
+
             output = call_tool_handler(handler, tool_args, tool_name)
+            # 工具失败统一以 "Error:"/"Unknown:" 开头返回（run_* / call_tool_handler 约定）；
+            # 失败时 diff 只是未落地的预览：不渲染、不记录 payload，回放才不会把未应用改动显示成已应用。
+            tool_failed = str(output).startswith(("Error:", "Unknown:"))
+            if diff and not tool_failed:
+                render_tool_result_diff(diff)
 
         render_tool_result(output)
 
@@ -183,7 +188,7 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
             "role": "tool",
             "tool_call_id": tool_call.id,
             "content": str(output)
-        })
+        } | ({"payload": diff} if diff and not tool_failed else {}))
 
     for tool_result in tool_call_results:
         SESSION_MANAGER.add_message(tool_result)

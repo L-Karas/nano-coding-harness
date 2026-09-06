@@ -40,18 +40,22 @@ from typing import Any, Callable, Optional
 
 from rich.markup import escape
 from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Input, Label, ListView, Markdown, OptionList, Static, TextArea
 from textual.widgets.markdown import MarkdownStream
 
 import core.tui.render as _render  # run() 期间把 ChatApp 实例挂到渲染桥接的 _APP 全局（见 run()）
+from core.session.session import SessionManager
 from core.tui.demo import _demo_agent
 from core.tui.render import (
     render_background_notification,
     render_sessions,
     render_session_history,
+    render_tool_call,
     render_tool_result,
+    render_tool_result_diff,
     render_user_input,
 )
 from core.tui.theme import (
@@ -79,7 +83,7 @@ class ChatApp(App):
     SUB_TITLE = "Textual UI"
 
     def __init__(self, handle_query: Optional[Callable[[str], None]] = None,
-                 session_manager: Any = None,
+                 session_manager: SessionManager = None,
                  banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE)) -> None:
         super().__init__()
         self._handle = handle_query
@@ -105,8 +109,25 @@ class ChatApp(App):
                 yield _TitleBar(title, subtitle)
                 yield _ChatBoard(id="chat")
                 yield _ChatDock(id="dock")
-            with Vertical(id="right"):  # 预留右栏：Information 标题 + 后续内容
-                yield Static("Information", id="right-title")
+            with Vertical(id="right"):  # 右栏信息面板；折叠时整体隐藏（聊天区吃满全宽），仅右缘 ▸ 标签可点
+                yield Static("▼ Information", id="right-title")
+        with Vertical(id="info-tab"):  # 折叠态展开标签：仅 ▸ 字形，dock 右侧垂直居中（点击展开）
+            yield Static("▸", id="info-tab-glyph")
+
+    def on_click(self, event: events.Click) -> None:
+        """右栏标题 / 折叠标签点击：折叠时右栏整体隐藏、聊天区吃满全宽，右缘标签可点回；
+        可展开卡片正文（截断的工具调用/结果卡）点击：截断 ↔ 完整内容"""
+        target = event.widget
+        if target.has_class("-expandable"):  # 截断卡片正文（标记见 _add_card）
+            self._toggle_expand(target)
+            return
+        if target.id not in ("right-title", "info-tab-glyph"):
+            return
+        right = self.query_one("#right", Vertical)
+        collapsed = not right.has_class("-collapsed")
+        right.set_class(collapsed, "-collapsed")
+        self.query_one("#info-tab", Vertical).set_class(collapsed, "-show")
+        self.query_one("#right-title", Static).update(("▶ " if collapsed else "▼ ") + "Information")
 
     def on_mount(self) -> None:
         self._prompt().focus()
@@ -150,11 +171,31 @@ class ChatApp(App):
 
     # ---------- 卡片 ----------
 
-    def _add_card(self, kind: str, body: Any) -> Static:
-        """追加一张卡片，返回 body Static（流式更新用）"""
+    def _add_card(self, kind: str, body: Any,
+                  expand: Optional[Callable[[], Any]] = None) -> Static:
+        """追加一张卡片，返回 body Static（流式更新用）。
+
+        expand: 非 None 时正文可点击，在截断与完整内容间切换（builder 惰性构建完整正文，
+        首次点击时执行并缓存；-expandable 类供 on_click 路由与指针样式）。"""
         body_w = Static(body, classes="card-body", markup=False)
+        if expand is not None:
+            body_w._collapsed_body = body
+            body_w._expand_builder = expand
+            body_w._expand_body = None  # 完整正文缓存（首次展开时构建）
+            body_w.add_class("-expandable")
         self._chat().mount(Vertical(body_w, classes=f"card {kind}"))
         return body_w
+
+    def _toggle_expand(self, body_w: Static) -> None:
+        """截断卡片正文点击：截断 ↔ 完整内容（完整正文惰性构建一次后缓存）"""
+        if body_w.has_class("-expanded"):  # 展开态: 点回收起截断正文
+            body_w.update(body_w._collapsed_body)
+            body_w.remove_class("-expanded")
+            return
+        if body_w._expand_body is None:  # 首次展开: 构建完整正文并缓存
+            body_w._expand_body = body_w._expand_builder()
+        body_w.update(body_w._expand_body)
+        body_w.add_class("-expanded")
 
     def _add_markdown_card(self, content: str) -> Markdown:
         """追加一张 Assistant Markdown 卡片（链接可点击 → App.open_url 交给系统浏览器）"""
@@ -373,6 +414,11 @@ if __name__ == "__main__":
                     await pilot.pause(0.2)
                     prompt = app.query_one("#prompt", _CommandInput)
                     left_w = app.query_one("#left").region.width  # 左栏宽（4:1 分栏后为终端 80%）
+                    # 标题栏动态效果：帧间 spinner/渐变应轮播（0.12s 帧，等 0.3s 必然跨帧）
+                    title = app.query_one("#titlebar-text", Static)
+                    t0 = str(title.render())
+                    await pilot.pause(0.3)
+                    assert str(title.render()) != t0, "标题动画未轮播"
                     # 输入框宽度应占满左栏宽度（不随内容变化）
                     assert prompt.size.width >= left_w - 10, f"输入框宽度未占满左栏: {prompt.size.width}"
                     # 长文本超过终端宽度应自动换行、多行加高（height:auto）
@@ -387,8 +433,41 @@ if __name__ == "__main__":
                             break
                     assert not app._busy, "回合未结束"
                     render_tool_result("line\n" * 15)  # 触发截断提示（含方括号），回归渲染期 MissingStyle
+                    render_tool_call("bash", list(range(15)))  # 17 行参数 JSON → 同样折叠为 10 行 + 1 行提示
                     await settle(pilot, 10, 0.05)
                     assert app._exception is None, f"渲染异常: {app._exception}"
+                    bodies = [str(w.render()) for w in app.query(".card-body")]
+                    assert any("... [truncated 5 lines]" in b for b in bodies), \
+                        "工具结果 15 行应折叠为 10 行正文 + 1 行提示"
+                    assert any("... [truncated 7 lines]" in b for b in bodies), \
+                        "工具调用 17 行参数应折叠为 10 行正文 + 1 行提示"
+                    # 截断卡片点击展开：真实鼠标点击折叠的 diff 卡末行提示 → 全文（含第 11~15 行）；
+                    # 再点展开态末行（折叠提示）收回截断
+                    render_tool_result_diff([("+", i, f"add {i}") for i in range(1, 16)])
+                    await settle(pilot, 10, 0.05)
+                    exp_bodies = [w for w in app.query(".card-body") if w.has_class("-expandable")]
+                    assert len(exp_bodies) == 3, f"应 3 张可展开卡片: {len(exp_bodies)}"
+                    diff_w = exp_bodies[-1]
+                    await pilot.click(diff_w, offset=(2, diff_w.region.height - 1))  # 末行=提示行
+                    await settle(pilot, 5)
+                    diff_str = str(diff_w.render())
+                    assert "+15 │ add 15" in diff_str and "· click to collapse" in diff_str, "点击未展开 diff 全文"
+                    await pilot.click(diff_w, offset=(2, diff_w.region.height - 1))
+                    await settle(pilot, 5)
+                    assert "... [truncated 5 lines]" in str(diff_w.render()), "再点未收回截断"
+                    # 结果/调用卡：同一展开逻辑（exp_bodies 按挂载序 = result / tool / diff）
+                    for w, tail in ((exp_bodies[0], None), (exp_bodies[1], "  14")):
+                        app._toggle_expand(w)
+                        full = str(w.render())
+                        if tail is None:
+                            assert full.count("line\n") == 15, f"展开应显示全部 15 行: {full!r}"
+                        else:
+                            assert tail in full, f"展开应显示被折叠的参数尾部: {full!r}"
+                        assert "· click to collapse" in full
+                        app._toggle_expand(w)
+                        collapsed = str(w.render())
+                        assert "... [truncated " in collapsed, "收回后应回到截断态"
+                    print("[smoke] expandable tool cards OK: click expands/collapses full content")
                     cards = list(app.query("#chat .card"))
                     assert len(cards) >= 5, f"卡片数量不足: {len(cards)}"
                     # 消息卡片宽度 = 左栏 - 1（内容超出视口时右侧滑块占 1 列）；无溢出时仍占满左栏

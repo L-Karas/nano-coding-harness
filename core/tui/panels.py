@@ -5,34 +5,52 @@ compose 只保留左右分栏骨架，逐区 yield 本模块的自定义部件�
 与 ChatApp 的联动沿用全局 id 查询（状态行 / footer 更新、_CommandInput
 的候选列表、渲染 API 的卡片追加均按 id 取件），DOM 层级与拆出前完全一致。
 
-- _TitleBar：标题栏（最外部单线圆角框，内部直接是标题蓝底文本块）；
+- _TitleBar：标题栏（最外部单线圆角框，内部动态流光标题块）；
 - _ChatBoard：聊天画板滚动容器（不满一屏时消息从顶部向下填充，见类 docstring）；
 - _ChatDock：底部固定区（状态行 + / 指令与 @ 文件候选列表 + 输入条 + 工作目录行）。
 """
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Label, ListItem, ListView, Static
 
-from core.tui.theme import _PLACEHOLDER, _markup
+from core.tui.theme import _PLACEHOLDER, _SPINNER_FRAMES
 from core.tui.utils import SLASH_COMMANDS
 from core.tui.widgets import _CommandInput
 
+# 标题文字滚动渐变配色（深蓝底上依次过渡的青→绿→金，随帧前移形成流光）
+_TITLE_WAVE = ["#7dd3fc", "#38bdf8", "#22d3ee", "#2dd4bf", "#4ade80", "#facc15"]
+
 
 class _TitleBar(Vertical):
-    """标题栏：最外部单线圆角框，内部直接是标题背景块（背景只在框内，不遮圆角字形）。"""
+    """标题栏：最外部单线圆角框，内部是动态标题块（spinner 前缀 + 逐字滚动渐变流光，
+    0.12s 轮播；副标题行静态淡蓝灰）。背景只在框内，不遮圆角字形。"""
 
     def __init__(self, title: str, subtitle: str) -> None:
         super().__init__(id="titlebar")
         self._title = title
         self._subtitle = subtitle
+        self._frame = 0
 
     def compose(self) -> ComposeResult:
-        yield Static(_markup(f"[bold cyan]{self._title}[/bold cyan]\n[dim]{self._subtitle}[/dim]",
-                             justify="center"),
-                     id="titlebar-text", markup=False)
+        yield Static("", id="titlebar-text", markup=False)
+
+    def on_mount(self) -> None:
+        self._tick()
+        self.set_interval(0.12, self._tick)
+
+    def _tick(self) -> None:
+        frame = self._frame
+        self._frame += 1
+        text = Text(justify="center")
+        text.append(_SPINNER_FRAMES[frame % len(_SPINNER_FRAMES)] + " ", style="bold #facc15")
+        for i, ch in enumerate(self._title):
+            text.append(ch, style=f"bold {_TITLE_WAVE[(i + frame) % len(_TITLE_WAVE)]}")
+        text.append(f"\n{self._subtitle}", style="#94a3b8")
+        self.query_one("#titlebar-text", Static).update(text)
 
 
 class _ChatBoard(VerticalScroll):

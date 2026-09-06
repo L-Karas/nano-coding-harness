@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
-DEFAULT_TITLE = "🤖 Nano Coding Harness Agent"
+DEFAULT_TITLE = "⚡ Nano-Harness"
 DEFAULT_SUBTITLE = "Enter your query and press Enter to send it. /new to start a new session, /sessions to switch sessions, and /exit to log out."
 _PLACEHOLDER = "Type your message, press Enter to send, and press Ctrl+J to start a new line (type /exit to exit)."
 

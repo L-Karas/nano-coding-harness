@@ -46,6 +46,28 @@ def _dim_body(text: str) -> Text:
     return _markup(f"[dim #e2e8f0]{escape(text)}[/dim #e2e8f0]")
 
 
+DEFAULT_MAX_LINES = 10  # 工具卡片正文默认上限行数：超出折叠为额外 1 行提示
+
+
+def _capped_lines(text: str, max_lines: int) -> tuple[str, int]:
+    """正文行数限制：返回 (最多前 max_lines 行的展示文本, 被折叠行数)，未超限原样返回。"""
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text, 0
+    return "\n".join(lines[:max_lines]), len(lines) - max_lines
+
+
+def _truncated_hint(hidden: int) -> Text:
+    """折叠提示行（暗黄，可点击展开）。提示自身含方括号需 escape（见 _dim_body）。"""
+    message = escape(f"... [truncated {hidden} lines] · click to expand")
+    return _markup(f"\n[dim yellow]{message}[/dim yellow]")
+
+
+def _collapse_hint() -> Text:
+    """展开态末尾的收回提示行（点击卡片折叠）。"""
+    return _markup("\n[dim yellow]· click to collapse[/dim yellow]")
+
+
 def _require_worker_thread() -> None:
     app = _APP
     if app is not None and threading.get_ident() == app._thread_id:
@@ -56,31 +78,53 @@ def render_user_input(user_text: str) -> None:
     _exec(lambda app: app._add_card("user", _markup(f"[bold #f9fafb]{escape(user_text)}[/bold #f9fafb]")))
 
 
-def render_tool_call(tool_name: str, tool_args: Any) -> None:
+def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
+    """工具调用卡片：参数默认最多渲染 max_lines 行，超出折叠为额外 1 行提示；
+    点击卡片在截断与完整参数间切换。"""
     try:
         args_str = json.dumps(tool_args, ensure_ascii=False, indent=2) if isinstance(tool_args, (dict, list)) \
             else str(tool_args)
     except Exception:
         args_str = str(tool_args)
-    head = _markup(f"[bold #fde68a]Tool:[/bold #fde68a] [bold white]{escape(tool_name)}[/bold white]\n")
-    _exec(lambda app: app._add_card("tool", head + _dim_body(args_str)))
+    shown, hidden = _capped_lines(args_str, max_lines)
+    head = _markup(f"[bold #fde68a]Tool Call:[/bold #fde68a] [bold white]{escape(tool_name)}[/bold white]\n")
+    body = _dim_body(shown)
+    expand = None
+    if hidden:
+        body += _truncated_hint(hidden)
+        expand = lambda: head + _dim_body(args_str) + _collapse_hint()
+    _exec(lambda app: app._add_card("tool", head + body, expand=expand))
 
 
-def render_tool_result(output: Any, max_lines: int = 12) -> None:
-    """工具输出卡片：超过 max_lines 的行折叠为 "... [truncated N lines]" 提示。"""
+def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
+    """工具输出卡片：默认最多渲染 max_lines 行，超出折叠为额外 1 行提示；
+    点击卡片在截断与完整输出间切换。"""
     output_str = str(output)
-    lines = output_str.splitlines()
-    body = _dim_body(output_str if len(lines) <= max_lines else "\n".join(lines[:max_lines]))
-    if len(lines) > max_lines:  # 截断提示自身含方括号，同样需 escape（见 _dim_body）
-        body += _markup(f"\n[dim yellow]{escape(f'... [truncated {len(lines) - max_lines} lines]')}[/dim yellow]")
-    _exec(lambda app: app._add_card("result", body))
+    shown, hidden = _capped_lines(output_str, max_lines)
+    body = _dim_body(shown)
+    expand = None
+    if hidden:
+        body += _truncated_hint(hidden)
+        expand = lambda: _dim_body(output_str) + _collapse_hint()
+    _exec(lambda app: app._add_card("result", body, expand=expand))
 
 
-def render_tool_result_diff(rows: list[tuple[str, int, str]]) -> None:
+def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = DEFAULT_MAX_LINES) -> None:
+    """diff 预览卡片：默认最多渲染 max_lines 行，超出折叠为额外 1 行提示；
+    点击卡片在截断与完整 diff 间切换。"""
     width = max(len(str(n)) for _, n, _ in rows)
-    styled = [Text(f"{kind}{n:>{width}} │ {line}",
-                   style={"+": "green", "-": "red", " ": "dim"}.get(kind, "dim")) for kind, n, line in rows]
-    _exec(lambda app: app._add_card("result", Text("\n").join(styled)))
+
+    def _styled(part: list[tuple[str, int, str]]) -> Text:
+        return Text("\n").join(Text(f"{kind}{n:>{width}} │ {line}",
+                                     style={"+": "green", "-": "red", " ": "dim"}.get(kind, "dim"))
+                                    for kind, n, line in part)
+
+    if len(rows) <= max_lines:
+        _exec(lambda app: app._add_card("result", _styled(rows)))
+        return
+    body = _styled(rows[:max_lines]) + _truncated_hint(len(rows) - max_lines)
+    expand = lambda: _styled(rows) + _collapse_hint()
+    _exec(lambda app: app._add_card("result", body, expand=expand))
 
 
 def render_background_notification(message: str, title: str = "🔔 Background Task") -> None:
@@ -110,6 +154,8 @@ def render_session_history(session) -> None:
             if message.content:
                 render_assistant_response(message.content)
         elif message.role == "tool":
+            if message.payload:
+                render_tool_result_diff(message.payload)
             render_tool_result(message.content)
 
 

@@ -12,7 +12,7 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Any
 
 from core.config import SESSION_DIR, SESSION_INDEX
 from core.log.log import get_logger
@@ -41,12 +41,14 @@ class MessageUsage:
 class Message:
     """
     Message 类，记录消息内容
+    payload 属性用于记录附带信息，例如修改文件后的 git diff 信息，用于信息重新渲染时使用
     """
     role: Literal["user", "assistant", "tool"]
     content: str = ""
     tool_call_id: str = ""
     tool_calls: list[dict] = field(default_factory=list)
     usage: MessageUsage = field(default_factory=MessageUsage)
+    payload: Any = ""
 
 
 @dataclass
@@ -101,7 +103,7 @@ class SessionManager:
         self.update_session()
         return True
 
-    def load_messages(self) -> list[dict]:
+    def load_messages(self, exclude_payload: bool = True) -> list[dict]:
         """
         加载当前会话消息列表，若当前会话不存在，则创建新会话
         """
@@ -114,6 +116,9 @@ class SessionManager:
                 "role": message.role,
                 "content": message.content,
             }
+            if not exclude_payload and message.payload:
+                message_dict["payload"] = message.payload
+                
             if message.tool_calls:
                 message_dict["tool_calls"] = message.tool_calls
             if message.tool_call_id:
@@ -125,10 +130,22 @@ class SessionManager:
     def update_messages(self, messages_dict: list[dict]) -> bool:
         if not messages_dict:
             return True
-        messages = []
 
+        # 入参通常是 load_messages() 的产物（payload 已被剔除，供压缩/回写），但旧会话对象仍持有
+        # payload（diff 记录）。按 tool_call_id 补回，避免 compact / prepare_context 回写后 diff 丢失；
+        # 被压缩丢弃的消息不补，payload 随消息删除属预期。
+        old_tool_messages = {
+            message.tool_call_id: message
+            for message in self.session_map[self.current_session].messages
+            if message.role == "tool" and message.tool_call_id
+        }
+
+        messages = []
         for message in messages_dict:
-            messages.append(Message(**message))
+            message = Message(**message)
+            if message.role == "tool" and not message.payload and message.tool_call_id in old_tool_messages:
+                message.payload = old_tool_messages[message.tool_call_id].payload
+            messages.append(message)
 
         self.session_map[self.current_session].messages = messages
         self.update_session()

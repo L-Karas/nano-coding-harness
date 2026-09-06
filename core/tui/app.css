@@ -34,13 +34,34 @@ Screen {
     height: 1fr;
 }
 
-/* 右栏标题：置于面板左上角，距左边界（分栏线）1 列 */
+/* 右栏标题：置于面板左上角，距左边界（分栏线）1 列；可点击折叠/展开 */
 #right-title {
+    width: auto;
     height: auto;
     padding: 0 0 0 1;
     color: #7dd3fc;
     text-style: bold;
+    pointer: pointer;
 }
+
+/* 右栏折叠态：整体隐藏，聊天区吃满全宽；展开入口是右缘居中的 #info-tab 标签 */
+#right.-collapsed { display: none; }
+
+/* 折叠态的展开标签：仅 ▸ 字形，dock 到屏幕右缘一整列并垂直居中；仅折叠时显示（-show 类由 on_click 切换） */
+#info-tab {
+    dock: right;
+    width: 1;
+    height: 1fr;
+    display: none;
+    align-vertical: middle;
+    color: #7dd3fc;
+    text-style: bold;
+}
+#info-tab Static {
+    width: 1fr;
+    pointer: pointer;
+}
+#info-tab.-show { display: block; }
 
 /* ── 主界面 ── */
 
@@ -52,11 +73,12 @@ Screen {
     border: round #38bdf8;
 }
 
+/* 标题块：上下留白让两行文字不贴圆角框线；副标题行淡蓝灰，与右侧栏标题同色系 */
 #titlebar-text {
     width: 1fr;
     height: auto;
-    background: #0c1a2e;
-    padding: 0 2;
+    background: transparent;
+    padding: 1 2;
 }
 
 /* 聊天画板：1fr 撑满视口，仅内容超出时出现纵向滑块。
@@ -156,15 +178,24 @@ Screen {
 .card > * { width: 1fr; }
 .card .card-body { text-align: left; }
 
+/* 截断正文（工具调用/结果卡）：可点击展开/折叠，指针提示可交互（逻辑见 ChatApp._toggle_expand） */
+.card .card-body.-expandable { pointer: pointer; }
+
 /* Markdown 自带 padding:0 2，去掉使内容与其它卡片对齐 */
 .card.assistant > Markdown { padding: 0; }
+
+/* 最后一个块的底部 margin 归零：块间间距靠各块 margin-bottom 实现，
+   最后一块的 margin-bottom 会在卡片末尾多出一整行空白（视觉上像被加了换行） */
+.card.assistant > Markdown > *:last-child {
+    margin-bottom: 0;
+}
 
 /* 每类消息卡片：左边实线色 + 背景色（对齐原 ui.py 配色；标题行已去除，靠色条/底色区分类型）
    user=用户 · tool=工具调用 · result=工具结果 · assistant=回复 · notice=提示 · sessions=会话列表 · perm=权限确认 */
 .card.user      { background: #374151; border-left: heavy #6b7280; }
 .card.tool      { background: #261f0d; border-left: heavy #f59e0b; }
 .card.result    { background: #11221b; border-left: heavy #10b981; }
-.card.assistant { background: #1e1b2e; border-left: heavy #c084fc; }
+.card.assistant { background: transparent; border-left: heavy #c084fc; }
 .card.notice    { background: #0f172a; border-left: heavy #22d3ee; }
 .card.sessions  { background: #0c1a2e; border-left: heavy #38bdf8; }
 .card.perm      { background: #3b2a10; border-left: heavy #f59e0b; }
