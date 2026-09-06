@@ -25,4 +25,4 @@ def run_glob(pattern: str, cwd: Optional[Path] = None) -> str:
 
         return "\n".join(results) if results else "(No matches)"
     except Exception as e:
-        return f"Error: {e}"
+        raise e

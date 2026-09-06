@@ -28,4 +28,4 @@ def run_read_file(path: str, limit: Optional[int] = None, offset: Optional[int] 
             lines = lines[:limit] + [f"... ({len(lines) - limit}) more lines)"]
         return "\n".join(lines)
     except Exception as e:
-        return f"Error: {e}"
+        raise e

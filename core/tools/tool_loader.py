@@ -46,7 +46,7 @@ def get_builtin_tool_handlers(agent_level: Literal["main", "sub-agent", "teammat
 
 def call_tool_handler(handler, args: dict, name: str) -> str:
     if not handler:
-        return f"Unknown: {name}"
+        return f"[Unknown Tool]: {name}"
 
     tool_cls = _TOOLS.get(name)
     try:
@@ -54,7 +54,7 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
             tool_cls.model_validate(args)
         return handler(**args)
     except Exception as e:
-        return f"Error: {e}"
+        return f"[Tool Error]: {e}"
 
 
 if __name__ == '__main__':

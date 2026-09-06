@@ -13,4 +13,7 @@ class SpawnSubagent(BaseTool):
 
 
 def run_spawn_subagent(description: str) -> str:
-    return spawn_subagent(description)
+    try:
+        return spawn_subagent(description)
+    except Exception as e:
+        raise e

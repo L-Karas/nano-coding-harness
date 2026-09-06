@@ -54,8 +54,8 @@ def run_git(args: list[str]) -> tuple[bool, str]:
         )
         output = (res.stdout + res.stderr).strip()
         return res.returncode == 0, output[:5000] if output else "No tool output."
-    except subprocess.TimeoutExpired:
-        return False, f"Error: git command timed out."
+    except Exception as e:
+        return False, f"Error: git error {e}."
 
 
 def bind_task2worktree(task_id: str, worktree_name: str):
@@ -72,15 +72,15 @@ def create_worktree(name: str, task_id: str = "") -> str:
     if task_id:
         try:
             load_task(task_id)
-        except FileNotFoundError:
-            return f"Error: Task {task_id} does not exist."
+        except Exception as e:
+            raise Exception(f"Error: Task {task_id} does not exist. {e}")
 
     path = WORKTREES_DIR / name
     if path.exists():
         return f"Worktree {name} already exists at {path}."
     ok, result = run_git(["worktree", "add", str(path), "-b", f"wt/{name}", "HEAD"])
     if not ok:
-        return f"Git Error: {result}"
+        raise Exception(f"Git Error: {result}")
     if task_id:
         bind_task2worktree(task_id, name)
 
@@ -123,7 +123,7 @@ def remove_worktree(name: str, discard_changes: bool = False) -> str:
         return err
     path = WORKTREES_DIR / name
     if not path.exists():
-        return f"Error: Worktree {name} does not exist."
+        raise Exception(f"Error: Worktree {name} does not exist.")
     if not discard_changes:
         files, commits = _count_worktree_changes(path)
         if files < 0:
@@ -132,11 +132,15 @@ def remove_worktree(name: str, discard_changes: bool = False) -> str:
             return (f"Worktree '{name}' has {files} uncommitted files and {commits} unpushed commits. "
                     f"Use discard_changes=true to remove worktree or keep_worktree tool to keep worktree.")
 
-    ok, _ = run_git(["worktree", "remove", str(path), "--force"])
+    ok, result = run_git(["worktree", "remove", str(path), "--force"])
     if not ok:
-        return f"Failed to remove worktree '{name}' at {path}."
+        raise Exception(f"Failed to remove worktree '{name}' at {path}. Error: {result}")
 
-    run_git(["branch", "-D", f"wt/{name}"])
+    ok, result = run_git(["branch", "-D", f"wt/{name}"])
+    if not ok:
+        raise Exception(f"Successfully remove worktree '{name}' at {path}. "
+                        f"Failed to delete branch 'wt/{name}'. Error: {result}")
+
     log_event("remove", name)
     # print(f"  \033[33m[Worktree Remove] removed worktree '{name}' at '{path}'\033[0m")
     _LOGGER.info(f"[Worktree Remove] removed worktree '{name}' at '{path}'")
@@ -147,6 +151,6 @@ def remove_worktree(name: str, discard_changes: bool = False) -> str:
 def keep_worktree(name: str) -> str:
     err = validate_worktree_name(name)
     if err:
-        return err
+        raise Exception(err)
     log_event("keep", name)
     return f"Worktree '{name}' kept for review (branch: wt/{name})."

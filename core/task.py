@@ -73,7 +73,10 @@ def create_task(
         owner=None,
         blockedBy=blockedBy or []
     )
-    save_task(task)
+    try:
+        save_task(task)
+    except Exception as e:
+        raise Exception(f"Failed to create task: {e}")
 
     _LOGGER.info(f"[Create Task] {task.subject} (Blocked by tasks: {', '.join(blockedBy)})")
 

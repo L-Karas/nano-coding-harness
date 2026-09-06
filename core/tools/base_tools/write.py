@@ -24,4 +24,4 @@ def run_write_file(path: str, content: str, cwd: Optional[Path] = None) -> str:
         fp.write_text(content, encoding="utf-8")
         return f"Wrote {len(content)} bytes to {path}."
     except Exception as e:
-        return f"Error: {e}"
+        raise e

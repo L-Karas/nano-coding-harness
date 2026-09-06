@@ -25,17 +25,17 @@ def run_grep(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optiona
     try:
         regex = re.compile(pattern)
     except Exception as e:
-        return f"Error: {e}"
+        raise e
 
     if not path.is_absolute():
         path = path.resolve()
     if not path.exists():
-        return f"Error: path '{path}' does not exist."
+        raise Exception(f"Error: path '{path}' does not exist.")
     if not path.is_dir():
         path = path.parent
 
     if not path.is_relative_to(base):
-        return f"Error: path '{path}' escapes work directory '{base}'."
+        raise Exception(f"Error: path '{path}' escapes work directory '{base}'.")
 
     iterator = path.rglob(file_pattern)
     output = []
