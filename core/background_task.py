@@ -9,7 +9,7 @@ import threading
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
-from core.base_tools import call_tool_handler
+from core.tools import call_tool_handler
 from core.log import get_logger
 
 BG_COUNTER = 0

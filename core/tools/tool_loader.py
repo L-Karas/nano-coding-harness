@@ -32,6 +32,15 @@ def get_builtin_tool_handlers(agent_level: Literal["main", "sub-agent", "teammat
     return handlers
 
 
+def call_tool_handler(handler, args: dict, name: str) -> str:
+    if not handler:
+        return f"Unknown: {name}"
+    try:
+        return handler(**args)
+    except Exception as e:
+        return f"Error: {e}"
+
+
 if __name__ == '__main__':
     tools = get_builtin_tools(agent_level="main")
     handlers = get_builtin_tool_handlers(agent_level="main")

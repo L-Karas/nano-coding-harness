@@ -10,7 +10,7 @@ from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
-from core.base_tools import call_tool_handler, DIFF_TOOLS, preview_write, preview_edit
+from core.tools.base_tools.git import DIFF_TOOLS, preview_edit, preview_write
 from core.compact.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
     reactive_compact
 from core.config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
@@ -23,7 +23,7 @@ from core.log.log import get_logger
 from core.mcp.mcps import get_client_manager
 from core.prompt import assemble_system_prompt
 from core.session.session import SESSION_MANAGER
-from core.tools import get_builtin_tools, get_builtin_tool_handlers
+from core.tools import call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
 from core.tui.render import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
     render_tool_result_diff, render_background_notification, render_thinking_status, render_tool_calling_status
 
@@ -65,13 +65,9 @@ def prepare_context(messages: list) -> list:
     return messages
 
 
-def inject_background_notifications(messages: list = []) -> list:
+def inject_background_notifications():
     notes = collect_background_results()
     if notes:
-        # messages.append({
-        #     "role": "user",
-        #     "content": "\n\n".join(notes),
-        # })
         SESSION_MANAGER.add_message({
             "role": "user",
             "content": "\n\n".join(notes),
@@ -124,10 +120,9 @@ def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str,
     return accumulated_text, tool_calls, finish_reason, usage
 
 
-def call_tools(tool_calls: list[dict], messages: list, handlers: dict) -> None:
+def call_tools(tool_calls: list[dict], handlers: dict) -> None:
     global ROUNDS_SINCE_TODO
 
-    messages = SESSION_MANAGER.load_messages()
     tool_call_results = []
     for tool_call_dict in tool_calls:
         tool_call = ChatCompletionMessageToolCall(**tool_call_dict)
@@ -137,7 +132,7 @@ def call_tools(tool_calls: list[dict], messages: list, handlers: dict) -> None:
         render_tool_call(tool_name, tool_args)
 
         if tool_name == "compact":
-            messages[:] = compact_history(messages)
+            messages = compact_history(SESSION_MANAGER.load_messages())
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
@@ -177,8 +172,6 @@ def call_tools(tool_calls: list[dict], messages: list, handlers: dict) -> None:
                     render_tool_result_diff(diff)
             output = call_tool_handler(handler, tool_args, tool_name)
 
-        # trigger_hooks("PostToolUse", tool_call, output)
-
         render_tool_result(output)
 
         if tool_name == "todo_write":
@@ -192,20 +185,17 @@ def call_tools(tool_calls: list[dict], messages: list, handlers: dict) -> None:
             "content": str(output)
         })
 
-    # messages.extend(tool_call_results)
     for tool_result in tool_call_results:
         SESSION_MANAGER.add_message(tool_result)
 
 
 def call_llm(
-        messages: list,
         context: dict,
         tools: list,
         state: RecoveryState,
         max_tokens: int
 ) -> ChatCompletion | Stream[ChatCompletionChunk]:
     system = assemble_system_prompt(context)
-    messages = [{"role": "system", "content": system}] + messages
     messages = [{"role": "system", "content": system}] + SESSION_MANAGER.load_messages()
 
     _LOGER.debug(f"Session manager loaded messages: {SESSION_MANAGER.load_messages()}")
@@ -237,13 +227,9 @@ def agent_loop(messages: list, context: dict):
                 "role": "user",
                 "content": f"[Scheduled crons] {cron.prompt}"
             })
-            # messages.append({
-            #     "role": "user",
-            #     "content": f"[Scheduled crons] {cron.prompt}"
-            # })
             render_background_notification(f"Cron Prompt: {cron.prompt}", title="⏰ Cron Injected")
 
-        inject_background_notifications(messages)
+        inject_background_notifications()
 
         # todo: 当有待办 todo 时才使用该提示信息插入
         # if ROUNDS_SINCE_TODO >= 3:
@@ -261,20 +247,15 @@ def agent_loop(messages: list, context: dict):
         SESSION_MANAGER.update_messages(messages)
         context = update_context(context, messages)
         tools, handlers = assemble_tool_pool()
-        # print(SESSION_MANAGER.load_messages())
 
         try:
-            stream = call_llm(messages, context, tools, state, max_tokens)
+            stream = call_llm(context, tools, state, max_tokens)
         except Exception as e:
             if is_prompt_too_long_error(e) and state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(SESSION_MANAGER.load_messages())
                 SESSION_MANAGER.update_messages(messages)
                 state.has_attempted_reactive_compact = True
                 continue
-            # messages.append({
-            #     "role": "assistant",
-            #     "content": f"[Error] {type(e).__name__}: {e}"
-            # })
             SESSION_MANAGER.add_message({
                 "role": "assistant",
                 "content": f"[Error] {type(e).__name__}: {e}"
@@ -287,23 +268,14 @@ def agent_loop(messages: list, context: dict):
             if not state.has_escalated:
                 max_tokens = ESCALATED_MAX_TOKENS
                 state.has_escalated = True
-                # print(f"  \033[33m[Max tokens] retry with {max_tokens}\033[0m")
                 _LOGER.info(f"[Max tokens] retry with {max_tokens}")
                 continue
-            # messages.append({
-            #     "role": "assistant",
-            #     "content": accumulated_text
-            # })
             SESSION_MANAGER.add_message({
                 "role": "assistant",
                 "content": accumulated_text
             })
 
             if state.recovery_count < MAX_RECOVERY_RETRIES:
-                # messages.append({
-                #     "role": "user",
-                #     "content": CONTINUATION_PROMPT
-                # })
                 SESSION_MANAGER.add_message({
                     "role": "user",
                     "content": CONTINUATION_PROMPT
@@ -316,28 +288,18 @@ def agent_loop(messages: list, context: dict):
         state.has_escalated = False
 
         if not tool_calls:
-            # messages.append({
-            #     "role": "assistant",
-            #     "content": accumulated_text
-            # })
             SESSION_MANAGER.add_message({
                 "role": "assistant",
                 "content": accumulated_text
             })
-            # trigger_hooks("Stop", messages)
             return
         else:
-            # messages.append({
-            #     "role": "assistant",
-            #     "content": accumulated_text or "",
-            #     "tool_calls": tool_calls
-            # })
             SESSION_MANAGER.add_message({
                 "role": "assistant",
                 "content": accumulated_text or "",
                 "tool_calls": tool_calls
             })
-            call_tools(tool_calls, messages, handlers)
+            call_tools(tool_calls, handlers)
 
 
 def cron_auto_loop(messages: list, context: dict):
@@ -349,10 +311,6 @@ def cron_auto_loop(messages: list, context: dict):
 
         with AGENT_LOCK:
             for job in fired:
-                # messages.append({
-                #     "role": "user",
-                #     "content": f"[Scheduled] {job.prompt}"
-                # })
                 SESSION_MANAGER.add_message({
                     "role": "user",
                     "content": f"[Scheduled] {job.prompt}"

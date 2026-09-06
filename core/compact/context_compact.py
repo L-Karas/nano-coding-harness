@@ -7,7 +7,6 @@ Context Compaction
 """
 import json
 import time
-from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
 from typing import Union
@@ -20,16 +19,6 @@ from core.log.log import get_logger
 REMAIN_TOOL_RESULT_THRESHOLD = 120
 
 _LOGGER = get_logger(__name__)
-
-
-@dataclass
-class CompactConfig:
-    # Minimum number of tokens to preserve after compaction
-    min_tokens: int = 1_000
-    # Maximum number of tokens to preserve after compaction (truncation)
-    max_tokens: int = 3_000
-    # Minimum number of text messages to keep (for dialog continuation)
-    text_messages: int = 5
 
 
 def log_compact_info(func):
@@ -69,12 +58,6 @@ def message_has_tool_call(message: Union[dict, ChatCompletionMessage]) -> bool:
     if isinstance(message, dict):
         return bool(message.get("tool_calls"))
     return message.tool_calls is not None
-
-
-def message_has_content(message: Union[dict, ChatCompletionMessage]) -> bool:
-    if isinstance(message, dict):
-        return bool(message.get("content"))
-    return bool(message.content)
 
 
 def is_tool_result_message(message: dict) -> bool:

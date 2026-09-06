@@ -32,7 +32,6 @@ def with_retry(fn: Callable, state: RecoveryState):
     for attempt in range(MAX_RETRIES):
         try:
             result = fn()
-            state.consecutive_529 = 0
             return result
         except Exception as e:
             error_msg = str(e).lower().strip()

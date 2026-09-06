@@ -20,7 +20,7 @@ class CreateTask(BaseTool):
 
 class ListTasks(BaseTool):
     """List all tasks with their status, owner, and worktree."""
-    agent_level: set = {"main"}
+    agent_level: set = {"main", "teammate"}
 
 
 class GetTask(BaseTool):
@@ -34,14 +34,14 @@ class ClaimTask(BaseTool):
     """Claim a pending task and start working on it."""
     task_id: str = Field(description="The task ID to claim.")
 
-    agent_level: set = {"main"}
+    agent_level: set = {"main", "teammate"}
 
 
 class CompleteTask(BaseTool):
     """Complete an in-progress task."""
     task_id: str = Field(description="The task ID to complete.")
 
-    agent_level: set = {"main"}
+    agent_level: set = {"main", "teammate"}
 
 
 def run_create_task(subject: str, description: str, blockedBy: Optional[list[str]] = None) -> str:
