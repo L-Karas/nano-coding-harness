@@ -202,23 +202,26 @@ def summarize_history(messages: list) -> str:
     """
     Summarize history messages
     """
-    conversation = ""
-    for message in messages:
-        if isinstance(message, dict):
-            conversation += json.dumps(message, ensure_ascii=False)
-        else:
-            conversation += message.model_dump_json(ensure_ascii=False)
+    try:
+        conversation = ""
+        for message in messages:
+            if isinstance(message, dict):
+                conversation += json.dumps(message, ensure_ascii=False)
+            else:
+                conversation += message.model_dump_json(ensure_ascii=False)
 
-    prompt = ("Summarize this coding-agent conversation so work can continue. "
-              "Preserve current goal, key findings, changed files, remaining work, "
-              "and user constraints.\n\n") + "Conversation:\n" + conversation
+        prompt = ("Summarize this coding-agent conversation so work can continue. "
+                  "Preserve current goal, key findings, changed files, remaining work, "
+                  "and user constraints.\n\n") + "Conversation:\n" + conversation
 
-    response = client.chat.completions.create(
-        model=SUB_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2000,
-    )
-    return response.choices[0].message.content
+        response = client.chat.completions.create(
+            model=SUB_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        raise e
 
 
 @log_compact_info
@@ -227,7 +230,6 @@ def compact_history(messages: list) -> list:
     Summarize history messages
     """
     write_transcript(messages)
-    # print(f"  \033[36m[Compact] transcript saved: {transcript}\033[0m")
     summary = summarize_history(messages[1:])
     return messages[:1] + [{"role": "user", "content": f"<compacted-messages>{summary}</compacted-messages>"}]
 

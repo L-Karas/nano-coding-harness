@@ -207,7 +207,7 @@ def consume_cron_queue() -> list[CronJob]:
 def run_schedule_cron(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> str:
     result = schedule_job(cron_expression, prompt, recurring, durable)
     if isinstance(result, str):
-        return f"Error: {result}"
+        raise Exception(result)
 
     return f"Scheduled jobs:\njob id: {result.id}, '{cron_expression}' -> {prompt}"
 

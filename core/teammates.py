@@ -2,18 +2,16 @@
 Teammates
 """
 import json
-import re
 import threading
 import time
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
 from core import config, message_bus, protocol_state
-from core.base_tools import run_bash, run_read, run_write, call_tool_handler
 from core.config import client
 from core.log.log import get_logger
-from core.protocol_state import get_request_id, ProtocolState
-from core.task import TASK_DIR, can_start, claim_task, list_tasks, load_task, complete_task
+from core.task import TASK_DIR, can_start, claim_task, load_task, complete_task
 from core.worktree import WORKTREES_DIR
 
 _LOGER = get_logger(__name__)
@@ -21,120 +19,6 @@ _LOGER = get_logger(__name__)
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
 ACTIVATE_TEAMMATES: dict[str, bool] = {}
-
-TEAMMATE_TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "Execute a bash command.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "The bash command to execute."},
-                },
-                "required": ["command"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Read a file from the filesystem.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path to the file to read."},
-                    "limit": {"type": "integer", "description": "Max lines to read."},
-                    "offset": {"type": "integer", "description": "Line offset to start reading from."},
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": "Write content to a file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path to the file to write."},
-                    "content": {"type": "string", "description": "Content to write to the file."},
-                },
-                "required": ["path", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "send_message",
-            "description": "Send message to another agent.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "to_agent": {"type": "string", "description": "The name of the agent to send the message to."},
-                    "content": {"type": "string", "description": "The message content to send."},
-                },
-                "required": ["to_agent", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_plan",
-            "description": "Submit a plan for Lead approval.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "plan": {"type": "string", "description": "The plan content to submit for approval."},
-                },
-                "required": ["plan"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_tasks",
-            "description": "List all tasks with their status, owner, and worktree.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "claim_task",
-            "description": "Claim a pending task.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string", "description": "The task ID to claim."},
-                },
-                "required": ["task_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "complete_task",
-            "description": "Complete an in-progress task.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string", "description": "The task ID to complete."},
-                },
-                "required": ["task_id"],
-            },
-        },
-    },
-]
-
 
 # todo: 使用 Task 类替换 dict
 def scan_unclaimed_tasks() -> list[dict]:
@@ -151,7 +35,6 @@ def idle_poll(
         agent_name: str,
         messages: list[dict],
         name: str,
-        role: str,
         worktree_context: Optional[dict] = None
 ) -> str:
     """
@@ -229,6 +112,9 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         return False
 
     def run():
+        # 延迟导入: core.tools -> extra_tools -> core.teammates 存在导入环
+        from core.tools import call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
+
         wt_ctx = {"work_path": None}
 
         def _wt_cwd():
@@ -237,24 +123,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             work_path = wt_ctx["work_path"]
             return Path(work_path) if work_path else None
 
-        def _run_bash(command: str) -> str:
-            return run_bash(command, cwd=_wt_cwd())
+        def _bind_worktree_cwd(fn):
+            # tool_loader 中注册的 run_* 均接受 cwd; 认领带 worktree 的任务后统一注入
+            def wrapped(**kwargs):
+                return fn(**kwargs, cwd=_wt_cwd())
 
-        def _run_read(path: str) -> str:
-            return run_read(path, cwd=_wt_cwd())
-
-        def _run_write(path: str, content: str) -> str:
-            return run_write(path, content, cwd=_wt_cwd())
-
-        def _run_list_tasks():
-            tasks = list_tasks()
-            if not tasks:
-                return f"No tasks found."
-            return "Task List:\n" + "\n".join([
-                f"  task {task.id}: {task.subject} [task status: {task.status}]" +
-                (f" (task worktree: {task.worktree})" if task.worktree else "")
-                for task in tasks
-            ])
+            return wrapped
 
         def _run_claim_task(task_id: str):
             result = claim_task(task_id, owner=name)
@@ -269,25 +143,31 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             wt_ctx["work_path"] = None
             return result
 
-        def _teammate_submit_plan(plan: str) -> str:
-            req_id = get_request_id()
-            protocol_state.PENDING_REQUESTS[req_id] = ProtocolState(
-                request_id=req_id, type="plan_approval", sender=name, target="lead",
-                status="pending", payload=plan
-            )
-            message_bus.MESSAGE_BUS.send(
-                name, "lead", plan, "plan_approval_request",
-                {"request_id": req_id}
-            )
-            return f"Plan submitted ({req_id})"
+        # 与 main / sub-agent 相同: 工具定义与默认 handler 统一取自 tool_loader(teammate 级);
+        # compact / check_inbox 绑定 main 会话与 lead 邮箱语义, 不适用于自治 teammate
+        excluded = {"compact", "check_inbox"}
+        tools = [tool for tool in get_builtin_tools("teammate") if tool["function"]["name"] not in excluded]
+        handlers = {tool_name: handler
+                    for tool_name, handler in get_builtin_tool_handlers("teammate").items()
+                    if tool_name not in excluded}
+        # 文件类工具随认领的任务 worktree 切换 cwd
+        for tool_name in ("bash", "edit_file", "glob", "grep", "read_file", "write_file"):
+            handlers[tool_name] = _bind_worktree_cwd(handlers[tool_name])
+
+        # 以下 handler 绑定到当前 teammate 身份
+        def _run_send_message(to_agent: str, content: str) -> str:
+            # 以队友名义发送(loader 的 run_send_message 固定以 lead 身份发送)
+            message_bus.MESSAGE_BUS.send(name, to_agent, content)
+            return "Sent"
+
+        handlers["send_message"] = _run_send_message
+        handlers["claim_task"] = _run_claim_task
+        handlers["complete_task"] = _run_complete_task
+        handlers["submit_plan"] = partial(handlers["submit_plan"], from_agent=name)
 
         messages = [{"role": "system", "content": system_prompt}]
-        handlers = {
-            "base": _run_bash, "read_file": _run_read, "write_file": _run_write,
-            "send_message": lambda to_agent, content: (message_bus.MESSAGE_BUS.send(name, to_agent, content), "Sent")[
-                1],
-            "list_tasks": _run_list_tasks, "claim_task": _run_claim_task, "complete_task": _run_complete_task,
-        }
+        if prompt:
+            messages.append({"role": "user", "content": prompt})
 
         while True:
             should_shutdown = False
@@ -309,19 +189,18 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     continue
 
                 if inbox_messages and not should_shutdown:
-                    non_protocol = [message for message in inbox_messages if message.get("type") == "message"]
+                    non_protocol = [message for message in inbox_messages if message.get("msg_type") == "message"]
                     if non_protocol:
                         messages.append({
                             "role": "user",
-                            "content": "<inbox_message>" + json.dumps(non_protocol,
-                                                                      ensure_ascii=False) + "</inbox_message>",
+                            "content": f"<inbox_messages>{json.dumps(non_protocol, ensure_ascii=False)}</inbox_messages>",
                         })
 
                 try:
                     response = client.chat.completions.create(
                         model=config.SUB_MODEL,
                         messages=messages,
-                        tools=TEAMMATE_TOOLS,
+                        tools=tools,
                         max_tokens=8000,
                         extra_body={"thinking": {"type": "enabled"}}
                     )
@@ -371,7 +250,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             if protocol_ctx["waiting_plan"]:
                 continue
 
-            idle_result = idle_poll(name, messages, name, role, wt_ctx)
+            idle_result = idle_poll(name, messages, name, wt_ctx)
             if idle_result in ("shutdown", "timeout"):
                 break
 

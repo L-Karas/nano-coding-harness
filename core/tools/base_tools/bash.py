@@ -24,5 +24,5 @@ def run_bash(command: str, cwd: Optional[Path] = None, run_in_background: bool =
         res = subprocess.run(command, shell=True, capture_output=True, cwd=cwd or WORKDIR, text=True, timeout=120)
         output = (res.stdout + res.stderr).strip()
         return output[:int(5e4)] if output else "(Tool no output)"
-    except subprocess.TimeoutExpired:
-        return f"Error: Timeout (120s)"
+    except Exception as e:
+        raise e

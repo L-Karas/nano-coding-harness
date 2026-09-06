@@ -52,6 +52,28 @@ class ReviewPlan(BaseTool):
     agent_level: set = {"main"}
 
 
+class SubmitPlan(BaseTool):
+    """Submit a plan for Lead approval."""
+    plan: str = Field(description="The plan content to submit for approval.")
+
+    agent_level: set = {"teammate"}
+
+
+def run_submit_plan(from_agent: str, plan: str) -> str:
+    """Register the plan request and send it to Lead for approval."""
+    req_id = protocol_state.get_request_id()
+    protocol_state.PENDING_REQUESTS[req_id] = protocol_state.ProtocolState(
+        request_id=req_id,
+        type="plan_approval",
+        sender=from_agent,
+        target="lead",
+        status="pending",
+        payload=plan,
+    )
+    message_bus.MESSAGE_BUS.send(from_agent, "lead", plan, "plan_approval_request", {"request_id": req_id})
+    return f"Plan submitted ({req_id})"
+
+
 def run_spawn_teammate(name: str, role: str, prompt: str) -> str:
     return spawn_teammate_thread(name, role, prompt)
 

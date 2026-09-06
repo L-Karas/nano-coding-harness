@@ -48,7 +48,7 @@ def todo_write(todos: list) -> str:
 
     todos, error = _normalize_todos(todos)
     if error:
-        return error
+        raise Exception(f"run todo write error: {error}")
     CURRENT_TODOS = todos
     _LOGER.info(f"[Todo Update] updated {len(CURRENT_TODOS)} item(s)")
     return f"Updated todos. Current todos:\n {CURRENT_TODOS}"

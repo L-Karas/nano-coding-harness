@@ -21,8 +21,8 @@ def run_edit_file(path: str, old_text: str, new_text: str, cwd: Optional[Path] =
         fp = _resolve(path, cwd)
         text = _read_old(fp)
         if old_text not in text:
-            return f"Error: text not found in {path}"
+            raise Exception(f"Error: text not found in {path}")
         fp.write_text(text.replace(old_text, new_text, 1), encoding="utf-8")
         return "Edited successfully."
     except Exception as e:
-        return f"Error: {e}"
+        raise e

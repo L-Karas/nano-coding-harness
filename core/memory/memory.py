@@ -47,7 +47,7 @@ class MemoryManager:
             return f"[Memory created] id: {memory.id}"
         except Exception as e:
             _LOGGER.error(f"Memory save error: {e}")
-            return f"[Memory create error] info: {e}"
+            raise Exception(f"Memory create error: {e}")
 
     def load_memory(self, id: str) -> Optional[Memory]:
         if id in self.memories:
