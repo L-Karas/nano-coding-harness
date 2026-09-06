@@ -7,10 +7,22 @@ from core.tools.tool_base import BaseTool
 from core.tools.utils import _camel_to_snake
 
 
+_TOOLS: dict[str, type[BaseTool]] = {}
+
+
+def _register_tools() -> None:
+    """Index every BaseTool subclass by snake_case tool name (read_file) — the name callers pass in."""
+    for cls in BaseTool.__subclasses__():
+        _TOOLS[_camel_to_snake(cls.__name__)] = cls
+
+
 def _builtin_tool_classes(agent_level: Literal["main", "sub-agent", "teammate"]) -> list[type[BaseTool]]:
     """BaseTool subclasses usable by this agent level."""
-    return [cls for cls in BaseTool.__subclasses__()
+    return [cls for cls in _TOOLS.values()
             if agent_level in cls.model_fields["agent_level"].get_default()]
+
+
+_register_tools()
 
 
 def get_builtin_tools(agent_level: Literal["main", "sub-agent", "teammate"] = "main") -> list[dict[str, Any]]:
@@ -35,7 +47,11 @@ def get_builtin_tool_handlers(agent_level: Literal["main", "sub-agent", "teammat
 def call_tool_handler(handler, args: dict, name: str) -> str:
     if not handler:
         return f"Unknown: {name}"
+
+    tool_cls = _TOOLS.get(name)
     try:
+        if tool_cls:  # validate only when we know the schema; unknown name falls back to direct call
+            tool_cls.model_validate(args)
         return handler(**args)
     except Exception as e:
         return f"Error: {e}"
