@@ -10,10 +10,11 @@ from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
+from core.model import shared_model_client
 from core.tools.base_tools.git import DIFF_TOOLS, preview_edit, preview_write
 from core.compact.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
     reactive_compact
-from core.config import CONTEXT_LIMIT, client, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
+from core.config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
     CONTINUATION_PROMPT
 from core.context import update_context
 from core.cron_scheduler import consume_cron_queue
@@ -197,7 +198,6 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
 def call_llm(
         context: dict,
         tools: list,
-        state: RecoveryState,
         max_tokens: int
 ) -> ChatCompletion | Stream[ChatCompletionChunk]:
     system = assemble_system_prompt(context)
@@ -206,15 +206,14 @@ def call_llm(
     _LOGER.debug(f"Session manager loaded messages: {SESSION_MANAGER.load_messages()}")
 
     with render_thinking_status():
+        # 模型配置统一来自 shared_model_client（.harness/.setting.json），不再按调用方指定 model
         return with_retry(
-            lambda: client.chat.completions.create(
-                model=state.current_model,
+            lambda: shared_model_client().get_model_client()(
                 messages=messages,
                 tools=tools,
                 max_tokens=max_tokens,
                 stream=True
-            ),
-            state
+            )
         )
 
 
@@ -254,7 +253,7 @@ def agent_loop(messages: list, context: dict):
         tools, handlers = assemble_tool_pool()
 
         try:
-            stream = call_llm(context, tools, state, max_tokens)
+            stream = call_llm(context, tools, max_tokens)
         except Exception as e:
             if is_prompt_too_long_error(e) and state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(SESSION_MANAGER.load_messages())
@@ -347,8 +346,7 @@ if __name__ == '__main__':
         }
     ]
 
-    stream = client.chat.completions.create(
-        model="glm-5.2",
+    stream = shared_model_client().get_model_client()(
         messages=[
             {"role": "user", "content": "北京今天天气怎么样？"}
         ],

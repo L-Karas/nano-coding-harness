@@ -9,9 +9,9 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
-from core import config, message_bus, protocol_state
-from core.config import client
+from core import message_bus, protocol_state
 from core.log.log import get_logger
+from core.model import shared_model_client
 from core.task import TASK_DIR, can_start, claim_task, load_task, complete_task
 from core.worktree import WORKTREES_DIR
 
@@ -198,12 +198,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                         })
 
                 try:
-                    response = client.chat.completions.create(
-                        model=config.SUB_MODEL,
+                    # 模型统一走 shared_model_client（.harness/.setting.json），
+                    # thinking 参数由模型配置决定（get_model_client 已按配置带 extra_body），不再单独指定
+                    response = shared_model_client().get_model_client()(
                         messages=messages,
                         tools=tools,
                         max_tokens=8000,
-                        extra_body={"thinking": {"type": "enabled"}}
                     )
                 except Exception:
                     break

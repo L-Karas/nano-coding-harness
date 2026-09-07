@@ -7,6 +7,9 @@ from core.config import SKILL_DIR
 
 SKILL_REGISTRY: dict[str, dict] = {}
 
+if not SKILL_DIR.exists():
+    SKILL_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     if not text.startswith("---"):

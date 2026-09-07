@@ -13,8 +13,9 @@ from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
 
-from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR, client, SUB_MODEL
+from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR
 from core.log.log import get_logger
+from core.model import shared_model_client
 
 REMAIN_TOOL_RESULT_THRESHOLD = 120
 
@@ -214,8 +215,8 @@ def summarize_history(messages: list) -> str:
                   "Preserve current goal, key findings, changed files, remaining work, "
                   "and user constraints.\n\n") + "Conversation:\n" + conversation
 
-        response = client.chat.completions.create(
-            model=SUB_MODEL,
+        # 压缩摘要同样走统一模型配置（shared_model_client），不单独指定 sub model
+        response = shared_model_client().get_model_client()(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
         )

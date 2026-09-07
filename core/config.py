@@ -1,18 +1,5 @@
-import os
+import json
 from pathlib import Path
-
-import dotenv
-from openai import OpenAI
-
-dotenv.load_dotenv()
-
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL")
-)
-SUB_MODEL = os.getenv("SUB_MODEL")
-PRIMARY_MODEL = os.getenv("MODEL")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL")
 
 WORKDIR = Path.cwd()
 HARNESS_CONFIG_DIR = WORKDIR / ".harness"
@@ -20,10 +7,15 @@ LOG_DIR = HARNESS_CONFIG_DIR / "log"
 SKILL_DIR = HARNESS_CONFIG_DIR / "skills"
 MEMORY_DIR = HARNESS_CONFIG_DIR / ".memory"
 SESSION_DIR = HARNESS_CONFIG_DIR / ".session"
-SESSION_INDEX = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
-MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
 TRANSCRIPT_DIR = HARNESS_CONFIG_DIR / ".transcripts"
 TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
+
+
+HARNESS_SETTING_FILE = HARNESS_CONFIG_DIR / ".setting.json"
+PROVIDER_AUTH_FILE = HARNESS_CONFIG_DIR / ".auth.json"
+SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
+MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
+
 
 DEFAULT_MAX_TOKENS = int(8e3)
 ESCALATED_MAX_TOKENS = int(16e3)
@@ -31,9 +23,51 @@ MAX_RETRIES = 3
 MAX_RECOVERY_RETRIES = 2
 MAX_CONSECUTIVE = 2
 
+
 BASE_DELAY_MS = 500
 CONTEXT_LIMIT = int(5e4)
 KEEP_RECENT_TOOL_RESULTS = 3
 PERSIST_THRESHOLD = int(3e4)
 
 CONTINUATION_PROMPT = "Continue from the previous response. Do not repeat completed work."
+
+
+def _init_harness():
+    global HARNESS_SETTING_FILE, PROVIDER_AUTH_FILE, SESSION_INDEX_FILE, MCP_CONFIG_FILE
+    if not HARNESS_CONFIG_DIR.exists():
+        HARNESS_CONFIG_DIR.mkdir(parents=True)
+    if not LOG_DIR.exists():
+        LOG_DIR.mkdir(parents=True)
+    if not SKILL_DIR.exists():
+        SKILL_DIR.mkdir(parents=True)
+    if not MEMORY_DIR.exists():
+        MEMORY_DIR.mkdir(parents=True)
+    if not SESSION_DIR.exists():
+        SESSION_DIR.mkdir(parents=True)
+    if not TRANSCRIPT_DIR.exists():
+        TRANSCRIPT_DIR.mkdir(parents=True)
+    if not TOOL_RESULTS_DIR.exists():
+        TOOL_RESULTS_DIR.mkdir(parents=True)
+
+    if not HARNESS_SETTING_FILE.exists():
+        with HARNESS_SETTING_FILE.open("x") as f:
+            f.write(json.dumps({
+              "default_provider": "",
+              "default_model": "",
+              "default_thinking_level": "max",
+              "default_sub_model": "",
+              "default_fallback_model": "",
+            }, ensure_ascii=False, indent=4))
+    if not PROVIDER_AUTH_FILE.exists():
+        with PROVIDER_AUTH_FILE.open("x") as f:
+            f.write(json.dumps({}, ensure_ascii=False))
+    if not SESSION_INDEX_FILE.exists():
+        SESSION_INDEX_FILE.touch()
+    if not MCP_CONFIG_FILE.exists():
+        with MCP_CONFIG_FILE.open("x") as f:
+            f.write(json.dumps({
+                "mcpServers":{}
+            }, ensure_ascii=False, indent=4))
+
+
+_init_harness()

@@ -3,7 +3,8 @@ Sub Agent
 """
 import json
 
-from core.config import WORKDIR, client, SUB_MODEL
+from core.config import WORKDIR
+from core.model import shared_model_client
 from core.permission.hook_permission import trigger_hooks
 
 SUB_SYSTEM = (f"You are a coding subagent at {WORKDIR}."
@@ -24,8 +25,8 @@ def spawn_subagent(description: str) -> str:
     ]
 
     for _ in range(30):
-        response = client.chat.completions.create(
-            model=SUB_MODEL,
+        # 模型统一走 shared_model_client（.harness/.setting.json），不再用独立 sub model
+        response = shared_model_client().get_model_client()(
             messages=messages,
             tools=sub_tools,
             max_tokens=8000,
