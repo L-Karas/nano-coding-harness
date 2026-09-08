@@ -14,19 +14,19 @@ class ScheduleCron(BaseTool):
     durable: bool = Field(default=True,
                           description="Whether the job persists across sessions (default: true).")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class ListCrons(BaseTool):
     """List all registered cron jobs."""
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class CancelCron(BaseTool):
     """Cancel a cron job by ID."""
     job_id: str = Field(description="The ID of the cron job to cancel.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 def run_schedule_cron(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> str:

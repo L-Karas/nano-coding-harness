@@ -12,7 +12,7 @@ class WriteFile(BaseTool):
     path: str = Field(description="Path to the file to write.")
     content: str = Field(description="Content to write to the file.")
 
-    agent_level: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent", "teammate"}
 
 
 def run_write_file(path: str, content: str, cwd: Optional[Path] = None) -> str:

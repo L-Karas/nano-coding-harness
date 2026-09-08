@@ -17,7 +17,7 @@ class SaveMemory(BaseTool):
                     "project=non-obvious project conventions or decision reasons, "
                     "reference=external resource pointers")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 def run_save_memory(title: str, content: str, mem_type: Literal["user", "feedback", "project", "reference"]):

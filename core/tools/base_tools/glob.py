@@ -11,7 +11,7 @@ class Glob(BaseTool):
     """Find files matching a glob pattern."""
     pattern: str = Field(description="The glob pattern to match files against (e.g. '**/*.py').")
 
-    agent_level: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent", "teammate"}
 
 
 def run_glob(pattern: str, cwd: Optional[Path] = None) -> str:

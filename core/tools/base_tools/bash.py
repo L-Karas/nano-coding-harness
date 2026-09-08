@@ -13,7 +13,7 @@ class Bash(BaseTool):
     command: str = Field(description="The bash command to execute.")
     run_in_background: bool = Field(default=False,
                                     description="Set to true to run the command in the background.")
-    agent_level: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent", "teammate"}
 
 
 def run_bash(command: str, cwd: Optional[Path] = None, run_in_background: bool = False) -> str:

@@ -20,29 +20,29 @@ def _register_tools() -> None:
         _TOOLS[_camel_to_snake(cls.__name__)] = cls
 
 
-def _builtin_tool_classes(agent_level: Literal["main", "sub-agent", "teammate"]) -> list[type[BaseTool]]:
+def _builtin_tool_classes(agent_type: Literal["main", "sub-agent", "teammate"]) -> list[type[BaseTool]]:
     """BaseTool subclasses usable by this agent level."""
     return [cls for cls in _TOOLS.values()
-            if agent_level in cls.model_fields["agent_level"].get_default()]
+            if agent_type in cls.model_fields["agent_type"].get_default()]
 
 
 _register_tools()
 
 
-def get_builtin_tools(agent_level: Literal["main", "sub-agent", "teammate"] = "main") -> list[dict[str, Any]]:
+def get_builtin_tools(agent_type: Literal["main", "sub-agent", "teammate"] = "main") -> list[dict[str, Any]]:
     """
-    Load tool list based on agent_level, defaults to "main" agent level.
+    Load tool list based on agent_type, defaults to "main" agent level.
     """
-    return [cls.to_openai_tool() for cls in _builtin_tool_classes(agent_level)]
+    return [cls.to_openai_tool() for cls in _builtin_tool_classes(agent_type)]
 
 
-def get_builtin_tool_handlers(agent_level: Literal["main", "sub-agent", "teammate"] = "main") -> dict[str, Any]:
+def get_builtin_tool_handlers(agent_type: Literal["main", "sub-agent", "teammate"] = "main") -> dict[str, Any]:
     """
     Map each builtin tool name to its handler: the run_<tool name> function
     defined in the tool class's own module (e.g. run_read_file for ReadFile).
     """
     handlers = {}
-    for cls in _builtin_tool_classes(agent_level):
+    for cls in _builtin_tool_classes(agent_type):
         name = _camel_to_snake(cls.__name__)
         handlers[name] = getattr(sys.modules[cls.__module__], f"run_{name}")
     return handlers
@@ -62,7 +62,7 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
 
 
 if __name__ == '__main__':
-    tools = get_builtin_tools(agent_level="main")
-    handlers = get_builtin_tool_handlers(agent_level="main")
+    tools = get_builtin_tools(agent_type="main")
+    handlers = get_builtin_tool_handlers(agent_type="main")
     assert set(t["function"]["name"] for t in tools) == set(handlers) and all(handlers.values())
     print(list(handlers))

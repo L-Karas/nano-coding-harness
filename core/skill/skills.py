@@ -50,15 +50,15 @@ def scan_skills():
 
 def list_skills():
     if not SKILL_REGISTRY:
-        return "No skills found."
+        return "(none)"
     return "\n".join(f"- {skill['name']}: {skill['description']}" for skill in SKILL_REGISTRY.values())
 
 
 def load_skill(name: str) -> str:
     skill = SKILL_REGISTRY.get(name)
     if not skill:
-        available_skills = ", ".join(SKILL_REGISTRY.keys()) or "No skills found."
-        return f"Skill not found: {name}, available skills: {available_skills}"
+        available_skills = ", ".join(SKILL_REGISTRY.keys()) or "(none)"
+        return f"Skill not found: {name}\n\nAvailable skills:\n{available_skills}"
     return skill.get("content")
 
 

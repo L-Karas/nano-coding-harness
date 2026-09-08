@@ -39,8 +39,8 @@ def to_openai_tool(model: type[BaseModel]) -> dict[str, Any]:
 
     params = _json_schema_to_openai_params(tool_schema)
     # remove internal field from schema
-    params["properties"].pop("agent_level", None)
-    params["required"] = [r for r in params.get("required", []) if r != "agent_level"]
+    params["properties"].pop("agent_type", None)
+    params["required"] = [r for r in params.get("required", []) if r != "agent_type"]
 
     return {
         "type": "function",

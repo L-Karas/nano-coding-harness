@@ -14,33 +14,33 @@ class CreateTask(BaseTool):
                                  description="List of task IDs that must be completed before this "
                                              "task can start.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class ListTasks(BaseTool):
     """List all tasks with their status, owner, and worktree."""
-    agent_level: set = {"main", "teammate"}
+    agent_type: set = {"main", "teammate"}
 
 
 class GetTask(BaseTool):
     """Get full details of a task by its ID."""
     task_id: str = Field(description="The task ID to retrieve details for.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class ClaimTask(BaseTool):
     """Claim a pending task and start working on it."""
     task_id: str = Field(description="The task ID to claim.")
 
-    agent_level: set = {"main", "teammate"}
+    agent_type: set = {"main", "teammate"}
 
 
 class CompleteTask(BaseTool):
     """Complete an in-progress task."""
     task_id: str = Field(description="The task ID to complete.")
 
-    agent_level: set = {"main", "teammate"}
+    agent_type: set = {"main", "teammate"}
 
 
 def run_create_task(subject: str, description: str, blockedBy: list[str] = []) -> str:

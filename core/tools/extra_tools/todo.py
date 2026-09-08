@@ -15,7 +15,7 @@ class TodoWrite(BaseTool):
     """Create and update a todo list for the current session."""
     todos: list[TodoItem] = Field(description="List of todo items to create or update.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 def run_todo_write(todos: list) -> str:

@@ -9,7 +9,7 @@ class BaseTool(BaseModel):
     """
     Base tool class of any tool
     """
-    agent_level: set[Literal["main", "sub-agent", "teammate"]] = (
+    agent_type: set[Literal["main", "sub-agent", "teammate"]] = (
         Field(default_factory=lambda: {"main"},
               description="Agent types (main, sub-agent, teammate) that are allowed to use this tool; "
                           "a tool is available to an agent only if that agent's type is included in this set."))

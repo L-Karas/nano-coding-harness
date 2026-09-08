@@ -9,7 +9,7 @@ class CreateWorktree(BaseTool):
     name: str = Field(description="Name for the new worktree.")
     task_id: str | None = Field(default=None, description="Optional task ID to associate with the worktree.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class RemoveWorktree(BaseTool):
@@ -18,14 +18,14 @@ class RemoveWorktree(BaseTool):
     discard_changes: bool = Field(default=False,
                                   description="Set to true to force removal even with uncommitted changes.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class KeepWorktree(BaseTool):
     """Keep a worktree for manual review instead of auto-removing it."""
     name: str = Field(description="The name of the worktree to keep.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 def run_create_worktree(name: str, task_id: str = "") -> str:

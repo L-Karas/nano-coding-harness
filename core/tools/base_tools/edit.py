@@ -13,7 +13,7 @@ class EditFile(BaseTool):
     old_text: str = Field(description="The exact text to find and replace.")
     new_text: str = Field(description="The replacement text.")
 
-    agent_level: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent", "teammate"}
 
 
 def run_edit_file(path: str, old_text: str, new_text: str, cwd: Optional[Path] = None) -> str:

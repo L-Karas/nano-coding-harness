@@ -12,7 +12,7 @@ class Compact(BaseTool):
                                  description="What to focus on when summarizing (e.g. 'current goal', "
                                              "'key findings').")
 
-    agent_level: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent", "teammate"}
 
 
 # todo: focus feature

@@ -9,7 +9,7 @@ class SpawnSubagent(BaseTool):
     description: str = Field(description="The task description for the subagent to complete.")
     should_run_in_background: bool = Field(default=False, description="Whether to run in background or not.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 def run_spawn_subagent(description: str) -> str:

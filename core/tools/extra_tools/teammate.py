@@ -12,7 +12,7 @@ class SpawnTeammate(BaseTool):
     role: str = Field(description="The role or expertise of the teammate (e.g. 'code reviewer').")
     prompt: str = Field(description="The initial task or instructions for the teammate.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class SendMessage(BaseTool):
@@ -20,19 +20,19 @@ class SendMessage(BaseTool):
     to_agent: str = Field(description="The name of the agent to send the message to.")
     content: str = Field(description="The message content to send.")
 
-    agent_level: set = {"main", "teammate"}
+    agent_type: set = {"main", "teammate"}
 
 
 class CheckInbox(BaseTool):
     """Check inbox for messages and protocol responses."""
-    agent_level: set = {"main", "teammate"}
+    agent_type: set = {"main", "teammate"}
 
 
 class RequestShutdown(BaseTool):
     """Request a teammate to shut down."""
     teammate: str = Field(description="The name of the teammate to request shutdown from.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class RequestPlan(BaseTool):
@@ -40,7 +40,7 @@ class RequestPlan(BaseTool):
     teammate: str = Field(description="The name of the teammate to request a plan from.")
     task: str = Field(description="The task description for which a plan is needed.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class ReviewPlan(BaseTool):
@@ -49,14 +49,14 @@ class ReviewPlan(BaseTool):
     approve: bool = Field(description="Whether to approve (true) or reject (false) the plan.")
     feedback: str | None = Field(default=None, description="Optional feedback when rejecting a plan.")
 
-    agent_level: set = {"main"}
+    agent_type: set = {"main"}
 
 
 class SubmitPlan(BaseTool):
     """Submit a plan for Lead approval."""
     plan: str = Field(description="The plan content to submit for approval.")
 
-    agent_level: set = {"teammate"}
+    agent_type: set = {"teammate"}
 
 
 def run_submit_plan(from_agent: str, plan: str) -> str:
