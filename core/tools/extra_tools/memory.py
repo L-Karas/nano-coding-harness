@@ -7,6 +7,9 @@ from core.tools.tool_base import BaseTool
 
 
 class SaveMemory(BaseTool):
+    """Save long-term memories, user preferences,
+    and key contextual data across sessions—so every interaction picks up right where the last one left off,
+    delivering a consistent, personalized experience whenever the user returns."""
     title: str = Field(description="Short identifier (e.g. prefer tabs, db schema)")
     content: str = Field(description="Full memory content (multi-line OK)")
     mem_type: Literal["user", "feedback", "project", "reference"] = Field(

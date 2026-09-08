@@ -9,8 +9,7 @@ from core.task import create_task, list_tasks, get_task_json, claim_task, comple
 class CreateTask(BaseTool):
     """Create a task for the task system."""
     subject: str = Field(description="Brief title of the task.")
-    description: Optional[str] = Field(default=None,
-                                       description="Detailed description of what the task involves.")
+    description: str = Field(description="Detailed description of what the task involves.")
     blockedBy: list[str] = Field(default_factory=list,
                                  description="List of task IDs that must be completed before this "
                                              "task can start.")
@@ -44,7 +43,7 @@ class CompleteTask(BaseTool):
     agent_level: set = {"main", "teammate"}
 
 
-def run_create_task(subject: str, description: str, blockedBy: Optional[list[str]] = None) -> str:
+def run_create_task(subject: str, description: str, blockedBy: list[str] = []) -> str:
     task = create_task(subject, description, blockedBy)
     dependencies = f" (Blocked by tasks: {', '.join(blockedBy) if blockedBy else ''})"
     return f"Created {task.id}: {task.subject}{dependencies}"

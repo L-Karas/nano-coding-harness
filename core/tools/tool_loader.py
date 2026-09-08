@@ -9,6 +9,10 @@ from core.tools.utils import _camel_to_snake
 
 _TOOLS: dict[str, type[BaseTool]] = {}
 
+# 工具失败统一前缀（call_tool_handler 返回串由此生成；agent_loop 的 tool_failed 判定
+# 与 TUI 渲染 error 卡均 import 本常量，避免三处手写同一字面量）
+TOOL_ERROR_PREFIXES = ("[Tool Error]:", "[Unknown Tool]:")
+
 
 def _register_tools() -> None:
     """Index every BaseTool subclass by snake_case tool name (read_file) — the name callers pass in."""
@@ -46,7 +50,7 @@ def get_builtin_tool_handlers(agent_level: Literal["main", "sub-agent", "teammat
 
 def call_tool_handler(handler, args: dict, name: str) -> str:
     if not handler:
-        return f"[Unknown Tool]: {name}"
+        return f"{TOOL_ERROR_PREFIXES[1]} {name}"
 
     tool_cls = _TOOLS.get(name)
     try:
@@ -54,7 +58,7 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
             tool_cls.model_validate(args)
         return handler(**args)
     except Exception as e:
-        return f"[Tool Error]: {e}"
+        return f"{TOOL_ERROR_PREFIXES[0]} {e}"
 
 
 if __name__ == '__main__':
