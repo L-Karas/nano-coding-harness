@@ -16,6 +16,7 @@ from openai.types.chat import ChatCompletionMessage
 from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR
 from core.log.log import get_logger
 from core.model import shared_model_client
+from core.template import SUMMARY_PROMPT_TEMPLATE
 
 REMAIN_TOOL_RESULT_THRESHOLD = 120
 
@@ -203,21 +204,15 @@ def summarize_history(messages: list) -> str:
     """
     Summarize history messages
     """
+    # todo: 当前上下文压缩会覆盖原会话历史，为压缩后的信息保存额外副本？
     try:
-        conversation = ""
-        for message in messages:
-            if isinstance(message, dict):
-                conversation += json.dumps(message, ensure_ascii=False)
-            else:
-                conversation += message.model_dump_json(ensure_ascii=False)
-
-        prompt = ("Summarize this coding-agent conversation so work can continue. "
-                  "Preserve current goal, key findings, changed files, remaining work, "
-                  "and user constraints.\n\n") + "Conversation:\n" + conversation
-
         # 压缩摘要同样走统一模型配置（shared_model_client），不单独指定 sub model
+        messages.append({
+            "role": "user",
+            "content": SUMMARY_PROMPT_TEMPLATE,
+        })
         response = shared_model_client().get_model_client()(
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             max_tokens=2000,
         )
         return response.choices[0].message.content
@@ -232,7 +227,7 @@ def compact_history(messages: list) -> list:
     """
     write_transcript(messages)
     summary = summarize_history(messages[1:])
-    return messages[:1] + [{"role": "user", "content": f"<compacted-messages>{summary}</compacted-messages>"}]
+    return messages[:1] + [{"role": "user", "content": f"<compacted-messages>\n{summary}\n</compacted-messages>"}]
 
 
 @log_compact_info
@@ -244,9 +239,11 @@ def reactive_compact(messages: list) -> list:
         while not message_has_tool_call(messages[tail - 1]):
             tail -= 1
 
+    # todo: 重压缩上下文失败后，抛出错误信息？
     try:
         summary = summarize_history(messages[1:tail])
-    except Exception:
+    except Exception as e:
+        _LOGGER.exception(f"[Reactive compact] failed to summarize history. Error: {e}")
         summary = "Earlier conversation was trimmed after a prompt-too-long error."
 
     return (messages[:1] +
