@@ -9,11 +9,10 @@ from pathlib import Path
 
 from pydantic.dataclasses import dataclass
 
-from core.config import WORKDIR, HARNESS_CONFIG_DIR
+from core.config import TASK_DIR
 from core.log import get_logger
 
-TASK_DIR = HARNESS_CONFIG_DIR / ".tasks"
-TASK_DIR.mkdir(parents=True, exist_ok=True)
+
 _LOGGER = get_logger(__name__)
 
 

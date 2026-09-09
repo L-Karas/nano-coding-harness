@@ -15,7 +15,7 @@ from core.model import shared_model_client
 from core.task import TASK_DIR, can_start, claim_task, load_task, complete_task
 from core.worktree import WORKTREES_DIR
 
-_LOGER = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
@@ -114,7 +114,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
 
     def run():
         # 延迟导入: core.tools -> extra_tools -> core.teammates 存在导入环
-        from core.tools import call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
+        from core.tools import assemble_tool_pool, call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
 
         wt_ctx = {"work_path": None}
 
@@ -147,9 +147,10 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         # 与 main / sub-agent 相同: 工具定义与默认 handler 统一取自 tool_loader(teammate 级);
         # compact / check_inbox 绑定 main 会话与 lead 邮箱语义, 不适用于自治 teammate
         excluded = {"compact", "check_inbox"}
-        tools = [tool for tool in get_builtin_tools("teammate") if tool["function"]["name"] not in excluded]
+        tools, handlers = assemble_tool_pool(agent_type="teammate")
+        tools = [tool for tool in tools if tool["function"]["name"] not in excluded]
         handlers = {tool_name: handler
-                    for tool_name, handler in get_builtin_tool_handlers("teammate").items()
+                    for tool_name, handler in handlers.items()
                     if tool_name not in excluded}
         # 文件类工具随认领的任务 worktree 切换 cwd
         for tool_name in ("bash", "edit_file", "glob", "grep", "read_file", "write_file"):
@@ -219,8 +220,8 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     for tool_call in response_message.tool_calls:
                         tool_name = tool_call.function.name
                         tool_args = json.loads(tool_call.function.arguments)
-                        _LOGER.info(f">   [Call tool] (Teammate: {name}) {tool_name}")
-                        _LOGER.info(f">   [Tool arguments] (Teammate: {name}) {tool_args}")
+                        _LOGGER.info(f">   [Call tool] (Teammate: {name}) {tool_name}")
+                        _LOGGER.info(f">   [Tool arguments] (Teammate: {name}) {tool_args}")
 
                         handler = handlers.get(tool_name)
                         output = call_tool_handler(handler, tool_args, tool_name)
@@ -236,7 +237,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                             "content": str(output),
                         })
 
-                        _LOGER.info(f">   [Tool result] (Teammate: {name}) {output[:100]}")
+                        _LOGGER.info(f">   [Tool result] (Teammate: {name}) {output[:100]}")
                         if protocol_ctx["waiting_plan"]:
                             # Ignore later tool_calls from the same model
                             # response; they belong after approval, not before.

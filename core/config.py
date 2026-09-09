@@ -9,6 +9,7 @@ MEMORY_DIR = HARNESS_CONFIG_DIR / ".memory"
 SESSION_DIR = HARNESS_CONFIG_DIR / ".session"
 TRANSCRIPT_DIR = HARNESS_CONFIG_DIR / ".transcripts"
 TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
+TASK_DIR = HARNESS_CONFIG_DIR / ".tasks"
 
 
 HARNESS_SETTING_FILE = HARNESS_CONFIG_DIR / ".setting.json"
@@ -26,14 +27,11 @@ MAX_CONSECUTIVE = 2
 
 BASE_DELAY_MS = 500
 CONTEXT_LIMIT = int(5e4)
-KEEP_RECENT_TOOL_RESULTS = 3
+KEEP_RECENT_TOOL_RESULTS = 10
 PERSIST_THRESHOLD = int(3e4)
-
-CONTINUATION_PROMPT = "Continue from the previous response. Do not repeat completed work."
 
 
 def _init_harness():
-    global HARNESS_SETTING_FILE, PROVIDER_AUTH_FILE, SESSION_INDEX_FILE, MCP_CONFIG_FILE
     if not HARNESS_CONFIG_DIR.exists():
         HARNESS_CONFIG_DIR.mkdir(parents=True)
     if not LOG_DIR.exists():
@@ -48,6 +46,9 @@ def _init_harness():
         TRANSCRIPT_DIR.mkdir(parents=True)
     if not TOOL_RESULTS_DIR.exists():
         TOOL_RESULTS_DIR.mkdir(parents=True)
+    if not TASK_DIR.exists():
+        TASK_DIR.mkdir(parents=True)
+
 
     if not HARNESS_SETTING_FILE.exists():
         with HARNESS_SETTING_FILE.open("x") as f:
@@ -60,7 +61,7 @@ def _init_harness():
             }, ensure_ascii=False, indent=4))
     if not PROVIDER_AUTH_FILE.exists():
         with PROVIDER_AUTH_FILE.open("x") as f:
-            f.write(json.dumps({}, ensure_ascii=False))
+            f.write(json.dumps({}, ensure_ascii=False, indent=4))
     if not SESSION_INDEX_FILE.exists():
         SESSION_INDEX_FILE.touch()
     if not MCP_CONFIG_FILE.exists():

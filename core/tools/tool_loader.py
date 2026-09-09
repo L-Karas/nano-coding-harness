@@ -1,12 +1,14 @@
 import sys
 from typing import Any, Literal
 
+from core.log import get_logger
+from core.mcp import get_client_manager
 from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
 from core.tools.extra_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _camel_to_snake
 
-
+_LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}
 
 # 工具失败统一前缀（call_tool_handler 返回串由此生成；agent_loop 的 tool_failed 判定
@@ -46,6 +48,27 @@ def get_builtin_tool_handlers(agent_type: Literal["main", "sub-agent", "teammate
         name = _camel_to_snake(cls.__name__)
         handlers[name] = getattr(sys.modules[cls.__module__], f"run_{name}")
     return handlers
+
+
+def assemble_tool_pool(agent_type: Literal["main", "sub-agent", "teammate"] = "main"):
+    """
+    Merge builtin tools + all MCP tools into a single tool pool.
+    """
+    tools = get_builtin_tools(agent_type)
+    handlers = get_builtin_tool_handlers(agent_type)
+
+    if agent_type != "teammate":
+        try:
+            mcp_client_manager = get_client_manager()
+        except Exception as e:
+            _LOGGER.exception(f"[MCP error] Init failed, falling back to builtin tools: {e}")
+            mcp_client_manager = None
+
+        if mcp_client_manager:
+            tools.extend(mcp_client_manager.list_tools())
+            handlers = handlers | mcp_client_manager.tool_handlers
+
+    return tools, handlers
 
 
 def call_tool_handler(handler, args: dict, name: str) -> str:

@@ -18,8 +18,7 @@ from core.log.log import get_logger
 from core.model import shared_model_client
 from core.template import SUMMARY_PROMPT_TEMPLATE
 
-REMAIN_TOOL_RESULT_THRESHOLD = 120
-
+REMAIN_TOOL_RESULT_THRESHOLD = 2000
 _LOGGER = get_logger(__name__)
 
 
@@ -227,7 +226,7 @@ def compact_history(messages: list) -> list:
     """
     write_transcript(messages)
     summary = summarize_history(messages[1:])
-    return messages[:1] + [{"role": "user", "content": f"<compacted-messages>\n{summary}\n</compacted-messages>"}]
+    return messages[:1] + [{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}]
 
 
 @log_compact_info
@@ -247,15 +246,5 @@ def reactive_compact(messages: list) -> list:
         summary = "Earlier conversation was trimmed after a prompt-too-long error."
 
     return (messages[:1] +
-            [{"role": "user", "content": f"<compacted-messages>{summary}</compacted-messages>"}] +
+            [{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] +
             messages[tail:])
-
-
-if __name__ == "__main__":
-    @log_compact_info
-    def fun():
-        print("Hello world! ..........")
-        return (10, 10)
-
-
-    print(fun())

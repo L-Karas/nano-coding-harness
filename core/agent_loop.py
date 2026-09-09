@@ -10,50 +10,29 @@ from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
-from core.model import shared_model_client
-from core.tools.base_tools.git import DIFF_TOOLS, preview_edit, preview_write
-from core.compact.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, compact_history, \
+from core.compact.context_compact import tool_result_budget, snip_compact, micro_compact, estimate_size, \
+    compact_history, \
     reactive_compact
-from core.config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES, \
-    CONTINUATION_PROMPT
-from core.context import update_context
+from core.config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
 from core.cron_scheduler import consume_cron_queue
-from core.recovery.error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
-from core.permission.hook_permission import trigger_hooks
 from core.log.log import get_logger
-from core.mcp.mcps import get_client_manager
-from core.prompt import assemble_system_prompt
+from core.model import shared_model_client
+from core.permission.hook_permission import trigger_hooks
+from core.prompt import build_system_prompt
+from core.recovery.error_recovery import RecoveryState, with_retry, is_prompt_too_long_error
 from core.session.session import SESSION_MANAGER
-from core.tools import call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
+from core.template import CONTINUATION_PROMPT, INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
+from core.tools import TOOL_ERROR_PREFIXES, call_tool_handler, assemble_tool_pool
+from core.tools.base_tools.git import DIFF_TOOLS, preview_edit, preview_write
 from core.tui.render import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
     render_tool_result_diff, render_background_notification, render_thinking_status, render_tool_calling_status
 
 ROUNDS_SINCE_TODO = 0
 AGENT_LOCK = threading.Lock()
-_LOGER = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 
 
-def assemble_tool_pool():
-    """
-    Merge builtin tools + all MCP tools into a single tool pool.
-    """
-    tools = get_builtin_tools("main")
-    handlers = get_builtin_tool_handlers("main")
-
-    try:
-        mcp_client_manager = get_client_manager()
-    except Exception as e:
-        _LOGER.exception(f"[MCP] init failed, falling back to builtin tools: {e}")
-        mcp_client_manager = None
-
-    if mcp_client_manager:
-        tools.extend(mcp_client_manager.list_tools())
-        handlers = handlers | mcp_client_manager.tool_handlers
-
-    return tools, handlers
-
-
-def prepare_context(messages: list) -> list:
+def prepare_messages(messages: list) -> list:
     """
     Every LLM turn enters through the same context budget pipeline.
     """
@@ -71,16 +50,17 @@ def inject_background_notifications():
     if notes:
         SESSION_MANAGER.add_message({
             "role": "user",
-            "content": "\n\n".join(notes),
+            "content": INJECTION_MESSAGES_PREFIX + "\n".join(notes) + INJECTION_MESSAGES_SUFFIX,
         })
 
 
-def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str, CompletionUsage]:
+def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, str, list, str, CompletionUsage]:
     """
     Consume the full stream, folding tool-call deltas into complete calls.
     Returns (accumulated_text, tool_calls, finish_reason).
     """
     accumulated_text = ""
+    reasoning_text = ""
     tool_calls: list[dict] = []
     finish_reason = ""
     usage = None
@@ -92,7 +72,8 @@ def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str,
                     usage = chunk.usage
                 continue
             choice = chunk.choices[0]
-            if getattr(choice.delta, "reasoning_content", None):
+            if hasattr(choice.delta, "reasoning_content") and choice.delta.reasoning_content:
+                reasoning_text += choice.delta.reasoning_content
                 continue
             if choice.delta.content:
                 accumulated_text += choice.delta.content
@@ -118,7 +99,7 @@ def stream_message(stream: Stream[ChatCompletionChunk]) -> tuple[str, list, str,
             if chunk.usage:
                 usage = chunk.usage
 
-    return accumulated_text, tool_calls, finish_reason, usage
+    return accumulated_text, reasoning_text, tool_calls, finish_reason, usage
 
 
 def call_tools(tool_calls: list[dict], handlers: dict) -> None:
@@ -169,12 +150,11 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
                     diff = (preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file"
                             else preview_edit(tool_args["path"], tool_args["old_text"], tool_args["new_text"]))
                 except Exception as e:
-                    _LOGER.exception(f"[Diff exception] {e}]")
+                    _LOGGER.exception(f"[Diff exception] {e}]")
 
             output = call_tool_handler(handler, tool_args, tool_name)
-            # 工具失败统一以 "[Tool Error]:"/"[Unknown Tool]:" 开头返回（call_tool_handler 约定）；
             # 失败时 diff 只是未落地的预览：不渲染、不记录 payload，回放才不会把未应用改动显示成已应用。
-            tool_failed = str(output).startswith(("[Tool Error]:", "[Unknown Tool]:"))
+            tool_failed = str(output).startswith(TOOL_ERROR_PREFIXES)
             if diff and not tool_failed:
                 render_tool_result_diff(diff)
 
@@ -186,24 +166,23 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
             ROUNDS_SINCE_TODO += 1
 
         tool_call_results.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": str(output)
-        } | ({"payload": diff} if diff and not tool_failed else {}))
+                                     "role": "tool",
+                                     "tool_call_id": tool_call.id,
+                                     "content": str(output)
+                                 } | ({"payload": diff} if diff and not tool_failed else {}))
 
     for tool_result in tool_call_results:
         SESSION_MANAGER.add_message(tool_result)
 
 
 def call_llm(
-        context: dict,
         tools: list,
         max_tokens: int
 ) -> ChatCompletion | Stream[ChatCompletionChunk]:
-    system = assemble_system_prompt(context)
+    system = build_system_prompt(agent_type="main", tools=tools)
     messages = [{"role": "system", "content": system}] + SESSION_MANAGER.load_messages()
 
-    _LOGER.debug(f"Session manager loaded messages: {SESSION_MANAGER.load_messages()}")
+    _LOGGER.debug(f"Session manager loaded messages: {SESSION_MANAGER.load_messages()}")
 
     with render_thinking_status():
         # 模型配置统一来自 shared_model_client（.harness/.setting.json），不再按调用方指定 model
@@ -217,7 +196,7 @@ def call_llm(
         )
 
 
-def agent_loop(messages: list, context: dict):
+def agent_loop():
     global ROUNDS_SINCE_TODO
     state = RecoveryState()
     max_tokens = DEFAULT_MAX_TOKENS
@@ -229,7 +208,7 @@ def agent_loop(messages: list, context: dict):
         for cron in fired_crons:
             SESSION_MANAGER.add_message({
                 "role": "user",
-                "content": f"[Scheduled crons] {cron.prompt}"
+                "content": INJECTION_MESSAGES_PREFIX + f"[Scheduled crons] {cron.prompt}" + INJECTION_MESSAGES_SUFFIX
             })
             render_background_notification(f"Cron Prompt: {cron.prompt}", title="⏰ Cron Injected")
 
@@ -237,47 +216,49 @@ def agent_loop(messages: list, context: dict):
 
         # todo: 当有待办 todo 时才使用该提示信息插入
         # if ROUNDS_SINCE_TODO >= 3:
-            # messages.append({
-            #     "role": "user",
-            #     "content": "<reminder>Update your todos.</reminder>",
-            # })
-            # SESSION_MANAGER.add_message({
-            #     "role": "user",
-            #     "content": "<reminder>Update your todos.</reminder>",
-            # })
-            # ROUNDS_SINCE_TODO = 0
+        # messages.append({
+        #     "role": "user",
+        #     "content": "<reminder>Update your todos.</reminder>",
+        # })
+        # SESSION_MANAGER.add_message({
+        #     "role": "user",
+        #     "content": "<reminder>Update your todos.</reminder>",
+        # })
+        # ROUNDS_SINCE_TODO = 0
 
-        prepare_context(SESSION_MANAGER.load_messages())
+        messages = prepare_messages(SESSION_MANAGER.load_messages())
         SESSION_MANAGER.update_messages(messages)
-        context = update_context(context, messages)
-        tools, handlers = assemble_tool_pool()
+        tools, handlers = assemble_tool_pool("main")
 
         try:
-            stream = call_llm(context, tools, max_tokens)
+            stream = call_llm(tools, max_tokens)
         except Exception as e:
             if is_prompt_too_long_error(e) and state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(SESSION_MANAGER.load_messages())
                 SESSION_MANAGER.update_messages(messages)
                 state.has_attempted_reactive_compact = True
                 continue
-            SESSION_MANAGER.add_message({
-                "role": "assistant",
-                "content": f"[Error] {type(e).__name__}: {e}"
-            })
+            # todo: 是否需要将模型调用错误信息作为消息历史的一部分
+            # 错误只落会话不渲染 = 用户输入后无任何反馈；同步出错误卡（线程安全渲染 API）
+            error_text = f"[Error] {type(e).__name__}: {e}"
+            SESSION_MANAGER.add_message({"role": "assistant", "content": error_text})
+            render_background_notification(error_text, title="⚠️ Agent Error")
             return
 
-        accumulated_text, tool_calls, finish_reason, usage = stream_message(stream)
+        accumulated_text, reasoning_text, tool_calls, finish_reason, usage = stream_message(stream)
 
+        assistant_message = {
+            "role": "assistant",
+            "content": "" or accumulated_text,
+            "reasoning_content": "" or reasoning_text,
+        }
         if finish_reason == "length":
             if not state.has_escalated:
                 max_tokens = ESCALATED_MAX_TOKENS
                 state.has_escalated = True
-                _LOGER.info(f"[Max tokens] retry with {max_tokens}")
+                _LOGGER.info(f"[Max tokens] retry with {max_tokens}")
                 continue
-            SESSION_MANAGER.add_message({
-                "role": "assistant",
-                "content": accumulated_text
-            })
+            SESSION_MANAGER.add_message(assistant_message)
 
             if state.recovery_count < MAX_RECOVERY_RETRIES:
                 SESSION_MANAGER.add_message({
@@ -292,21 +273,15 @@ def agent_loop(messages: list, context: dict):
         state.has_escalated = False
 
         if not tool_calls:
-            SESSION_MANAGER.add_message({
-                "role": "assistant",
-                "content": accumulated_text
-            })
+            SESSION_MANAGER.add_message(assistant_message)
             return
         else:
-            SESSION_MANAGER.add_message({
-                "role": "assistant",
-                "content": accumulated_text or "",
-                "tool_calls": tool_calls
-            })
+            assistant_message["tool_calls"] = tool_calls
+            SESSION_MANAGER.add_message(assistant_message)
             call_tools(tool_calls, handlers)
 
 
-def cron_auto_loop(messages: list, context: dict):
+def cron_auto_loop():
     while True:
         time.sleep(1)
         fired = consume_cron_queue()
@@ -317,12 +292,11 @@ def cron_auto_loop(messages: list, context: dict):
             for job in fired:
                 SESSION_MANAGER.add_message({
                     "role": "user",
-                    "content": f"[Scheduled] {job.prompt}"
+                    "content": INJECTION_MESSAGES_PREFIX + f"[Scheduled Cron]\n{job.prompt}" + INJECTION_MESSAGES_SUFFIX
                 })
                 render_background_notification(f"Cron Auto Prompt: {job.prompt}", title="⏰ Cron Triggered")
 
-            agent_loop(messages, context)
-            context.update(update_context(context, messages))
+            agent_loop()
 
 
 if __name__ == '__main__':

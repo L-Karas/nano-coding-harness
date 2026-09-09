@@ -2,7 +2,7 @@
 Context
 """
 from core import teammates
-from core.memory.memory import MEMORY_MANAGER
+from core.memory import MEMORY_MANAGER
 
 
 def update_context(context: dict, messages: list) -> dict:

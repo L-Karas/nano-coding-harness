@@ -15,8 +15,25 @@ Guidelines:
 
 Current working directory: {working_directory}'''
 
-SUMMARY_PROMPT_TEMPLATE = '''The messages above are a conversation to summarize. 
-Create a structured context checkpoint summary that another LLM will use to continue the work.
+SUB_AGENT_PROMPT_TEMPLATE = '''You are an assistant sub-agent operating inside `nano harness`. 
+You help users by reading files, editing files, creating new files, and more.
+
+Available tools:
+{tool_list}
+
+Memories:
+{memory_list}
+
+Guidelines:
+{guidelines}
+
+Current working directory: {working_directory}'''
+
+SUMMARY_PROMPT_TEMPLATE = '''The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+NOTE:
+When creating a summary, exclude information from the system prompt. The system prompt always remains in use for the LLM and should not be summarized.
+
 
 Use this EXACT format:
 
@@ -49,4 +66,9 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.'''
 
-INJECTION_MESSAGES_TEMPLATE = '''<injection-message>\n{injection_message}\n</injection-message>'''
+INJECTION_MESSAGES_PREFIX = "<injection_messages>\n"
+INJECTION_MESSAGES_SUFFIX = "\n</injection_messages>"
+
+CONTINUATION_PROMPT = (INJECTION_MESSAGES_PREFIX +
+                       "Continue from the previous response. Do not repeat completed work."
+                       + INJECTION_MESSAGES_SUFFIX)

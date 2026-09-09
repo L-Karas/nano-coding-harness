@@ -9,7 +9,7 @@ from core.tools.tool_base import BaseTool
 
 
 class Grep(BaseTool):
-    """Search for a pattern in files within a directory, returning matching lines with file path, line number, and content."""
+    """Search for a pattern in files within a directory, returning matching lines with file path, line number (1-indexed), and content."""
     pattern: str = Field(description="The regex pattern to search for in file contents.")
     path: str = Field(description="The directory to search in. Defaults to the current working directory.")
     file_pattern: str = Field(default="*", description="Glob pattern to filter file names (e.g., '*.txt', '*.py'). "

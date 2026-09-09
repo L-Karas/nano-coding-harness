@@ -11,16 +11,18 @@ class ReadFile(BaseTool):
     """Read a file from the filesystem."""
     path: str = Field(description="Path to the file to read.")
     limit: int = Field(default=2000, description="Max lines to read.")
-    offset: int = Field(default=0, description="Line offset to start reading from.")
+    offset: int = Field(default=1, description="Line offset to start reading from (1-indexed).")
 
     agent_type: set = {"main", "sub-agent", "teammate"}
 
 
-def run_read_file(path: str, limit: Optional[int] = 2000, offset: Optional[int] = 0, cwd: Optional[Path] = None) -> str:
+# todo: 可以为工具增加读取范围的功能
+def run_read_file(path: str, limit: Optional[int] = 2000, offset: Optional[int] = 1, cwd: Optional[Path] = None) -> str:
     base = cwd or WORKDIR
     fp = (base / path).resolve()
     lines = fp.read_text(encoding="utf-8").splitlines()
-    offset = max(int(offset or 0), 0)
+
+    offset = max(int(offset or 1) - 1, 0)  # 1 起始转 0 起始（None/旧 0 起始调用方 → 0）
     limit = int(limit) if limit is not None else None
     lines = lines[offset:]
     if limit is not None and limit < len(lines):

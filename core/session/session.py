@@ -45,6 +45,7 @@ class Message:
     """
     role: Literal["user", "assistant", "tool"]
     content: str = ""
+    reasoning_content: str = ""
     tool_call_id: str = ""
     tool_calls: list[dict] = field(default_factory=list)
     usage: MessageUsage = field(default_factory=MessageUsage)
@@ -116,9 +117,12 @@ class SessionManager:
                 "role": message.role,
                 "content": message.content,
             }
+            if message.role == "assistant":
+                message_dict["reasoning_content"] = message.reasoning_content
+
             if not exclude_payload and message.payload:
                 message_dict["payload"] = message.payload
-                
+
             if message.tool_calls:
                 message_dict["tool_calls"] = message.tool_calls
             if message.tool_call_id:
@@ -284,4 +288,3 @@ class SessionManager:
 
 
 SESSION_MANAGER = SessionManager()
-

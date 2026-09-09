@@ -3,24 +3,18 @@ Sub Agent
 """
 import json
 
-from core.config import WORKDIR
 from core.model import shared_model_client
 from core.permission.hook_permission import trigger_hooks
-
-SUB_SYSTEM = (f"You are a coding subagent at {WORKDIR}."
-              f"Complete the task, then return a concise final conclusion. "
-              f"Do not spawn more agents.")
-
-
+from core.prompt import build_system_prompt
 # 延迟到函数内导入:src.tools -> extra_tools -> sub_agent -> src.tools 存在导入环,
 # 模块级导入会触发 partially initialized ImportError。
 def spawn_subagent(description: str) -> str:
-    from core.tools import call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
+    from core.tools import assemble_tool_pool, call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
 
-    sub_tools = get_builtin_tools("sub-agent")
-    sub_handlers = get_builtin_tool_handlers("sub-agent")
+    sub_tools, sub_handlers = assemble_tool_pool(agent_type="sub-agent")
+    system_prompt = build_system_prompt("sub-agent", tools=sub_tools)
     messages = [
-        {"role": "system", "content": SUB_SYSTEM},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": description}
     ]
 
@@ -44,7 +38,6 @@ def spawn_subagent(description: str) -> str:
                 handler = sub_handlers.get(tool_call.function.name)
                 tool_args = json.loads(tool_call.function.arguments)
                 output = call_tool_handler(handler, tool_args, tool_call.function.name)
-                trigger_hooks("PostToolUse", tool_call, output)
 
             messages.append({
                 "role": "tool",
