@@ -1,0 +1,198 @@
+{
+  "Deepseek": {
+    "base_url": "https://api.deepseek.com",
+    "model_list": {
+      "deepseek-v4-flash": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "deepseek-v4-pro": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "deepseek-v4.1-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        }
+      }
+    }
+  },
+  "Qwen": {
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model_list": {
+      "qwen3.8-max": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": "low",
+          "medium": false,
+          "high": "high",
+          "max": "xhigh"
+        }
+      },
+      "qwen3.8-max-0902": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": "low",
+          "medium": false,
+          "high": "high",
+          "max": "xhigh"
+        }
+      },
+      "qwen3.8-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": "low",
+          "medium": false,
+          "high": "high",
+          "max": "xhigh"
+        }
+      },
+      "qwen3.7-max": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "qwen3.7-plus": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "qwen3.7-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      }
+    }
+  },
+  "Kimi": {
+    "base_url": "https://api.moonshot.cn/v1",
+    "model_list": {
+      "kimi-k3": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": "low",
+          "medium": false,
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "kimi-k2.7-code": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "kimi-k2.7-code-highspeed": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "kimi-k2.6": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      }
+    }
+  },
+  "Z.AI": {
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+    "model_list": {
+      "glm-5.3": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": "low",
+          "medium": false,
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "glm-5.3-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": "low",
+          "medium": false,
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "glm-5.2": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "minimal",
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "max": "max"
+        }
+      }
+    }
+  }
+}
