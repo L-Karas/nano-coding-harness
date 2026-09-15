@@ -7,7 +7,7 @@ compose 只保留左右分栏骨架，逐区 yield 本模块的自定义部件�
 
 - _TitleBar：标题栏（最外部单线圆角框，内部动态流光标题块）；
 - _ChatBoard：聊天画板滚动容器（不满一屏时消息从顶部向下填充，见类 docstring）；
-- _ChatDock：底部固定区（状态行 + / 指令与 @ 文件候选列表 + 输入条 + 工作目录行）。
+- _ChatDock：底部固定区（状态行 + / 指令与 @ 文件候选列表 + 权限 yes/no 列表 + 输入条 + 工作目录行）。
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ from __future__ import annotations
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import OptionList, Static
+from textual.widgets.option_list import Option
 
 from core.tui.theme import _PLACEHOLDER, _SPINNER_FRAMES
-from core.tui.utils import SLASH_COMMANDS
 from core.tui.widgets import _CommandInput
 
 # 标题文字滚动渐变配色（深蓝底上依次过渡的青→绿→金，随帧前移形成流光）
@@ -70,17 +70,19 @@ class _ChatBoard(VerticalScroll):
 
 
 class _ChatDock(Vertical):
-    """底部固定区：状态行 + 指令补全列表（按需显示）+ @ 文件补全列表 + 输入条 + 最底工作目录行。
+    """底部固定区：状态行 + 指令补全列表（按需显示）+ @ 文件补全列表 + 权限确认列表 + 输入条 + 最底工作目录行。
 
-    / 与 @ 候选 ListView 默认隐藏（见 app.css），由 _CommandInput 在键入时按 id 显示/填充；
-    cmd-suggest 子项与 SLASH_COMMANDS 一一对应（_CommandInput 按固定子项切换 display）。
+    / 与 @ 候选 OptionList 默认隐藏（见 app.css）：选项是纯数据（无 DOM 子项），
+    由 _CommandInput 在键入时按 id 用 set_options 整批重建；同刻至多一组可见。
     id="dock" 由 ChatApp.compose 在挂载处给出（app.css 的 dock: bottom 把整个停靠区钉在左栏底部）。
     """
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status")
-        yield ListView(*(ListItem(Label(cmd)) for cmd in SLASH_COMMANDS), id="cmd-suggest")
-        yield ListView(id="file-suggest")  # @ 文件补全列表（仅 @ 提及编辑时可见）
+        yield OptionList(id="cmd-suggest")   # / 指令候选：选项由 _CommandInput 按过滤结果重建（id = 指令串）
+        yield OptionList(id="file-suggest")  # @ 文件补全列表（仅 @ 提及编辑时可见）
+        # 权限确认 yes/no 列表：默认隐藏，权限请求时由 ChatApp 弹出并聚焦（行为见 ui_textual 权限确认段）
+        yield OptionList(Option("✓ Yes", id="yes"), Option("✗ No", id="no"), id="perm-list")
         with Horizontal(id="inputbar"):  # 上下粗实线输入条：>> 前缀 + 输入框
             yield Static(">> ", id="prompt-mark")
             yield _CommandInput(placeholder=_PLACEHOLDER, id="prompt")

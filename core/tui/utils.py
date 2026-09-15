@@ -6,8 +6,33 @@ TUI 实用工具（与终端渲染无关，从 ui_textual.py 拆出）
 import os
 import subprocess
 
-# Tab 补全的指令表（/quit 是 /exit 的别名，不列入以免循环重复）
-SLASH_COMMANDS = ["/new", "/sessions", "/exit"]
+# / 指令元数据（顺序即候选列表顺序，增删指令只改这一处）：键 = 规范值（候选匹配、
+# Tab/Enter 补全后填入输入框、提交解析都用它）；值 = (候选行显示名, 匹配别名, 简短说明)。
+# 显示名中别名括注仅供展示；完整别名由提交分支直接解析，无需独立行。
+_SLASH_COMMAND_META: dict[str, tuple[str, tuple[str, ...], str]] = {
+    "/new": ("/new", (), "Start a fresh session"),
+    "/sessions": ("/sessions", (), "Open the session picker"),
+    "/skills": ("/skills", (), "List available skills"),
+    "/provider": ("/provider", (), "Configure API providers"),
+    "/model": ("/model", (), "Switch the active model"),
+    "/effort": ("/effort", (), "Set the thinking effort"),
+    "/exit": ("/exit (quit)", ("/quit",), "Quit the app"),
+}
+
+# 派生导出（保持既有调用方不变）：候选匹配/补全/提交解析的规范值表
+SLASH_COMMANDS = list(_SLASH_COMMAND_META)
+# 指令别名：键入别名前缀同样命中该指令行
+SLASH_COMMAND_ALIASES = {cmd: aliases for cmd, (_label, aliases, _desc) in _SLASH_COMMAND_META.items()}
+
+
+def slash_command_rows() -> list[tuple[str, str]]:
+    """/ 候选列表行显示文本（分两段返回）：(指令名列, 简短说明)。
+    指令名（含别名括注）左对齐定宽（宽 = 最长指令名），说明经调用方接固定空距后
+    与指令名保持距离，且各行说明左端对齐于同一列；分段供各 UI 实现独立着色
+    （如 Textual 界面将说明段显示为较淡的颜色）"""
+    width = max(len(label) for label, _aliases, _desc in _SLASH_COMMAND_META.values())
+    return [(label.ljust(width), desc)
+            for _cmd, (label, _aliases, desc) in _SLASH_COMMAND_META.items()]
 
 # 遍历时整棵剪掉的目录名（.venv 等点开头目录由下方 dot 规则覆盖，不重复列）
 _SKIP_DIR_NAMES = frozenset({"venv", "__pycache__", "build", "dist", "node_modules"})

@@ -26,4 +26,4 @@ wheels/
 !/core/**/*.py
 /core/tui/demo.py
 !/core/tui/app.css
-!/core/model/models.json
+!/core/client/models.json

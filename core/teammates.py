@@ -21,6 +21,7 @@ IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
 ACTIVATE_TEAMMATES: dict[str, bool] = {}
 
+
 # todo: 使用 Task 类替换 dict
 def scan_unclaimed_tasks() -> list[dict]:
     unclaimed_tasks = []
@@ -114,7 +115,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
 
     def run():
         # 延迟导入: core.tools -> extra_tools -> core.teammates 存在导入环
-        from core.tools import assemble_tool_pool, call_tool_handler, get_builtin_tools, get_builtin_tool_handlers
+        from core.tools import assemble_tool_pool, call_tool_handler
 
         wt_ctx = {"work_path": None}
 

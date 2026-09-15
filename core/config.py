@@ -11,19 +11,17 @@ TRANSCRIPT_DIR = HARNESS_CONFIG_DIR / ".transcripts"
 TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
 TASK_DIR = HARNESS_CONFIG_DIR / ".tasks"
 
-
 HARNESS_SETTING_FILE = HARNESS_CONFIG_DIR / ".setting.json"
 PROVIDER_AUTH_FILE = HARNESS_CONFIG_DIR / ".auth.json"
 SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
 MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
-
+CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
 
 DEFAULT_MAX_TOKENS = int(8e3)
 ESCALATED_MAX_TOKENS = int(16e3)
 MAX_RETRIES = 3
 MAX_RECOVERY_RETRIES = 2
 MAX_CONSECUTIVE = 2
-
 
 BASE_DELAY_MS = 500
 CONTEXT_LIMIT = int(5e4)
@@ -49,15 +47,14 @@ def _init_harness():
     if not TASK_DIR.exists():
         TASK_DIR.mkdir(parents=True)
 
-
     if not HARNESS_SETTING_FILE.exists():
         with HARNESS_SETTING_FILE.open("x") as f:
             f.write(json.dumps({
-              "default_provider": "",
-              "default_model": "",
-              "default_thinking_level": "max",
-              "default_sub_model": "",
-              "default_fallback_model": "",
+                "default_provider": "",
+                "default_model": "",
+                "default_thinking_level": "max",
+                "default_sub_model": "",
+                "default_fallback_model": "",
             }, ensure_ascii=False, indent=4))
     if not PROVIDER_AUTH_FILE.exists():
         with PROVIDER_AUTH_FILE.open("x") as f:
@@ -67,8 +64,10 @@ def _init_harness():
     if not MCP_CONFIG_FILE.exists():
         with MCP_CONFIG_FILE.open("x") as f:
             f.write(json.dumps({
-                "mcpServers":{}
+                "mcpServers": {}
             }, ensure_ascii=False, indent=4))
+    if not CRON_TASK_FILE.exists():
+        CRON_TASK_FILE.touch()
 
 
 _init_harness()

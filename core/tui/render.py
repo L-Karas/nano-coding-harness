@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from rich.markup import escape
 from rich.text import Text
 
+from core.template import INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
 from core.tui.theme import _markup
 
 if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免与 ui_textual 循环导入
@@ -31,7 +32,7 @@ def _exec(fn: Callable[[ChatApp], Any]) -> Any:
     """在 App 线程中执行 fn(app)；调用方线程为 App 线程时直接执行。"""
     app = _APP
     if app is None:
-        raise RuntimeError("Textual UI 未运行：请先调用 run()（或自行 ChatApp().run()）再执行渲染函数")
+        raise RuntimeError("Textual UI is not running: call run() (or run ChatApp().run() yourself) before rendering")
     if threading.get_ident() == app._thread_id:
         return fn(app)
     try:
@@ -71,7 +72,7 @@ def _collapse_hint() -> Text:
 def _require_worker_thread() -> None:
     app = _APP
     if app is not None and threading.get_ident() == app._thread_id:
-        raise RuntimeError("ask_permission 必须在非 App 线程调用（如 handle_query 回调内部）")
+        raise RuntimeError("ask_permission must be called from a non-App thread (e.g. inside handle_query)")
 
 
 def render_user_input(user_text: str) -> None:
@@ -98,7 +99,8 @@ def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MA
 
 def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
     """工具输出卡片：默认最多渲染 max_lines 行，超出折叠为额外 1 行提示；
-    点击卡片在截断与完整输出间切换。"""
+    点击卡片在截断与完整输出间切换。失败输出（TOOL_ERROR_PREFIXES 前缀）自动以暗红 error 卡渲染。"""
+    from core.tools import TOOL_ERROR_PREFIXES  # 懒导入：core.tools 链会经 hook_permission 回导本模块，顶层导入成环
     output_str = str(output)
     shown, hidden = _capped_lines(output_str, max_lines)
     body = _dim_body(shown)
@@ -106,25 +108,26 @@ def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
     if hidden:
         body += _truncated_hint(hidden)
         expand = lambda: _dim_body(output_str) + _collapse_hint()
-    _exec(lambda app: app._add_card("result", body, expand=expand))
+    kind = "error" if output_str.startswith(TOOL_ERROR_PREFIXES) else "result"
+    _exec(lambda app: app._add_card(kind, body, expand=expand))
 
 
 def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """diff 预览卡片：默认最多渲染 max_lines 行，超出折叠为额外 1 行提示；
-    点击卡片在截断与完整 diff 间切换。"""
+    """diff 预览卡片（暗橄榄底，区别于普通 result 绿卡）：默认最多渲染 max_lines 行，
+    超出折叠为额外 1 行提示；点击卡片在截断与完整 diff 间切换。"""
     width = max(len(str(n)) for _, n, _ in rows)
 
     def _styled(part: list[tuple[str, int, str]]) -> Text:
         return Text("\n").join(Text(f"{kind}{n:>{width}} │ {line}",
-                                     style={"+": "green", "-": "red", " ": "dim"}.get(kind, "dim"))
+                                     style={"+": "#b5bd68", "-": "#f87171", " ": "dim"}.get(kind, "dim"))  # + 绿 / - 淡红
                                     for kind, n, line in part)
 
     if len(rows) <= max_lines:
-        _exec(lambda app: app._add_card("result", _styled(rows)))
+        _exec(lambda app: app._add_card("diff", _styled(rows)))
         return
     body = _styled(rows[:max_lines]) + _truncated_hint(len(rows) - max_lines)
     expand = lambda: _styled(rows) + _collapse_hint()
-    _exec(lambda app: app._add_card("result", body, expand=expand))
+    _exec(lambda app: app._add_card("diff", body, expand=expand))
 
 
 def render_background_notification(message: str, title: str = "🔔 Background Task") -> None:
@@ -135,13 +138,26 @@ def render_background_notification(message: str, title: str = "🔔 Background T
 
 def render_sessions() -> None:
     """空会话提示卡片（非空列表的展示与选择在 SessionPickerScreen）"""
-    _exec(lambda app: app._add_card("sessions", _dim_body("暂无会话")))
+    _exec(lambda app: app._add_card("sessions", _dim_body("No sessions yet")))
+
+
+def _is_injected_message(content: Any) -> bool:
+    """消息是否为内部注入（后台任务结果 / 定时任务 / 续写提示）：以 prompt_template.py 的
+    <injection_messages> 前后缀包裹识别。这类消息只喂给模型作上下文，不是用户输入，
+    重放会话时应跳过，不能冒充用户消息渲染。"""
+    return (isinstance(content, str)
+            and content.startswith(INJECTION_MESSAGES_PREFIX)
+            and content.endswith(INJECTION_MESSAGES_SUFFIX))
 
 
 def render_session_history(session) -> None:
-    """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复"""
+    """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复。
+    跳过内部注入消息（agent_loop 以 <injection_messages> 前后缀包裹写入的后台通知、
+    定时任务与续写提示，见 core/template/prompt_template.py）——它们不是用户说的话。"""
     for message in session.messages:
         if message.role == "user":
+            if _is_injected_message(message.content):
+                continue
             render_user_input(message.content)
         elif message.role == "assistant":
             for tool_call in (message.tool_calls or []):
@@ -204,19 +220,20 @@ def render_tool_calling_status(message: str):
     return _status_context(message)
 
 
-def ask_permission(message: str, prompt_str: str = "  Allowed? [y/N] ") -> str:
-    """渲染权限确认卡片并阻塞等待回答（只能在非 App 线程调用），返回原始输入文本"""
+def ask_permission(message: str) -> str:
+    """渲染权限确认卡片并阻塞等待回答（只能在非 App 线程调用）；
+    用户从停靠区 yes/no 列表作答，返回 "yes"/"no"（拒绝时也可能返回 ""：如 App 退出竞态）。"""
     _require_worker_thread()
     app = _APP
     if app is None:
-        raise RuntimeError("Textual UI 未运行：请先调用 run()")
+        raise RuntimeError("Textual UI is not running: call run() first")
     done = threading.Event()
     holder: dict[str, Any] = {"value": ""}
 
     def _ask(app: ChatApp) -> None:
         app._perm_holder = holder
         app._perm_done = done
-        app._begin_permission(message, prompt_str)
+        app._begin_permission(message)
 
     try:
         _exec(_ask)

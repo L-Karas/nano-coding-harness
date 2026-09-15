@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from rich.text import Text
 
-DEFAULT_TITLE = "⚡ Nano-Harness"
-DEFAULT_SUBTITLE = "Enter your query and press Enter to send it. /new to start a new session, /sessions to switch sessions, and /exit to log out."
-_PLACEHOLDER = "Type your message, press Enter to send, and press Ctrl+J to start a new line (type /exit to exit)."
+DEFAULT_TITLE = "🤖 Nano-Harness Agent"
+DEFAULT_SUBTITLE = "Enter your query and press Enter to send it. Type /exit or /quit to quit."
+_PLACEHOLDER = "Type your message, press Enter to send, and press Ctrl+J to start a new line."
 
-# 加载动画帧（标准 Braille spinner，10 帧）；状态行 spin=True 时在文本前轮播
+# 加载动画帧（标准 Braille spinner，10 帧）；状态行 spin=True 时在文本前轮播，Todos/Bg 处理中项同款轮播
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 

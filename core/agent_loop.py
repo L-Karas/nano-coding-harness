@@ -150,7 +150,7 @@ def call_tools(tool_calls: list[dict], handlers: dict) -> None:
                     diff = (preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file"
                             else preview_edit(tool_args["path"], tool_args["old_text"], tool_args["new_text"]))
                 except Exception as e:
-                    _LOGGER.exception(f"[Diff exception] {e}]")
+                    _LOGGER.exception(f"[Diff exception] {e}")
 
             output = call_tool_handler(handler, tool_args, tool_name)
             # 失败时 diff 只是未落地的预览：不渲染、不记录 payload，回放才不会把未应用改动显示成已应用。
@@ -233,7 +233,7 @@ def agent_loop():
         try:
             stream = call_llm(tools, max_tokens)
         except Exception as e:
-            if is_prompt_too_long_error(e) and state.has_attempted_reactive_compact:
+            if is_prompt_too_long_error(e) and not state.has_attempted_reactive_compact:
                 messages[:] = reactive_compact(SESSION_MANAGER.load_messages())
                 SESSION_MANAGER.update_messages(messages)
                 state.has_attempted_reactive_compact = True
