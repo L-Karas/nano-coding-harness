@@ -26,5 +26,16 @@ def run_read_file(path: str, limit: Optional[int] = 2000, offset: Optional[int] 
     limit = int(limit) if limit is not None else None
     lines = lines[offset:]
     if limit is not None and limit < len(lines):
-        lines = lines[:limit] + [f"[Truncated ({len(lines) - limit}) more lines. Use 'offset={offset + limit - 1}' to continue.]"]
+        lines = lines[:limit] + [
+            f"[Truncated ({len(lines) - limit}) more lines. Use 'offset={offset + limit - 1}' to continue.]"]
     return "\n".join(lines)
+
+
+async def run_read_file_async(
+        path: str,
+        limit: Optional[int] = 2000,
+        offset: Optional[int] = 1,
+        cwd: Optional[Path] = None,
+        ctx=None
+) -> str:
+    return run_read_file(path, limit, offset, cwd)

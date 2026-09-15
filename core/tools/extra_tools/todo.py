@@ -1,8 +1,10 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from core.tools.tool_base import BaseTool
+
 from core.todo import todo_write
+from core.tools.tool_base import BaseTool
+
 
 class TodoItem(BaseModel):
     """A single todo item."""
@@ -18,5 +20,9 @@ class TodoWrite(BaseTool):
     agent_type: set = {"main"}
 
 
-def run_todo_write(todos: list) -> str:
+def run_todo_write(todos: list):
+    return todo_write(todos)
+
+
+async def run_todo_write_async(todos: list, ctx=None) -> str:
     return todo_write(todos)

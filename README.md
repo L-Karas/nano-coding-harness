@@ -6,16 +6,14 @@ uv sync
 
 ## 模型配置
 
-在根目录创建 `.env` 文件，内容模板：
+模型与提供商配置统一存放在 `.harness/` 目录下（首次启动自动创建），
+主循环、子代理、上下文压缩、teammate 等所有 LLM 调用共用同一份配置
+（`core.model` 的 `shared_model_client` / `get_model_client`）：
 
-```
-OPENAI_API_KEY=[your openai api key]
-OPENAI_BASE_URL=[base url]
+- `.harness/.auth.json` — 各 provider 的 api_key（`configure_provider` 写入）
+- `.harness/.setting.json` — `default_provider` / `default_model` / `default_thinking_level`（`set_model_client` 写入）
 
-MODEL=[main loop model name]
-SUB_MODEL=[sub-agent and teammate model name]
-FALLBACK_MODEL=[fallback model name]
-```
+provider 及可用模型清单见 `core/model/models.json`。
 
 ## 测试
 

@@ -3,7 +3,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Any
 
-from openai import OpenAI, Stream
+from openai import OpenAI, Stream, AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from core.config import HARNESS_SETTING_FILE, PROVIDER_AUTH_FILE
@@ -86,7 +86,8 @@ def unconfigure_provider(provider: str) -> None:
                 "default_model": "",
                 "default_thinking_level": "max",
             }
-            HARNESS_SETTING_FILE.write_text(json.dumps(_HARNESS_SETTING, ensure_ascii=False, indent=4), encoding="utf-8")
+            HARNESS_SETTING_FILE.write_text(json.dumps(_HARNESS_SETTING, ensure_ascii=False, indent=4),
+                                            encoding="utf-8")
             shared_model_client()._init_client()  # 复位内存中持有已删 key 的 client（见 _init_client 空默认分支）
         _PROVIDER_AUTH.pop(provider)
         PROVIDER_AUTH_FILE.write_text(json.dumps(_PROVIDER_AUTH, ensure_ascii=False, indent=4), encoding="utf-8")
@@ -114,6 +115,7 @@ class ModelClient:
         self.current_model_thinking = True
         self.current_thinking_level = ""
         self.current_client: Optional[OpenAI] = None
+        self.current_client_async: Optional[AsyncOpenAI] = None
         self._init_client()
 
     def _init_client(self):
@@ -132,6 +134,7 @@ class ModelClient:
             self.current_thinking_level = ""
             self.current_model_thinking = False
             self.current_client = None
+            self.current_client_async = None
             return
         self.set_model_client(provider, model, _HARNESS_SETTING.get("default_thinking_level", "max"))
 
@@ -143,6 +146,10 @@ class ModelClient:
             raise Exception("Please set provider and model")  # 文案对齐 get_model_client 的同款提示
 
         self.current_client = OpenAI(
+            api_key=_PROVIDER_AUTH.get(self.current_provider).get("api_key"),
+            base_url=_MODEL_LIST.get(self.current_provider).get("base_url"),
+        )
+        self.current_client_async = AsyncOpenAI(
             api_key=_PROVIDER_AUTH.get(self.current_provider).get("api_key"),
             base_url=_MODEL_LIST.get(self.current_provider).get("base_url"),
         )
@@ -176,16 +183,23 @@ class ModelClient:
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
             if self.current_thinking_level:
                 effort = \
-                    _MODEL_LIST[self.current_provider]["model_list"][self.current_model]["thinking_level_map"][self.current_thinking_level]
+                    _MODEL_LIST[self.current_provider]["model_list"][self.current_model]["thinking_level_map"][
+                        self.current_thinking_level]
                 if effort:
                     kwargs["reasoning_effort"] = effort
         return kwargs
 
-    def get_model_client(self) -> OpenAI:
+    def get_model_client(self, async_client: bool = False) -> OpenAI | AsyncOpenAI:
         if not self.current_provider or not self.current_model:
             _LOGGER.info("Please set provider and model")
             raise Exception(f"Please set provider and model")
 
+        if async_client:
+            return partial(
+                self.current_client_async.chat.completions.create,
+                model=self.current_model,
+                **self._request_kwargs()
+            )
         return partial(
             self.current_client.chat.completions.create,
             model=self.current_model,

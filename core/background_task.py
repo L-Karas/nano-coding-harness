@@ -4,13 +4,17 @@ Background tasks
 # Slow tools return a placeholder tool_result immediately. Their real output is
 # later injected as a task_notification, so the main loop can keep moving.
 """
+import asyncio
+import inspect
 import json
 import threading
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
-from core.tools import call_tool_handler
 from core.log import get_logger
+from core.template import USER_INTERRUPT_PROMPT
+from core.tools import call_tool_handler
+from core.tools.tool_loader import execute_tool
 
 BG_COUNTER = 0
 BACKGROUND_TASKS: dict[str, dict] = {}
@@ -24,31 +28,39 @@ def is_slow_operation(tool_name: str, tool_args: dict) -> bool:
         return False
 
     command = tool_args.get("command", "").lower()
-    slow_keywords = ["install", "build", "test", "deploy", "compile", "docker build",
+    slow_keywords = ["install", "build", "deploy", "compile", "docker build",
                      "pip install", "cargo build", "pytest", "make"]
     return any(word in command for word in slow_keywords)
 
 
 def should_run_background(tool_name: str, tool_args: dict) -> bool:
-    # if tool_name != "bash":
-    #     return False
-
-    return bool(tool_args.get("run_in_background")) or is_slow_operation(tool_name, tool_args)
+    return bool(tool_args.get("should_run_in_background")) or is_slow_operation(tool_name, tool_args)
 
 
-def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handlers: dict) -> str:
+def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handlers: dict, ctx=None, loop=None) -> str:
     global BG_COUNTER
     BG_COUNTER += 1
 
     bg_id = f"bg-{BG_COUNTER:04d}"
     tool_args = json.loads(tool_call.function.arguments)
-    # command = tool_args.get("command", "")
     tool_call_str = f"{tool_call.function.name}({', '.join(f'{k}={v}' for k, v in tool_args.items())})"
 
+    loop = loop or asyncio.get_running_loop()
+
     def worker():
-        handler = handlers.get(tool_call.function.name)
-        result = call_tool_handler(handler, tool_args, tool_call.function.name)
-        # trigger_hooks("PostToolUse", tool_call, result)
+        try:
+            if ctx and ctx.interrupted:
+                result = USER_INTERRUPT_PROMPT
+            else:
+                handler = handlers.get(tool_call.function.name)
+                if inspect.iscoroutinefunction(handler):
+                    result = asyncio.run_coroutine_threadsafe(
+                        execute_tool(handler, tool_args, tool_call.function.name, ctx), loop
+                    ).result()
+                else:
+                    result = call_tool_handler(handler, tool_args, tool_call.function.name)
+        except BaseException as e:
+            result = f"[Tool Error] {type(e).__name__}: {e}"
         with BACKGROUND_LOCK:
             BACKGROUND_TASKS[bg_id]["status"] = "completed"
             BACKGROUND_RESULTS[bg_id] = str(result)
@@ -61,7 +73,6 @@ def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handler
         }
 
     threading.Thread(target=worker, daemon=True).start()
-    # print(f"  \033[33m[Background Task] {bg_id}: {str(tool_call_str)[:60]}\033[0m")
     _LOGER.info(f"[Background Task] {bg_id}: {str(tool_call_str)[:60]}")
     return bg_id
 

@@ -22,3 +22,9 @@ class SaveMemory(BaseTool):
 
 def run_save_memory(title: str, content: str, mem_type: Literal["user", "feedback", "project", "reference"]):
     return memory.run_save_memory(title, content, mem_type)
+
+
+async def run_save_memory_async(title: str, content: str,
+                                mem_type: Literal["user", "feedback", "project", "reference"],
+                                ctx=None):
+    return memory.run_save_memory(title, content, mem_type)

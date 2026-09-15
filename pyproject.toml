@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiofiles>=25.1.0",
     "dotenv>=0.9.9",
     "mcp>=2.0.0",
     "openai>=2.32.0",
@@ -16,4 +17,5 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "textual>=8.2.8",
+    "tiktoken>=0.14.0",
 ]

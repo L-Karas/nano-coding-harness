@@ -3,7 +3,7 @@ Sub Agent
 """
 import json
 
-from core.model import shared_model_client
+from core.client import shared_model_client
 from core.permission.hook_permission import trigger_hooks
 from core.prompt import build_system_prompt
 

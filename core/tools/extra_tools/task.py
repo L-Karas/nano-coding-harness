@@ -1,9 +1,7 @@
-from typing import Optional
-
 from pydantic import Field
-from core.tools.tool_base import BaseTool
 
 from core.task import create_task, list_tasks, get_task_json, claim_task, complete_task
+from core.tools.tool_base import BaseTool
 
 
 class CreateTask(BaseTool):
@@ -78,3 +76,23 @@ def run_complete_task(task_id: str) -> str:
         return complete_task(task_id)
     except FileNotFoundError:
         raise Exception(f"Task {task_id} not found")
+
+
+async def run_create_task_async(subject: str, description: str, blockedBy: list[str] = [], ctx=None) -> str:
+    return run_create_task(subject, description, blockedBy)
+
+
+async def run_list_tasks_async(ctx=None) -> str:
+    return run_list_tasks()
+
+
+async def run_get_task_async(task_id: str, ctx=None) -> str:
+    return run_get_task(task_id)
+
+
+async def run_claim_task_async(task_id: str, ctx=None) -> str:
+    return run_claim_task(task_id)
+
+
+async def run_complete_task_async(task_id: str, ctx=None) -> str:
+    return run_complete_task(task_id)

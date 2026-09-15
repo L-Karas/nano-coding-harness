@@ -64,11 +64,23 @@ Use this EXACT format:
 - [Any data, examples, or references needed to continue]
 - [or "(none)" if not applicable]
 
+## File Operations
+### Read Files
+- [All file paths that have been read previously using the tool calls]
+- [Or "(none)" if no files were read]
+
+### Modified Files
+- [All file paths that have been modified previously using the tool calls]
+- [Or "(none)" if no files were modified]
+
 Keep each section concise. Preserve exact file paths, function names, and error messages.'''
 
 INJECTION_MESSAGES_PREFIX = "<injection_messages>\n"
 INJECTION_MESSAGES_SUFFIX = "\n</injection_messages>"
+INJECTION_MESSAGES_TEMPLATE = INJECTION_MESSAGES_PREFIX + "{content}" + INJECTION_MESSAGES_SUFFIX
 
-CONTINUATION_PROMPT = (INJECTION_MESSAGES_PREFIX +
-                       "Continue from the previous response. Do not repeat completed work."
-                       + INJECTION_MESSAGES_SUFFIX)
+CONTINUATION_PROMPT = INJECTION_MESSAGES_TEMPLATE.format(
+    content="Continue from the previous response. Do not repeat completed work."
+)
+
+USER_INTERRUPT_PROMPT = "[User interrupted]"

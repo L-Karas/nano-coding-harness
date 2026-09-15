@@ -11,7 +11,7 @@ from core.tools.utils import _camel_to_snake
 _LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}
 
-# 工具失败统一前缀（call_tool_handler 返回串由此生成；agent_loop 的 tool_failed 判定
+# 工具失败统一前缀（call_tool_handler 返回串由此生成；loop_with_interrupt 的 tool_failed 判定
 # 与 TUI 渲染 error 卡均 import 本常量，避免三处手写同一字面量）
 TOOL_ERROR_PREFIXES = ("[Tool Error]:", "[Unknown Tool]:")
 
@@ -38,7 +38,10 @@ def get_builtin_tools(agent_type: Literal["main", "sub-agent", "teammate"] = "ma
     return [cls.to_openai_tool() for cls in _builtin_tool_classes(agent_type)]
 
 
-def get_builtin_tool_handlers(agent_type: Literal["main", "sub-agent", "teammate"] = "main") -> dict[str, Any]:
+def get_builtin_tool_handlers(
+        agent_type: Literal["main", "sub-agent", "teammate"] = "main",
+        tool_type: Literal["sync", "async"] = "sync"
+) -> dict[str, Any]:
     """
     Map each builtin tool name to its handler: the run_<tool name> function
     defined in the tool class's own module (e.g. run_read_file for ReadFile).
@@ -46,16 +49,22 @@ def get_builtin_tool_handlers(agent_type: Literal["main", "sub-agent", "teammate
     handlers = {}
     for cls in _builtin_tool_classes(agent_type):
         name = _camel_to_snake(cls.__name__)
-        handlers[name] = getattr(sys.modules[cls.__module__], f"run_{name}")
+        if tool_type == "sync":
+            handlers[name] = getattr(sys.modules[cls.__module__], f"run_{name}")
+        else:
+            handlers[name] = getattr(sys.modules[cls.__module__], f"run_{name}_async")
     return handlers
 
 
-def assemble_tool_pool(agent_type: Literal["main", "sub-agent", "teammate"] = "main"):
+def assemble_tool_pool(
+        agent_type: Literal["main", "sub-agent", "teammate"] = "main",
+        tool_type: Literal["sync", "async"] = "sync"
+):
     """
     Merge builtin tools + all MCP tools into a single tool pool.
     """
     tools = get_builtin_tools(agent_type)
-    handlers = get_builtin_tool_handlers(agent_type)
+    handlers = get_builtin_tool_handlers(agent_type, tool_type)
 
     if agent_type != "teammate":
         try:
@@ -66,7 +75,8 @@ def assemble_tool_pool(agent_type: Literal["main", "sub-agent", "teammate"] = "m
 
         if mcp_client_manager:
             tools.extend(mcp_client_manager.list_tools())
-            handlers = handlers | mcp_client_manager.tool_handlers
+            handlers = handlers | (mcp_client_manager.tool_handlers
+                                   if tool_type == "sync" else mcp_client_manager.async_tool_handlers)
 
     return tools, handlers
 
@@ -80,6 +90,24 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
         if tool_cls:  # validate only when we know the schema; unknown name falls back to direct call
             tool_cls.model_validate(args)
         return handler(**args)
+    except Exception as e:
+        return f"{TOOL_ERROR_PREFIXES[0]} {e}"
+
+
+async def execute_tool(handler, args: dict, name: str, ctx=None) -> str:
+    from core.runtime_context import AgentInterrupted
+
+    if not handler:
+        return f"{TOOL_ERROR_PREFIXES[1]} {name}"
+
+    tool_cls = _TOOLS.get(name)
+    try:
+        if tool_cls:
+            tool_cls.model_validate(args)
+        _LOGGER.info(f"Executing tool: {name}, args: {args}")
+        return await handler(**args, ctx=ctx)
+    except AgentInterrupted:
+        raise
     except Exception as e:
         return f"{TOOL_ERROR_PREFIXES[0]} {e}"
 

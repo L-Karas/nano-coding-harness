@@ -13,9 +13,10 @@ from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
 
-from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR
+from core.client import shared_model_client
+from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR, RESERVE_TOKENS
 from core.log.log import get_logger
-from core.model import shared_model_client
+from core.runtime_context import AgentInterrupted
 from core.template import SUMMARY_PROMPT_TEMPLATE
 
 REMAIN_TOOL_RESULT_THRESHOLD = 2000
@@ -37,18 +38,35 @@ def log_compact_info(func):
     return wrapper
 
 
+def async_log_compact_info(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        _LOGGER.info(f"Running {func.__name__} ...")
+        try:
+            result = await func(*args, **kwargs)
+        except Exception as e:
+            _LOGGER.exception(e)
+            raise e
+        _LOGGER.info(f"Finished {func.__name__}.")
+        return result
+
+    return wrapper
+
+
 def estimate_token(text: str) -> int:
     """
     Roughly count tokens
     """
-    return int(len(text) * 0.75)
+    import tiktoken
+    return len(tiktoken.encoding_for_model("gpt-5").encode(text))
 
 
 def estimate_size(messages: list[Union[dict, ChatCompletionMessage]]) -> int:
     total_tokens = 0
     for message in messages:
         if isinstance(message, dict):
-            total_tokens += estimate_token(message["content"])
+            total_tokens += estimate_token(message.get("content", ""))
+            total_tokens += estimate_token(message.get("reasoning_content", ""))
         else:
             total_tokens += estimate_token(message.content) if message.content else 0
 
@@ -91,7 +109,7 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
     """
     When tool result too large, persist large output to file and remain truncated content.
     """
-    if len(output) <= PERSIST_THRESHOLD:
+    if estimate_token(output) <= PERSIST_THRESHOLD:
         return output
 
     TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -146,7 +164,7 @@ def snip_compact(messages: list, max_messages: int = 50) -> list:
     """
     if len(messages) <= max_messages:
         return messages
-    head_end, tail_start = 3, len(messages) - max_messages + 3
+    head_end, tail_start = 2, len(messages) - max_messages + 2
     if message_has_tool_call(messages[head_end - 1]):
         while head_end < len(messages) and is_tool_result_message(messages[head_end]):
             head_end += 1
@@ -198,39 +216,93 @@ def write_transcript(messages: list) -> Path:
     return path
 
 
-@log_compact_info
-def summarize_history(messages: list) -> str:
+def find_index_to_split(messages: list) -> int:
+    # 1. 按 turn 粗划分，每个 turn 由 user 信息划分
+    # 2. 在满足 total_tokens <= RESERVE_TOKENS 的前提下，从后到前尽可能的保留多个 turn
+    # 3. 若在单个 turn 的 total_tokens > RESERVE_TOKENS，则按一下规则划分：
+    #    - 按 assistant 信息划分，在满足 total_tokens <= RESERVE_TOKENS 前提下，尽可能多的保留 assistant - tool 信息组
+    #    - assistant - tool 信息组：tool_calls 信息和相应的 tool 信息
+
+    # turn_index_tokens 元素由 (index, tokens) 组成，其中 tokens 指 messages[index:] 的 token 总数
+    # user_message_index 从小到大保存 user 信息索引
+    n = len(messages)
+    user_message_index = []
+    turn_index_tokens = [[i, 0] for i in range(len(messages))]
+    for index, message in enumerate(messages):
+        end = n - index - 1
+        if message["role"] == "user":
+            user_message_index.append(index)
+        if end == n - 1:
+            turn_index_tokens[end][1] = estimate_size(messages[end:])
+        else:
+            turn_index_tokens[end][1] = estimate_size(messages[end:end + 1]) + turn_index_tokens[end + 1][1]
+
+    # 从前往后查找满足要求的 turn
+    for index in user_message_index:
+        if turn_index_tokens[index][1] <= RESERVE_TOKENS:
+            return index
+
+    # 任意单个 turn 均大于 RESERVE_TOKENS，查找满足要求的 assistant - tool 信息组的 assistant 信息索引
+    # 从最后一个 turn 开始查找；若无 user 信息，则从第一个信息查找
+    end = user_message_index[-1] if user_message_index else 0
+    while end < n:
+        if turn_index_tokens[end][1] <= RESERVE_TOKENS and messages[end]["role"] == "assistant":
+            return end
+        end += 1
+
+    # 没有满足需求的划分索引，返回 n，不进行划分
+    return n
+
+
+@async_log_compact_info
+async def summarize_history(messages: list, ctx=None) -> str:
     """
     Summarize history messages
     """
     # todo: 当前上下文压缩会覆盖原会话历史，为压缩后的信息保存额外副本？
     try:
-        # 压缩摘要同样走统一模型配置（shared_model_client），不单独指定 sub model
+        summary_text = ""
         messages.append({
             "role": "user",
             "content": SUMMARY_PROMPT_TEMPLATE,
         })
-        response = shared_model_client().get_model_client()(
+        stream = await shared_model_client().get_model_client(async_client=True)(
             messages=messages,
             max_tokens=2000,
+            stream=True
         )
-        return response.choices[0].message.content
+        try:
+            async for chunk in stream:
+                ctx.raise_if_cancelled()
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.delta.content:
+                    summary_text += choice.delta.content
+        finally:
+            await stream.close()
+
+        return summary_text
+    except AgentInterrupted:
+        raise
     except Exception as e:
         raise e
 
 
-@log_compact_info
-def compact_history(messages: list) -> list:
+@async_log_compact_info
+async def compact_history(messages: list, ctx=None) -> list:
     """
     Summarize history messages
     """
     write_transcript(messages)
-    summary = summarize_history(messages[1:])
-    return messages[:1] + [{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}]
+    split_index = find_index_to_split(messages)
+    summary = await summarize_history(messages[:split_index], ctx)
+    return ([{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] +
+            messages[split_index:])
 
 
-@log_compact_info
-def reactive_compact(messages: list) -> list:
+@async_log_compact_info
+async def reactive_compact(messages: list, ctx=None) -> list:
     transcript = write_transcript(messages)
     _LOGGER.info(f"[Reactive compact] transcript saved: {transcript}")
     tail = max(0, len(messages) - 5)
@@ -240,11 +312,10 @@ def reactive_compact(messages: list) -> list:
 
     # todo: 重压缩上下文失败后，抛出错误信息？
     try:
-        summary = summarize_history(messages[1:tail])
+        summary = await summarize_history(messages, ctx)
     except Exception as e:
         _LOGGER.exception(f"[Reactive compact] failed to summarize history. Error: {e}")
         summary = "Earlier conversation was trimmed after a prompt-too-long error."
 
-    return (messages[:1] +
-            [{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] +
+    return ([{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] +
             messages[tail:])

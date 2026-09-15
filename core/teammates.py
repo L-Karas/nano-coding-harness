@@ -9,9 +9,9 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
-from core import message_bus, protocol_state
+from core import message_bus
+from core.client import shared_model_client
 from core.log.log import get_logger
-from core.model import shared_model_client
 from core.task import TASK_DIR, can_start, claim_task, load_task, complete_task
 from core.worktree import WORKTREES_DIR
 

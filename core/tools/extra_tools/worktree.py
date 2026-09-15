@@ -1,6 +1,6 @@
 from pydantic import Field
-from core.tools.tool_base import BaseTool
 
+from core.tools.tool_base import BaseTool
 from core.worktree import create_worktree, remove_worktree, keep_worktree
 
 
@@ -37,4 +37,16 @@ def run_remove_worktree(name: str, discard_changes: bool = False) -> str:
 
 
 def run_keep_worktree(name: str) -> str:
+    return keep_worktree(name)
+
+
+async def run_create_worktree_async(name: str, task_id: str = "", ctx=None) -> str:
+    return create_worktree(name, task_id)
+
+
+async def run_remove_worktree_async(name: str, discard_changes: bool = False, ctx=None) -> str:
+    return remove_worktree(name, discard_changes)
+
+
+async def run_keep_worktree_async(name: str, ctx=None) -> str:
     return keep_worktree(name)

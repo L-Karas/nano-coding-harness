@@ -1,6 +1,17 @@
+import locale
 from typing import Any
 
 from pydantic import BaseModel
+
+
+def _to_text(data: bytes) -> str:
+    """Decode tool output: git and most unix tools emit UTF-8, native Windows tools the locale codec."""
+    for enc in ("utf-8", locale.getpreferredencoding()):
+        try:
+            return data.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            pass
+    return data.decode("utf-8", errors="replace")
 
 
 def _inline_refs(schema: dict, defs: dict) -> dict:

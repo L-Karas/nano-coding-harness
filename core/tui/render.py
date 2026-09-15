@@ -152,7 +152,7 @@ def _is_injected_message(content: Any) -> bool:
 
 def render_session_history(session) -> None:
     """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复。
-    跳过内部注入消息（agent_loop 以 <injection_messages> 前后缀包裹写入的后台通知、
+    跳过内部注入消息（agent 循环以 <injection_messages> 前后缀包裹写入的后台通知、
     定时任务与续写提示，见 core/template/prompt_template.py）——它们不是用户说的话。"""
     for message in session.messages:
         if message.role == "user":

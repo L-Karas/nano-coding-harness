@@ -1,14 +1,23 @@
 """
 Error recovery
 """
+import asyncio
 import random
 import time
+from enum import Enum
 from typing import Callable
 
 from core.config import BASE_DELAY_MS, MAX_RETRIES
 from core.log.log import get_logger
 
 _LOGER = get_logger(__name__)
+
+
+class ErrorType(Enum):
+    RateLimit = "rate limit"
+    ModelOverload = "model overload"
+    PromptTooLong = "prompt too long"
+    UnRecoverable = "unrecoverable"
 
 
 class RecoveryState:
@@ -29,30 +38,48 @@ def retry_delay(attempt: int) -> float:
     return base + random.randint(0, int(base * 0.25))
 
 
-# todo: GLM model only
-# ---- 模型 overload fallback（已注释移除：模型暂时统一为 shared_model_client 的单一配置） ----
-# 背景：旧实现里每次请求显式传 model=state.current_model，1305 连续超限后把 current_model 切成
-# FALLBACK_MODEL（env）即可换模型重试。统一到 get_model_client() 后，模型在 partial 里已绑定，
-# 请求方不再传 model，旧切换方式失效，故删除了 1305 换模型分支（1302/1305 现在都只退避重试同一模型）。
-#
-# 后续扩展方向（core/model/model.py）：从 .setting.json 的 default_fallback_model（槽位已预留）读取
-# fallback 模型，给 ModelClient 增加类似 set_fallback_model()/切换当前模型的能力；恢复点在下方
-# with_retry 的 1305 分支——注意切换必须改 shared_model_client() 实例自身的模型后再继续重试
-# （fn 内的 get_model_client() 每次都从实例读当前模型，无需恢复 per-request model 参数）：
-#
-#     if "429" in error_msg and "1305" in error_msg:
-#         state.consecutive_1305 += 1
-#         if state.consecutive_1305 >= MAX_CONSECUTIVE:
-#             # ModelClient 支持后：shared_model_client().switch_to_fallback()（含计数复位）
-#             state.consecutive_1305 = 0
-#             _LOGER.info("[Model overload] switching to fallback model")
-#         delay = retry_delay(attempt)
-#         _LOGER.info(f"[Model overload] retry {attempt + 1}/{MAX_RETRIES} "
-#                     f"after {delay:.1f}s")
-#         time.sleep(delay)
-#         continue
-#
-# 恢复时需同步还原：RecoveryState 的两个字段、MAX_CONSECUTIVE 的 config 导入。
+def get_error_type(error: Exception) -> ErrorType:
+    """Return error type based on exception message and current model provider"""
+    from core.client import shared_model_client
+
+    error_msg = str(error).lower().strip()
+    current_provider = shared_model_client().current_provider
+
+    if current_provider == "deepseek":
+        if "40" in error_msg or "422" in error_msg:
+            return ErrorType.UnRecoverable
+        return ErrorType.RateLimit
+    elif current_provider == "qwen":
+        if "40" in error_msg:
+            return ErrorType.UnRecoverable
+        if "429" in error_msg:
+            if "bill" in error_msg:
+                return ErrorType.UnRecoverable
+            return ErrorType.RateLimit
+        if "430" in error_msg:
+            return ErrorType.UnRecoverable
+        # todo: 该错误码绝大多数解决方案为重试
+        if "500" in error_msg or "503" in error_msg:
+            return ErrorType.RateLimit
+    elif current_provider == "z.ai":
+        if "429" in error_msg:
+            if "1302" in error_msg or "1305" in error_msg:
+                return ErrorType.RateLimit
+            return ErrorType.UnRecoverable
+        if "400" in error_msg:
+            if "1261" in error_msg:
+                return ErrorType.PromptTooLong
+            return ErrorType.UnRecoverable
+        if "401" in error_msg or "403" in error_msg or "500" in error_msg:
+            return ErrorType.UnRecoverable
+    elif current_provider == "kimi":
+        if "400" in error_msg or "401" in error_msg:
+            return ErrorType.UnRecoverable
+        return ErrorType.RateLimit
+
+    return ErrorType.UnRecoverable
+
+
 def with_retry(fn: Callable):
     for attempt in range(MAX_RETRIES):
         try:
@@ -60,20 +87,39 @@ def with_retry(fn: Callable):
             return result
         except Exception as e:
             error_msg = str(e).lower().strip()
-            if "429" in error_msg and ("1302" in error_msg or "1305" in error_msg):
+            error_type = get_error_type(e)
+            if error_type == ErrorType.RateLimit:
                 kind = "Access rate limit" if "1302" in error_msg else "Model overload"
                 delay = retry_delay(attempt)
-                _LOGER.info(f"[{kind}] retry {attempt + 1}/{MAX_RETRIES} "
-                            f"after {delay:.1f}s")
+                _LOGER.info(f"[{kind}] retry {attempt + 1}/{MAX_RETRIES} after {delay:.1f}s")
                 time.sleep(delay)
                 continue
 
-            raise
+            raise e
 
     raise RuntimeError(f"Max retries ({MAX_RETRIES}) exceeded")
 
 
-# todo: GLM model only
+async def with_retry_async(fn: Callable):
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = await fn()
+            return result
+        except Exception as e:
+            error_msg = str(e).lower().strip()
+            error_type = get_error_type(e)
+            if error_type == ErrorType.RateLimit:
+                kind = "Access rate limit" if "1302" in error_msg else "Model overload"
+                delay = retry_delay(attempt)
+                _LOGER.info(f"[{kind}] retry {attempt + 1}/{MAX_RETRIES} "
+                            f"after {delay:.1f}s")
+                await asyncio.sleep(delay)
+                continue
+
+            raise e
+
+    raise RuntimeError(f"Max retries ({MAX_RETRIES}) exceeded")
+
+
 def is_prompt_too_long_error(e: Exception) -> bool:
-    error_message = str(e).lower().strip()
-    return "400" in error_message and "1261" in error_message
+    return get_error_type(e) == ErrorType.PromptTooLong

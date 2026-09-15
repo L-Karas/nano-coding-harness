@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from pydantic import Field
@@ -15,6 +16,11 @@ class Compact(BaseTool):
     agent_type: set = {"main", "sub-agent", "teammate"}
 
 
-# todo: focus feature
 def run_compact(messages: list, focus: str = "") -> list:
-    return compact_history(messages)
+    loop = asyncio.get_event_loop()
+    return asyncio.run_coroutine_threadsafe(compact_history(messages), loop=loop).result()
+
+
+# todo: focus feature
+async def run_compact_async(messages: list, focus: str = "", ctx=None) -> list:
+    return await compact_history(messages)

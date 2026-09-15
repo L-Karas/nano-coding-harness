@@ -11,26 +11,30 @@ Textual 版终端界面（core/tui/ui.py 的 Textual 重构，独立新模块，
 - widgets.py  部件：会话选择弹窗、带 / 指令与 @ 文件补全的输入框
 - panels.py   主界面分区部件：标题栏 / 聊天画板 / 底部停靠区
 - render.py   线程安全渲染 API：任意线程可调，驱动 ChatApp 内部方法
-- demo.py     无 handle_query 时的内置演示 Agent
+- demo.py     离线演示 Agent（--smoke 自检用）
 - smoke.py    --smoke 冒烟自检（原 __main__ 内联，拆出以保持本模块精简）
 - utils.py    终端环境信息与指令表（原有）
 
 本模块保留：ChatApp（compose 只留左右分栏骨架，分区部件见 panels.py）、
-run() 入口，以及 `python -m core.tui.ui_textual` 演示（--smoke 自检见 smoke.py）。
+run() 入口，以及 `python -m core.tui.ui_textual` 启动（--smoke 自检见 smoke.py）。
 
-运行演示（无需 LLM/网络）:
-    python -m core.tui.ui_textual
+不传 handle_query 时使用 core.loop_with_interrupt 的真实 agent 回合（AgentRuntime +
+cron 自动回合 + MCP 预热，见 _default_agent_turn）。
 
-接入真实 Agent（需在 main.py 侧做等价替换，本模块不代劳）:
+接入自有 Agent:
     from core.tui.ui_textual import run
     run(handle_query=agent_turn, session_manager=SESSION_MANAGER)
-    # agent_turn(query) 在后台线程执行；内部渲染调用 core.tui.render 的同名函数（线程安全）。
+    # agent_turn(query) 在后台线程执行，须阻塞至回合结束（UI 靠它判断忙碌态并上屏错误）；
+    # 内部渲染调用 core.tui.render 的同名函数（线程安全）。
 
 线程模型:
     - App 事件循环跑主线程；每轮用户输入在独立后台线程里调用 handle_query。
     - 渲染函数（core.tui.render）可从任意线程调用（App 线程内直接执行，
       其它线程经 call_from_thread 桥接）。
     - ask_permission 只能在非 App 线程调用（会阻塞等待用户从停靠区 yes/no 列表作答）。
+    - Esc：权限确认挂起时先拒绝（优先级最高）；确认结束后若回合仍在进行，才调 on_interrupt
+      中断 agent，并 notify「User interrupted」（默认回合的 on_interrupt 即 AgentRuntime.interrupt，
+      见 _default_agent_turn）。
 """
 
 from __future__ import annotations
@@ -55,7 +59,6 @@ from core import background_task as _bg  # 右栏 Background Tasks 数据源（�
 from core.session.session import SessionManager
 from core.skill import skills as _skills  # /skills 弹窗数据源（模块导入时 scan_skills() 扫描 .harness/skills）
 from core.todo import todo as _todo  # 右栏 Todos 数据源（todo_write 整体替换 CURRENT_TODOS，须经模块取最新引用）
-from core.tui.demo import _demo_agent
 from core.tui.panels import _ChatBoard, _ChatDock, _TitleBar
 from core.tui.render import (
     render_background_notification,
@@ -106,7 +109,9 @@ class _ChatScreen(Screen):
 class ChatApp(App):
     """Nano-Harness 对话主界面：标题栏 + 卡片式聊天记录 + 状态行 + 输入框。
 
-    handle_query(query): 每轮用户消息回调，在后台线程执行（可调用本模块渲染函数）。
+    handle_query(query): 每轮用户消息回调，在后台线程执行（可调用本模块渲染函数）；
+                         不传则用真实 agent 回合（见 _default_agent_turn）。
+    on_interrupt(): 中断当前回合的回调（Esc，权限确认优先）；handle_query 为默认时由 runtime 提供。
     session_manager: 可选，提供 new_session / delete_session / load_session_list /
                      load_session / add_message / current_session 的对象（如 core.session 的 SESSION_MANAGER）。
     """
@@ -122,7 +127,7 @@ class ChatApp(App):
     # ctrl+c 覆盖 Textual App 默认的 help_quit（系统绑定）：Ctrl+C 不再提示/退出，退出请用
     # /exit 或 ctrl+q（后者保留自 App 默认绑定）。复制保留：有选中文本时 ctrl+c 先经屏层
     # copy_text 复制（输入框选区 / 鼠标选中的卡片文本），无选区才落到下方动作的空操作分支。
-    BINDINGS = [("escape", "deny_permission", "Deny"),  # 权限列表聚焦时 Esc = 拒绝（无挂起请求时空操作）
+    BINDINGS = [("escape", "deny_permission", "Deny/Interrupt"),  # 权限确认优先，其次中断进行中的回合
                 ("ctrl+c", "copy_or_ignore", "Ignore")]
 
     def action_copy_or_ignore(self) -> None:
@@ -135,11 +140,15 @@ class ChatApp(App):
 
     def __init__(self, handle_query: Optional[Callable[[str], None]] = None,
                  session_manager: SessionManager = None,
-                 banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE)) -> None:
+                 banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
+                 on_interrupt: Optional[Callable[[], None]] = None) -> None:
         # ansi_color=True：禁用 ANSI→真彩色 过滤器（否则 ansi_default 会被映射成
         # Textual 内置 monokai 底色 #0c0c0c 而非 SGR 49，整体背景≈纯黑，与终端背景不一致）
         super().__init__(ansi_color=True)
+        if handle_query is None:
+            handle_query, on_interrupt = _default_agent_turn()
         self._handle = handle_query
+        self._interrupt = on_interrupt
         self._manager = session_manager
         self._banner = banner
         self._busy = False
@@ -577,7 +586,7 @@ class ChatApp(App):
                 except Exception as exc:
                     render_background_notification(f"保存会话消息失败：{exc}", title="⚠️ Session Error")
             try:
-                (self._handle or _demo_agent)(query)
+                self._handle(query)
             except Exception as exc:
                 render_background_notification(f"{type(exc).__name__}: {exc}", title="⚠️ Agent Error")
         finally:
@@ -712,9 +721,14 @@ class ChatApp(App):
         self._set_status_text("Working…", spin=True)
 
     def action_deny_permission(self) -> None:
-        """Esc 键位：无挂起请求时空操作（正常回合内键入 Esc 不受影响）；
-        有请求时等同于选择 No（焦点在列表上时 Esc 冒泡到 App 键位）。"""
-        self._answer_permission("no")
+        """Esc 键位：权限确认优先（挂起请求 → 拒绝）；无挂起请求且回合进行中 → 中断 agent 并 notify；
+        空闲时空操作（正常回合内键入 Esc 不受影响）。中断后回合由 _turn_worker 收尾并复位忙碌态。"""
+        if self._perm_pending:
+            self._answer_permission("no")
+        elif self._busy and self._interrupt:
+            self._set_status_text("Interrupting…", spin=True)
+            self._interrupt()
+            self.notify("User interrupted")
 
     def _clear_cards(self) -> None:
         self._chat().remove_children()
@@ -722,17 +736,29 @@ class ChatApp(App):
         self._chat().anchor()  # 空列表无滚动位置；重新钉底供后续内容/历史回放跟随
 
 
+def _default_agent_turn() -> tuple[Callable[[str], None], Callable[[], None]]:
+    """无 handle_query 时的默认回合：接 core.loop_with_interrupt 的真实 agent，
+    返回 (回合回调, 中断回调)。延迟导入：--smoke 与离线 UI 演示不必拉起 openai / mcp 依赖。"""
+    from core.loop_with_interrupt import make_agent_turn, start_agent_runtime
+
+    runtime = start_agent_runtime()
+    return make_agent_turn(runtime), runtime.interrupt
+
+
 def run(handle_query: Optional[Callable[[str], None]] = None,
         session_manager: Any = None,
-        banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE)) -> None:
+        banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
+        on_interrupt: Optional[Callable[[], None]] = None) -> None:
     """启动 Textual 对话界面（阻塞直到退出）。
 
-    不传 handle_query 时使用内置演示 Agent（流式 Markdown + 工具调用 + 权限确认等全流程演示，
-    query 以 "sudo " 开头会触发权限确认）。
+    不传 handle_query 时使用 core.loop_with_interrupt 的真实 agent 回合（需已配置模型；
+    离线 UI 演示见 core/tui/demo.py，由 --smoke 使用），其 on_interrupt 默认接 AgentRuntime.interrupt。
     传入 session_manager（如 core.session 的 SESSION_MANAGER）后 /new /sessions 可用。
+    Esc：权限确认优先；确认结束后若回合仍在进行，则中断。
     运行期间忽略 SIGINT：Ctrl+C 不关闭应用（退出用 /exit 或 ctrl+q），退出后恢复原处理器。
     """
-    app = ChatApp(handle_query=handle_query, session_manager=session_manager, banner=banner)
+    app = ChatApp(handle_query=handle_query, session_manager=session_manager, banner=banner,
+                  on_interrupt=on_interrupt)
     _render._APP = app  # run 期间渲染 API（core.tui.render）经此全局桥接进事件循环
     old_sigint = None
     try:
@@ -748,7 +774,7 @@ def run(handle_query: Optional[Callable[[str], None]] = None,
 
 
 # ======================================================================
-# 内置演示：`python -m core.tui.ui_textual`（对齐原 ui.py __main__ 的演示范围）；
+# 启动入口：`python -m core.tui.ui_textual`（不传 handle_query → 真实 agent，见 _default_agent_turn）；
 # `--smoke` 自检见 core/tui/smoke.py（拆出以免近 800 行自检代码淹没本模块）
 # ======================================================================
 

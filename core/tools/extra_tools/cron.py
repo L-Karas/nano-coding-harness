@@ -39,3 +39,16 @@ def run_list_crons() -> str:
 
 def run_cancel_cron(job_id: str) -> str:
     return cron_scheduler.run_cancel_cron(job_id)
+
+
+async def run_schedule_cron_async(cron_expression: str, prompt: str, recurring: bool = True,
+                                  durable: bool = True, ctx=None) -> str:
+    return run_schedule_cron(cron_expression, prompt, recurring, durable)
+
+
+async def run_list_crons_async(ctx=None) -> str:
+    return run_list_crons()
+
+
+async def run_cancel_cron_async(job_id: str, ctx=None) -> str:
+    return run_cancel_cron(job_id)

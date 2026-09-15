@@ -13,3 +13,7 @@ class LoadSkill(BaseTool):
 
 def run_load_skill(name: str) -> str:
     return load_skill(name)
+
+
+async def run_load_skill_async(name: str, ctx=None) -> str:
+    return load_skill(name)

@@ -1,7 +1,8 @@
+from pydantic import Field
+
 import core.message_bus as message_bus
 import core.protocol_state as protocol_state
 from core.protocol_state import consume_lead_inbox
-from pydantic import Field
 from core.teammates import spawn_teammate_thread
 from core.tools.tool_base import BaseTool
 
@@ -132,3 +133,32 @@ def run_review_plan(request_id: str, approve: bool, feedback: str = "") -> str:
     )
 
     return f"Plan {'approved' if approve else 'rejected'}."
+
+
+async def run_submit_plan_async(from_agent: str, plan: str, ctx=None) -> str:
+    """Register the plan request and send it to Lead for approval."""
+    return run_submit_plan(from_agent, plan)
+
+
+async def run_spawn_teammate_async(name: str, role: str, prompt: str, ctx=None) -> str:
+    return run_spawn_teammate(name, role, prompt)
+
+
+async def run_send_message_async(to_agent: str, content: str, ctx=None) -> str:
+    return run_send_message(to_agent, content)
+
+
+async def run_check_inbox_async(ctx=None) -> str:
+    return run_check_inbox()
+
+
+async def run_request_shutdown_async(teammate: str, ctx=None) -> str:
+    return run_request_shutdown(teammate)
+
+
+async def run_request_plan_async(teammate: str, task: str, ctx=None) -> str:
+    return run_request_plan(teammate, task)
+
+
+async def run_review_plan_async(request_id: str, approve: bool, feedback: str = "", ctx=None) -> str:
+    return run_review_plan(request_id, approve, feedback)
