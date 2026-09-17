@@ -1,9 +1,9 @@
 from pydantic import Field
 
-import core.message_bus as message_bus
-import core.protocol_state as protocol_state
-from core.protocol_state import consume_lead_inbox
-from core.teammates import spawn_teammate_thread
+import core.experimental.message_bus as message_bus
+import core.experimental.protocol_state as protocol_state
+from core.experimental.protocol_state import consume_lead_inbox
+from core.experimental.teammates import spawn_teammate_thread
 from core.tools.tool_base import BaseTool
 
 

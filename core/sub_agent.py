@@ -21,7 +21,6 @@ def spawn_subagent(description: str) -> str:
     ]
 
     for _ in range(30):
-        # 模型统一走 shared_model_client（.harness/.setting.json），不再用独立 sub model
         response = shared_model_client().get_model_client()(
             messages=messages,
             tools=sub_tools,

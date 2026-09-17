@@ -27,3 +27,4 @@ wheels/
 /core/tui/demo.py
 !/core/tui/app.css
 !/core/client/models.json
+!.gitattributes

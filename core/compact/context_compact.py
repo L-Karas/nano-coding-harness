@@ -5,18 +5,15 @@ Context Compaction
 # message ranges, and only call the model for a summary when the context is
 # still too large or the model explicitly asks for compact.
 """
-import json
-import time
 from functools import wraps
-from pathlib import Path
 from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
 
 from core.client import shared_model_client
-from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, TRANSCRIPT_DIR, RESERVE_TOKENS
+from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, RESERVE_TOKENS, \
+    SUMMARIZE_MAX_TOKENS
 from core.log.log import get_logger
-from core.runtime_context import AgentInterrupted
 from core.template import SUMMARY_PROMPT_TEMPLATE
 
 REMAIN_TOOL_RESULT_THRESHOLD = 2000
@@ -109,7 +106,7 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
     """
     When tool result too large, persist large output to file and remain truncated content.
     """
-    if estimate_token(output) <= PERSIST_THRESHOLD:
+    if len(output) <= PERSIST_THRESHOLD:
         return output
 
     TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -118,7 +115,7 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
         path.write_text(output, encoding="utf-8")
 
     return (f"<persisted-output>\nFull output saved in: {path}\n"
-            f"Preview content:\n{output[:2000]}\n</persisted-output>")
+            f"Preview content:\n{output[:3000]}\n</persisted-output>")
 
 
 # todo: tool result budge
@@ -156,30 +153,6 @@ def tool_result_budget(messages: list, max_bytes: int = int(2e6)) -> list:
     return messages
 
 
-# todo: snip middle messages
-@log_compact_info
-def snip_compact(messages: list, max_messages: int = 50) -> list:
-    """
-    Snip middle messages
-    """
-    if len(messages) <= max_messages:
-        return messages
-    head_end, tail_start = 2, len(messages) - max_messages + 2
-    if message_has_tool_call(messages[head_end - 1]):
-        while head_end < len(messages) and is_tool_result_message(messages[head_end]):
-            head_end += 1
-
-    if 0 < tail_start < len(messages) and is_tool_result_message(messages[tail_start]):
-        while not message_has_tool_call(messages[tail_start - 1]):
-            tail_start += 1
-
-    if head_end >= tail_start:
-        return messages
-
-    snipped = tail_start - head_end
-    return messages[:head_end] + [{"role": "user", "content": f"[snipped {snipped} messages]"}] + messages[tail_start:]
-
-
 @log_compact_info
 def micro_compact(messages: list) -> list:
     """
@@ -195,25 +168,6 @@ def micro_compact(messages: list) -> list:
             _LOGGER.info(f"Cleared old tool result, index: {index}, result: {message['content'][:100]}")
 
     return messages
-
-
-@log_compact_info
-def write_transcript(messages: list) -> Path:
-    """
-    Write messages to a transcript JSONL file.
-    """
-    TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
-    path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
-    with path.open("w", encoding="utf-8") as f:
-        for message in messages:
-            if isinstance(message, dict):
-                f.write(json.dumps(message, default=str, ensure_ascii=False) + "\n")
-            else:
-                f.write(message.model_dump_json(ensure_ascii=False) + "\n")
-
-    _LOGGER.info(f"Wrote messages to {path}")
-
-    return path
 
 
 def find_index_to_split(messages: list) -> int:
@@ -260,62 +214,44 @@ async def summarize_history(messages: list, ctx=None) -> str:
     Summarize history messages
     """
     # todo: 当前上下文压缩会覆盖原会话历史，为压缩后的信息保存额外副本？
+    summary_text = ""
+    messages.append({
+        "role": "user",
+        "content": SUMMARY_PROMPT_TEMPLATE,
+    })
+    stream = await shared_model_client().get_model_client(async_client=True)(
+        messages=messages,
+        max_tokens=SUMMARIZE_MAX_TOKENS,
+        stream=True
+    )
     try:
-        summary_text = ""
-        messages.append({
-            "role": "user",
-            "content": SUMMARY_PROMPT_TEMPLATE,
-        })
-        stream = await shared_model_client().get_model_client(async_client=True)(
-            messages=messages,
-            max_tokens=2000,
-            stream=True
-        )
-        try:
-            async for chunk in stream:
+        async for chunk in stream:
+            if ctx is not None:  # 手动 /compact 不带回合上下文：无中断检查
                 ctx.raise_if_cancelled()
-                if not chunk.choices:
-                    continue
-                choice = chunk.choices[0]
-                if choice.delta.content:
-                    summary_text += choice.delta.content
-        finally:
-            await stream.close()
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.delta.content:
+                summary_text += choice.delta.content
+    finally:
+        await stream.close()
 
-        return summary_text
-    except AgentInterrupted:
-        raise
-    except Exception as e:
-        raise e
+    return summary_text
 
 
 @async_log_compact_info
-async def compact_history(messages: list, ctx=None) -> list:
+async def compact_history(messages: list, ctx=None, auto_compact: bool = True) -> list:
     """
     Summarize history messages
     """
-    write_transcript(messages)
-    split_index = find_index_to_split(messages)
-    summary = await summarize_history(messages[:split_index], ctx)
-    return ([{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] +
-            messages[split_index:])
+    if not messages:
+        return []
 
-
-@async_log_compact_info
-async def reactive_compact(messages: list, ctx=None) -> list:
-    transcript = write_transcript(messages)
-    _LOGGER.info(f"[Reactive compact] transcript saved: {transcript}")
-    tail = max(0, len(messages) - 5)
-    if 0 < tail < len(messages) and is_tool_result_message(messages[tail]):
-        while not message_has_tool_call(messages[tail - 1]):
-            tail -= 1
-
-    # todo: 重压缩上下文失败后，抛出错误信息？
-    try:
+    split_index = -1
+    if auto_compact:
+        split_index = find_index_to_split(messages)
+        summary = await summarize_history(messages[:split_index], ctx)
+    else:
         summary = await summarize_history(messages, ctx)
-    except Exception as e:
-        _LOGGER.exception(f"[Reactive compact] failed to summarize history. Error: {e}")
-        summary = "Earlier conversation was trimmed after a prompt-too-long error."
-
-    return ([{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] +
-            messages[tail:])
+    return [{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] + \
+        (messages[split_index:] if auto_compact else [])

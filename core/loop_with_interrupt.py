@@ -2,6 +2,7 @@
 Agent Loop
 """
 import asyncio
+import concurrent.futures
 import json
 import threading
 import time
@@ -17,10 +18,10 @@ from core.compact.context_compact import tool_result_budget, micro_compact, esti
     compact_history
 from core.config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
 from core.cron_scheduler import consume_cron_queue
+from core.experimental.protocol_state import consume_lead_inbox
 from core.log.log import get_logger
 from core.permission.hook_permission import trigger_hooks
 from core.prompt import build_system_prompt
-from core.protocol_state import consume_lead_inbox
 from core.recovery.error_recovery import RecoveryState, with_retry_async
 from core.runtime_context import AgentRunContext, AgentInterrupted
 from core.session.session import SESSION_MANAGER
@@ -81,11 +82,31 @@ class AgentRuntime:
         return True
 
     def submit(self, coro) -> Future:
-        return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
+        """跑协程并阻塞取结果；被 interrupt() 取消（concurrent.futures.CancelledError）时统一抛
+        AgentInterrupted，取消语义单一（Esc 的 ctx/task 双路取消都落到同一个异常）。"""
+        try:
+            return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
+        except concurrent.futures.CancelledError:
+            raise AgentInterrupted("User interrupted") from None
+
+    async def compact(self) -> None:
+        """手动压缩当前会话上下文（UI 的 /compact）：须经 submit() 在 self.loop 上执行——
+        模型客户端绑定该事件循环。AGENT_LOCK 由调用线程（UI 的 _compact_worker）持有：
+        在协程内取锁会阻塞事件循环，与持锁等待该循环的 cron 线程死等。
+        注册 _current_ctx / _run_task，压缩期间 Esc（runtime.interrupt）可中断；中断不落会话。"""
+        ctx = AgentRunContext()
+        self._current_ctx = ctx
+        self._run_task = asyncio.current_task()
+        try:
+            messages = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
+            SESSION_MANAGER.update_messages(messages)
+        finally:
+            self._current_ctx = None
+            self._run_task = None
 
     async def run(self):
         if self._run_task is not None:
-            raise RuntimeError("agent is already running")
+            raise RuntimeError("Agent is already running")
 
         state = RecoveryState()
         ctx = AgentRunContext()
@@ -106,6 +127,7 @@ class AgentRuntime:
                     })
                     render_background_notification(f"Cron prompt: {cron.prompt}", title="⏰ Cron Injected")
 
+                ctx.raise_if_cancelled()
                 inject_background_notifications()
 
                 messages = await prepare_messages(SESSION_MANAGER.load_messages(), ctx)
@@ -119,23 +141,7 @@ class AgentRuntime:
                     raise
                 except Exception as e:
                     # todo: 是否需要将模型调用错误信息作为消息历史的一部分
-                    # 错误只落会话不渲染 = 用户输入后无任何反馈；同步出错误卡（线程安全渲染 API）
                     error_text = f"[Error] {type(e).__name__}: {e}"
-                    # if is_prompt_too_long_error(e) and not state.has_attempted_reactive_compact:
-                    #     task = asyncio.create_task(reactive_compact(SESSION_MANAGER.load_messages(), ctx))
-                    #     ctx.track(task)
-                    #     try:
-                    #         messages[:] = await task
-                    #         SESSION_MANAGER.update_messages(messages)
-                    #         state.has_attempted_reactive_compact = True
-                    #         continue
-                    #     except AgentInterrupted:
-                    #         raise
-                    #     except Exception as e:
-                    #         error_text = f"[Error] {type(e).__name__}: {e}"
-                    #     finally:
-                    #         ctx.tasks.discard(task)
-
                     SESSION_MANAGER.add_message({
                         "role": "assistant",
                         "content": error_text
@@ -143,6 +149,7 @@ class AgentRuntime:
                     render_background_notification(error_text, title="⚠️ Agent Error")
                     return
 
+                # todo: usage 变量暂未使用
                 accumulated_text, reasoning_text, tool_calls, finish_reason, usage = await self.stream(stream, ctx)
 
                 assistant_message = {
@@ -261,6 +268,7 @@ class AgentRuntime:
     async def call_tools(self, tool_calls: list[dict], handlers: dict, ctx: AgentRunContext):
         tool_call_results = []
         try:
+            # todo: 采用 asyncio.TaskGroup 并发执行工具，当前工具执行实质为串行执行
             for tool_call in tool_calls:
                 tool_call_id = tool_call.get("id", "")
                 if ctx.interrupted:
@@ -283,33 +291,6 @@ class AgentRuntime:
 
                 render_tool_call(tool_name, tool_args)
 
-                # if tool_name == "compact":
-                #     # todo: 上下文压缩异步重构
-                #     task = asyncio.create_task(compact_history(SESSION_MANAGER.load_messages(), ctx))
-                #     ctx.track(task)
-                #     try:
-                #         messages = await task
-                #     except AgentInterrupted:
-                #         tool_call_results.append({
-                #             "role": "tool",
-                #             "tool_call_id": tool_call.id,
-                #             "content": USER_INTERRUPT_PROMPT
-                #         })
-                #         continue
-                #     except asyncio.CancelledError:
-                #         if not ctx.interrupted:
-                #             raise
-                #         task.cancel()
-                #         tool_call_results.append({
-                #             "role": "tool",
-                #             "tool_call_id": tool_call.id,
-                #             "content": USER_INTERRUPT_PROMPT
-                #         })
-                #         continue
-                #
-                #     SESSION_MANAGER.update_messages(messages)
-                #     return
-
                 blocked = trigger_hooks("PreToolUse", tool_call)
                 if blocked:
                     tool_call_results.append({
@@ -320,13 +301,13 @@ class AgentRuntime:
                     continue
 
                 if should_run_background(tool_name, tool_args):
-                    # todo: 后台工具异步重构
+                    # todo: 后台工具异步重构?
                     bg_id = start_background_task(tool_call, handlers, ctx)
                     tool_call_results.append({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": f"[Background task {bg_id} started] "
-                                   f"Result will arrive as a '<background-task-notification>' tag."
+                        "content": f"[Background task `{bg_id}` started] "
+                                   f"Result will arrive with a `<background-task-notification>` tag."
                     })
                     continue
 
@@ -388,7 +369,6 @@ async def prepare_messages(messages: list, ctx) -> list:
     Every LLM turn enters through the same context budget pipeline.
     """
     messages[:] = tool_result_budget(messages)
-    # messages[:] = snip_compact(messages)
     messages[:] = micro_compact(messages)
     if estimate_size(messages) > CONTEXT_LIMIT:
         messages[:] = await compact_history(messages, ctx)

@@ -72,11 +72,6 @@ class SessionManager:
         self.session_map: dict[str, Session] = {}
         self.current_session: str = ""
 
-        if not SESSION_DIR.exists():
-            SESSION_DIR.mkdir(parents=True, exist_ok=True)
-        if not SESSION_INDEX_FILE.exists():
-            SESSION_INDEX_FILE.touch()
-
     @staticmethod
     def _get_session_id():
         return f"session-{int(time.time()):06d}.jsonl"
@@ -101,7 +96,7 @@ class SessionManager:
                 self._update_session_title(message.content)
 
         self.session_map[self.current_session].messages.append(message)
-        self.update_session()
+        self.update_session(update_type="append")
         return True
 
     def load_messages(self, exclude_payload: bool = True) -> list[dict]:
@@ -152,7 +147,7 @@ class SessionManager:
             messages.append(message)
 
         self.session_map[self.current_session].messages = messages
-        self.update_session()
+        self.update_session(update_type="rewrite")
         return True
 
     def _update_session_index(self) -> bool:
@@ -179,25 +174,30 @@ class SessionManager:
             f.close()
         return True
 
-    def _update_session_messages(self) -> bool:
+    def _update_session_messages(self, update_type: Literal["rewrite", "append"] = "rewrite") -> bool:
         """
         更新会话文件
         """
         session_path = SESSION_DIR / self.current_session
+        if not session_path.exists():
+            session_path.touch()
         try:
-            f = open(session_path, "x", encoding="utf-8")
-        except FileExistsError:
-            f = open(session_path, "w", encoding="utf-8")
+            messages = self.session_map[self.current_session].messages
+            if update_type == "rewrite":
+                with open(session_path, "w", encoding="utf-8") as f:
+                    content = "\n".join(
+                        json.dumps(asdict(message), ensure_ascii=False)
+                        for message in messages
+                    )
+                    f.write(content)
+            else:
+                with open(session_path, "a", encoding="utf-8") as f:
+                    content = "\n" + json.dumps(asdict(messages[-1]), ensure_ascii=False)
+                    f.write(content)
         except Exception as e:
             _LOGER.exception(e)
             return False
-        finally:
-            content = "\n".join(
-                json.dumps(asdict(message), ensure_ascii=False)
-                for message in self.session_map[self.current_session].messages
-            )
-            f.write(content)
-            f.close()
+
         return True
 
     def delete_session(self, session_id: str) -> bool:
@@ -213,14 +213,16 @@ class SessionManager:
         self._update_session_index()
         return True
 
-    def update_session(self) -> bool:
+    def update_session(self, update_type: Literal["rewrite", "append"] = "rewrite") -> bool:
         """
         更新会话文件和会话索引文件，若当前会话为空，则创建新会话
+
+        update_type: 更新会话消息记录方式。rewrite 指重写整个消息记录进文件；append 指将新消息写入文件最后一行
         """
         if not self.current_session:
             self.new_session()
 
-        self._update_session_messages()
+        self._update_session_messages(update_type=update_type)
         self._update_session_index()
 
         return True
@@ -243,10 +245,9 @@ class SessionManager:
         """
         加载所有会话，更新会话影射表
         """
-        session_index = SESSION_DIR / "session_index.jsonl"
 
         try:
-            with open(session_index, "r", encoding="utf-8") as f:
+            with open(SESSION_INDEX_FILE, "r", encoding="utf-8") as f:
                 content_lines = f.readlines()
             sessions = []
             for line in content_lines:
@@ -260,15 +261,18 @@ class SessionManager:
 
         return []
 
-    def load_session(self, session_id: str = "") -> Session:
+    def load_session(self, session_id: str = "") -> Session | None:
         """
         加载会话，若提供会话 id，则加载对应会话，否则加载当前会话
         """
         if session_id:
+            # 若加载会话为当前会话，直接返回消息历史
+            if self.current_session == session_id:
+                return self.session_map[self.current_session]
+            # 清空上一会话消息历史，待需要时重新从文件读取
+            if self.current_session:
+                self.session_map[self.current_session].messages = []
             self.current_session = session_id
-
-        if not self.current_session:
-            self.new_session()
 
         path = SESSION_DIR / self.current_session
         if not path.exists():
@@ -278,7 +282,6 @@ class SessionManager:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content_lines = f.readlines()
-
             self.session_map[self.current_session].messages = [Message(**json.loads(line.strip())) for line in
                                                                content_lines]
             return self.session_map[self.current_session]

@@ -12,6 +12,7 @@ import subprocess
 _SLASH_COMMAND_META: dict[str, tuple[str, tuple[str, ...], str]] = {
     "/new": ("/new", (), "Start a fresh session"),
     "/sessions": ("/sessions", (), "Open the session picker"),
+    "/compact": ("/compact", (), "Compact the conversation history"),
     "/skills": ("/skills", (), "List available skills"),
     "/provider": ("/provider", (), "Configure API providers"),
     "/model": ("/model", (), "Switch the active model"),
