@@ -7,6 +7,7 @@ Background tasks
 import asyncio
 import inspect
 import json
+import re
 import threading
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
@@ -23,14 +24,38 @@ BACKGROUND_LOCK = threading.Lock()
 _LOGER = get_logger(__name__)
 
 
+# 慢命令判定只看命令位置的词(每条 ; && | 分隔的命令的第一个词)，不看参数/路径/字符串里的词。
+_CMD_SEP = re.compile(r"&&|\|\||[;&|\n]")
+_WORD = re.compile(r"[A-Za-z0-9_./+@=-]+")
+_WRAPPERS = {"sudo", "time", "env", "command", "nohup", "exec"}
+_ALWAYS_SLOW = {"make", "pytest", "sleep", "install", "build", "deploy", "compile"}
+_SLOW_SUBCMDS = {  # 这些命令只有跟了慢子命令才算慢：npm test 慢，npm run lint 不慢
+    "pip": {"install"}, "pip3": {"install"}, "uv": {"sync"},
+    "npm": {"install", "ci", "test"}, "pnpm": {"install", "test"}, "yarn": {"install", "test"},
+    "bun": {"install"}, "poetry": {"install", "build"}, "conda": {"install"},
+    "cargo": {"build", "test", "run"}, "go": {"build", "test"},
+    "docker": {"build"}, "docker-compose": {"build"},
+    "gradle": {"build", "test"}, "mvn": {"install", "build", "test", "deploy"},
+    "apt": {"install", "upgrade"}, "apt-get": {"install", "upgrade"}, "brew": {"install", "upgrade"},
+}
+
+
 def is_slow_operation(tool_name: str, tool_args: dict) -> bool:
+    """粗判 bash 命令会不会跑很久：只看命令词，宁可漏判也不误判。"""
     if tool_name != "bash":
         return False
 
-    command = tool_args.get("command", "").lower()
-    slow_keywords = ["install", "build", "deploy", "compile", "docker build",
-                     "pip install", "cargo build", "pytest", "make"]
-    return any(word in command for word in slow_keywords)
+    for segment in _CMD_SEP.split(tool_args.get("command") or ""):
+        words = [w.lower() for w in _WORD.findall(segment)]
+        while words and (words[0] in _WRAPPERS or "=" in words[0]):  # 跳过 sudo/time 前缀和 FOO=1 赋值
+            words.pop(0)
+        if not words:
+            continue
+        cmd = words[0].rsplit("/", 1)[-1].removesuffix(".sh")  # ./build.sh → build
+        sub = words[1] if len(words) > 1 else ""
+        if cmd in _ALWAYS_SLOW or sub in _SLOW_SUBCMDS.get(cmd, ()):
+            return True
+    return False
 
 
 def should_run_background(tool_name: str, tool_args: dict) -> bool:

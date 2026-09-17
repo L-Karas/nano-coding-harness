@@ -166,14 +166,15 @@ async def _smoke() -> None:
             prompt.text = "/"
             await settle(pilot)
             assert suggest.styles.display != "none", "输入 / 未弹出候选 OptionList"
-            assert prompt._candidates == ["/new", "/sessions", "/skills", "/provider", "/model", "/effort",
-                                          "/exit"], prompt._candidates
+            assert prompt._candidates == ["/new", "/sessions", "/compact", "/skills", "/provider", "/model",
+                                          "/effort", "/exit"], prompt._candidates
             # 候选行 = 指令名列（含别名括注）+ 空距 + 简短说明（选项 prompt 为分段 Text，
             # plain 即整行字符），各行说明左端对齐于同一列
             assert [suggest.get_option_at_index(i).prompt.plain
                     for i in range(suggest.option_count)] == [
                        "/new            Start a fresh session",
                        "/sessions       Open the session picker",
+                       "/compact        Compact the conversation history",
                        "/skills         List available skills",
                        "/provider       Configure API providers",
                        "/model          Switch the active model",

@@ -6,7 +6,8 @@ from core.tui.ui_textual import run
 
 def main():
     runtime = start_agent_runtime()
-    run(handle_query=make_agent_turn(runtime), session_manager=SESSION_MANAGER, on_interrupt=runtime.interrupt)
+    run(handle_query=make_agent_turn(runtime), session_manager=SESSION_MANAGER,
+        on_interrupt=runtime.interrupt, runtime=runtime)
 
 
 if __name__ == "__main__":
