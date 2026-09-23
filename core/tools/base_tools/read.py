@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -38,4 +39,10 @@ async def run_read_file_async(
         cwd: Optional[Path] = None,
         ctx=None
 ) -> str:
-    return run_read_file(path, limit, offset, cwd)
+    if ctx:
+        ctx.raise_if_cancelled()
+    # to_thread：读大文件不能卡住事件循环（卡住时 task.cancel() 也送不进来）
+    result = await asyncio.to_thread(run_read_file, path, limit, offset, cwd)
+    if ctx:
+        ctx.raise_if_cancelled()
+    return result

@@ -1,7 +1,8 @@
 import asyncio
+import concurrent.futures
 
 
-class AgentInterrupted(Exception):
+class AgentInterrupted(asyncio.CancelledError):
     pass
 
 
@@ -9,7 +10,9 @@ class AgentRunContext:
 
     def __init__(self):
         self.cancelled = asyncio.Event()
-        self.tasks: set[asyncio.Task] = set()
+        # asyncio.Task（本回合工具协程）或 concurrent.futures.Future（后台任务的跨线程桥）：
+        # 两者都有 cancel/done/cancelled/exception，cancel() 对后者经 _chain_future 传回内层 task
+        self.tasks: set = set()
 
     @property
     def interrupted(self):
@@ -19,10 +22,10 @@ class AgentRunContext:
         if self.cancelled.is_set():
             raise AgentInterrupted("User interrupted")
 
-    def track(self, task: asyncio.Task):
+    def track(self, task: asyncio.Future | concurrent.futures.Future):
         self.tasks.add(task)
 
-        def done(t: asyncio.Task):
+        def done(t):
             self.tasks.discard(t)
             if not t.cancelled():
                 t.exception()
@@ -31,8 +34,7 @@ class AgentRunContext:
 
     def cancel(self):
         self.cancelled.set()
-        for task in self.tasks:
+        for task in list(self.tasks):
+            # concurrent.futures.Future.cancel() 会同步跑 done 回调删除 task，
+            # 可能导致 self.tasks 发生变化
             task.cancel()
-
-    def clean(self):
-        pass

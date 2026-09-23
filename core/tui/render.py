@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import Future
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -21,10 +22,9 @@ if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp�
 
 _APP: Optional[ChatApp] = None  # run() 期间挂载的 ChatApp，渲染桥接目标
 
-DEFAULT_MAX_LINES = 10  # 卡片正文默认上限行数：超出折叠为额外 1 行提示
+DEFAULT_MAX_LINES = 10  # 卡片正文默认上限行数（按渲染宽度换行后的视觉行计）：超出折叠为额外 1 行提示
 
 _DIM = "dim #e2e8f0"  # 卡片正文（暗灰）
-_HINT = "dim yellow"  # 折叠 / 展开提示行（暗黄）
 _DIFF_STYLES = {"+": "#b5bd68", "-": "#f87171"}  # diff 行：+ 绿 / - 淡红，其余 dim
 
 
@@ -46,29 +46,14 @@ def _dim_body(text: str) -> Text:
     return Text(text, style=_DIM)
 
 
-def _truncated_hint(hidden: int) -> Text:
-    """折叠提示行（暗黄，点击展开）"""
-    return Text(f"\n... [truncated {hidden} lines] · click to expand", style=_HINT)
-
-
-def _collapse_hint() -> Text:
-    """展开态末尾的收回提示行（点击卡片折叠）"""
-    return Text("\n· click to collapse", style=_HINT)
-
-
 def _add_capped_card(kind: str, body: Text, max_lines: int = DEFAULT_MAX_LINES,
                      head: Optional[Text] = None) -> None:
-    """追加卡片：正文超过 max_lines 行时只显示前 max_lines 行 + 折叠提示行，
-    点击卡片在截断与完整正文间切换（head 为固定首行，不计入行数与折叠）。"""
+    """追加卡片：正文超过 max_lines 行（渲染宽度下换行后的视觉行，长行折出的行同样计入）
+    时只显示前 max_lines 行 + 折叠提示行，点击卡片在截断与完整正文间切换
+    （head 为固定首行，不计入行数与折叠）"""
     head = head if head is not None else Text()
-    lines = body.split("\n")  # Rich 的 split 与 str.splitlines 对齐：末尾换行不算一行
-    hidden = len(lines) - max_lines
-    if hidden <= 0:
-        _exec(lambda app: app._add_card(kind, head + body))
-        return
-    shown = Text("\n").join(lines[:max_lines]) + _truncated_hint(hidden)
-    _exec(lambda app: app._add_card(kind, head + shown,
-                                    expand=lambda: head + body + _collapse_hint()))
+    reserved = head.plain.count("\n")  # head 占用的固定行数
+    _exec(lambda app: app._add_card(kind, head + body, cap=max_lines, reserved=reserved))
 
 
 def render_user_input(user_text: str) -> None:
@@ -201,17 +186,9 @@ def ask_permission(message: str) -> str:
     if threading.get_ident() == app._thread_id:
         raise RuntimeError("ask_permission must be called from a non-App thread (e.g. inside handle_query)")
 
-    done = threading.Event()
-    holder: dict[str, Any] = {"value": ""}
-
-    def _ask(app: ChatApp) -> None:
-        app._perm_holder = holder
-        app._perm_done = done
-        app._begin_permission(message)
-
+    future: Future[str] = Future()
     try:
-        _exec(_ask)
-        done.wait()
+        _exec(lambda app: app._begin_permission(message, future))
+        return future.result()
     except Exception:
         return ""
-    return holder["value"]

@@ -23,6 +23,21 @@ BACKGROUND_RESULTS: dict[str, str] = {}
 BACKGROUND_LOCK = threading.Lock()
 _LOGER = get_logger(__name__)
 
+# 慢命令判定只看命令位置的词(每条 ; && | 分隔的命令的第一个词)，不看参数/路径/字符串里的词。
+_CMD_SEP = re.compile(r"&&|\|\||[;&|\n]")
+_WORD = re.compile(r"[A-Za-z0-9_./+@=-]+")
+_WRAPPERS = {"sudo", "time", "env", "command", "nohup", "exec"}
+_ALWAYS_SLOW = {"make", "pytest", "sleep", "install", "build", "deploy", "compile"}
+_SLOW_SUBCMDS = {  # 这些命令只有跟了慢子命令才算慢：npm test 慢，npm run lint 不慢
+    "pip": {"install"}, "pip3": {"install"}, "uv": {"sync"},
+    "npm": {"install", "ci", "test"}, "pnpm": {"install", "test"}, "yarn": {"install", "test"},
+    "bun": {"install"}, "poetry": {"install", "build"}, "conda": {"install"},
+    "cargo": {"build", "test", "run"}, "go": {"build", "test"},
+    "docker": {"build"}, "docker-compose": {"build"},
+    "gradle": {"build", "test"}, "mvn": {"install", "build", "test", "deploy"},
+    "apt": {"install", "upgrade"}, "apt-get": {"install", "upgrade"}, "brew": {"install", "upgrade"},
+}
+
 
 # 慢命令判定只看命令位置的词(每条 ; && | 分隔的命令的第一个词)，不看参数/路径/字符串里的词。
 _CMD_SEP = re.compile(r"&&|\|\||[;&|\n]")
@@ -79,13 +94,16 @@ def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handler
             else:
                 handler = handlers.get(tool_call.function.name)
                 if inspect.iscoroutinefunction(handler):
-                    result = asyncio.run_coroutine_threadsafe(
+                    fut = asyncio.run_coroutine_threadsafe(
                         execute_tool(handler, tool_args, tool_call.function.name, ctx), loop
-                    ).result()
+                    )
+                    if ctx:
+                        ctx.track(fut)  # Esc 时 ctx.cancel() 经 concurrent Future 传回内层 task
+                    result = fut.result()
                 else:
                     result = call_tool_handler(handler, tool_args, tool_call.function.name)
         except BaseException as e:
-            result = f"[Tool Error] {type(e).__name__}: {e}"
+            result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else f"[Tool Error] {type(e).__name__}: {e}"
         with BACKGROUND_LOCK:
             BACKGROUND_TASKS[bg_id]["status"] = "completed"
             BACKGROUND_RESULTS[bg_id] = str(result)
@@ -111,7 +129,8 @@ def collect_background_results() -> list[str]:
         with BACKGROUND_LOCK:
             task = BACKGROUND_TASKS.pop(bg_id)
             output = BACKGROUND_RESULTS.pop(bg_id, "")
-        summary = output[:200] if len(output) > 200 else output
+        # todo: limit output size
+        summary = output
         notifications.append(
             f"<background-task-notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"

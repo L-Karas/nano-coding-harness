@@ -18,7 +18,7 @@ class Glob(BaseTool):
 
 def has_ripgrep() -> bool:
     import shutil
-    return bool(shutil.which("ripgrep"))
+    return bool(shutil.which("rg"))
 
 
 def run_glob(pattern: str, cwd: Optional[Path] = None) -> str:
@@ -37,7 +37,7 @@ async def run_glob_async(pattern: str, cwd: Optional[Path] = None, ctx=None, use
         ctx.raise_if_cancelled()
 
     if not has_ripgrep():
-        return run_glob(pattern, cwd)
+        return await asyncio.to_thread(run_glob, pattern, cwd)
 
     root = cwd or WORKDIR
     command = ["rg", "--files", "-0"]

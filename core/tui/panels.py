@@ -1,56 +1,46 @@
-"""主界面分区部件：ChatApp 左栏的标题栏 / 聊天画板 / 底部停靠区（拆自 ui_textual.compose）。
+"""主界面分区部件：ChatApp 左栏的欢迎标题 / 聊天画板 / 底部停靠区（拆自 ui_textual.compose）。
 
 compose 只保留左右分栏骨架，逐区 yield 本模块的自定义部件；每个分区把
 自己的内部结构收进自己的 compose，样式仍按 id 在同目录 app.css 维护。
 与 ChatApp 的联动沿用全局 id 查询（状态行 / footer 更新、_CommandInput
 的候选列表、渲染 API 的卡片追加均按 id 取件），DOM 层级与拆出前完全一致。
 
-- _TitleBar：标题栏（最外部单线圆角框，内部动态流光标题块）；
+- _Welcome：聊板为空（首次启动 / 新建会话）时的居中欢迎标题（大字标题 + 小字副标题）；
 - _ChatBoard：聊天画板滚动容器（不满一屏时消息从顶部向下填充，见类 docstring）；
 - _ChatDock：底部固定区（状态行 + / 指令与 @ 文件候选列表 + 权限 yes/no 列表 + 输入条 + 工作目录行）。
 """
 
 from __future__ import annotations
 
+from pyfiglet import figlet_format
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from core.tui.theme import _PLACEHOLDER, _SPINNER_FRAMES
+from core.tui.theme import _PLACEHOLDER
 from core.tui.widgets import _CommandInput
 
-# 标题文字滚动渐变配色（深蓝底上依次过渡的青→绿→金，随帧前移形成流光）
-_TITLE_WAVE = ["#7dd3fc", "#38bdf8", "#22d3ee", "#2dd4bf", "#4ade80", "#facc15"]
+
+def _welcome_text(title: str, subtitle: str) -> Text:
+    """欢迎标题：滤除非 ASCII 后渲染为 smblock 块状大字（绿色），末尾接小字副标题"""
+    ascii_title = "".join(ch for ch in title.upper() if ch.isascii())
+    art = ""
+    if ascii_title:
+        art = "\n".join(line.rstrip() for line in figlet_format(ascii_title).splitlines())
+    text = Text(art, style="#4ade80", justify="center")
+    if subtitle:
+        text.append(("\n" if art else "") + subtitle, style="#94a3b8")
+    return text
 
 
-class _TitleBar(Vertical):
-    """标题栏：最外部单线圆角框，内部是动态标题块（spinner 前缀 + 逐字滚动渐变流光，
-    0.12s 轮播；副标题行静态淡蓝灰）。背景只在框内，不遮圆角字形。"""
+class _Welcome(Static):
+    """聊板为空（首次启动 / 新建会话）时的居中欢迎标题（figlet 块状大字 + 小字副标题）。
+    占满 1fr、内容居中与显隐规则见 app.css #welcome；显示/隐藏由 ChatApp._set_welcome 切换。"""
 
     def __init__(self, title: str, subtitle: str) -> None:
-        super().__init__(id="titlebar")
-        self._title = title
-        self._subtitle = subtitle
-        self._frame = 0
-
-    def compose(self) -> ComposeResult:
-        yield Static("", id="titlebar-text", markup=False)
-
-    def on_mount(self) -> None:
-        self._tick()
-        self.set_interval(0.12, self._tick)
-
-    def _tick(self) -> None:
-        frame = self._frame
-        self._frame += 1
-        text = Text(justify="center")
-        text.append(_SPINNER_FRAMES[frame % len(_SPINNER_FRAMES)] + " ", style="bold #facc15")
-        for i, ch in enumerate(self._title):
-            text.append(ch, style=f"bold {_TITLE_WAVE[(i + frame) % len(_TITLE_WAVE)]}")
-        text.append(f"\n{self._subtitle}", style="#94a3b8")
-        self.query_one("#titlebar-text", Static).update(text)
+        super().__init__(_welcome_text(title, subtitle), id="welcome", markup=False)
 
 
 class _ChatBoard(VerticalScroll):
@@ -79,7 +69,7 @@ class _ChatDock(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status")
-        yield OptionList(id="cmd-suggest")   # / 指令候选：选项由 _CommandInput 按过滤结果重建（id = 指令串）
+        yield OptionList(id="cmd-suggest")  # / 指令候选：选项由 _CommandInput 按过滤结果重建（id = 指令串）
         yield OptionList(id="file-suggest")  # @ 文件补全列表（仅 @ 提及编辑时可见）
         # 权限确认 yes/no 列表：默认隐藏，权限请求时由 ChatApp 弹出并聚焦（行为见 ui_textual 权限确认段）
         yield OptionList(Option("✓ Yes", id="yes"), Option("✗ No", id="no"), id="perm-list")

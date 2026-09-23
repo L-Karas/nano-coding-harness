@@ -1,7 +1,7 @@
 """
 Context
 """
-from core import teammates
+from core.experimental import teammates
 from core.memory import MEMORY_MANAGER
 
 
