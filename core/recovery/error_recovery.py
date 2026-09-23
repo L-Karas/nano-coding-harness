@@ -26,11 +26,8 @@ class RecoveryState:
         super().__init__()
         self.has_escalated = False
         self.recovery_count = 0
-        # ---- 模型 overload fallback 字段（暂时移除，见 with_retry 的注释块） ----
+        # ---- 模型 overload fallback 字段  ----
         # 待 core/model/model.py 扩展出 fallback 模型能力后恢复：
-        # self.consecutive_1305 = 0  # 连续 1305 计数，达到 MAX_CONSECUTIVE 后切换 fallback 模型
-        # self.current_model = PRIMARY_MODEL  # 旧 env 配置（MODEL），恢复时应改从 ModelClient 读取
-        self.has_attempted_reactive_compact = False
 
 
 def retry_delay(attempt: int) -> float:
@@ -86,12 +83,10 @@ def with_retry(fn: Callable):
             result = fn()
             return result
         except Exception as e:
-            error_msg = str(e).lower().strip()
             error_type = get_error_type(e)
             if error_type == ErrorType.RateLimit:
-                kind = "Access rate limit" if "1302" in error_msg else "Model overload"
                 delay = retry_delay(attempt)
-                _LOGER.info(f"[{kind}] retry {attempt + 1}/{MAX_RETRIES} after {delay:.1f}s")
+                _LOGER.info(f"[Access rate limit] retry {attempt + 1}/{MAX_RETRIES} after {delay:.1f}s")
                 time.sleep(delay)
                 continue
 
@@ -106,12 +101,10 @@ async def with_retry_async(fn: Callable):
             result = await fn()
             return result
         except Exception as e:
-            error_msg = str(e).lower().strip()
             error_type = get_error_type(e)
             if error_type == ErrorType.RateLimit:
-                kind = "Access rate limit" if "1302" in error_msg else "Model overload"
                 delay = retry_delay(attempt)
-                _LOGER.info(f"[{kind}] retry {attempt + 1}/{MAX_RETRIES} "
+                _LOGER.info(f"[Access rate limit] retry {attempt + 1}/{MAX_RETRIES} "
                             f"after {delay:.1f}s")
                 await asyncio.sleep(delay)
                 continue

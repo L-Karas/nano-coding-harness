@@ -95,7 +95,7 @@ async def run_grep_async(pattern: str, path: str = "", file_pattern: str = "*", 
     elif grep_tool == "grep":
         command = ["grep", "-r", "-n", "--include", file_pattern, pattern, path]
     else:
-        return run_grep(grep_tool, pattern, file_pattern, cwd)
+        return await asyncio.to_thread(run_grep, grep_tool, pattern, file_pattern, cwd)
 
     process = await asyncio.create_subprocess_exec(
         *command,

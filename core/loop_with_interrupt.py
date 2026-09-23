@@ -14,9 +14,8 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
 from core.client import shared_model_client
-from core.compact.context_compact import tool_result_budget, micro_compact, estimate_size, \
-    compact_history
-from core.config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
+from core.compact.context_compact import tool_result_budget, micro_compact, compact_history
+from core.config import DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
 from core.cron_scheduler import consume_cron_queue
 from core.experimental.protocol_state import consume_lead_inbox
 from core.log.log import get_logger
@@ -93,13 +92,16 @@ class AgentRuntime:
         """手动压缩当前会话上下文（UI 的 /compact）：须经 submit() 在 self.loop 上执行——
         模型客户端绑定该事件循环。AGENT_LOCK 由调用线程（UI 的 _compact_worker）持有：
         在协程内取锁会阻塞事件循环，与持锁等待该循环的 cron 线程死等。
-        注册 _current_ctx / _run_task，压缩期间 Esc（runtime.interrupt）可中断；中断不落会话。"""
+        注册 _current_ctx / _run_task，压缩期间 Esc（runtime.interrupt）可中断；中断不落会话，取消归一与 run() 一致。"""
         ctx = AgentRunContext()
         self._current_ctx = ctx
         self._run_task = asyncio.current_task()
         try:
             messages = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
             SESSION_MANAGER.update_messages(messages)
+        except asyncio.CancelledError:
+            ctx.raise_if_cancelled()
+            raise
         finally:
             self._current_ctx = None
             self._run_task = None
@@ -120,7 +122,6 @@ class AgentRuntime:
 
                 fired_crons = consume_cron_queue()
                 for cron in fired_crons:
-                    ctx.raise_if_cancelled()
                     SESSION_MANAGER.add_message({
                         "role": "user",
                         "content": INJECTION_MESSAGES_TEMPLATE.format(content=f"[Scheduled cron] {cron.prompt}")
@@ -137,8 +138,6 @@ class AgentRuntime:
 
                 try:
                     stream = await self.call_llm(messages=messages, tools=tools, max_tokens=max_tokens, ctx=ctx)
-                except AgentInterrupted:
-                    raise
                 except Exception as e:
                     # todo: 是否需要将模型调用错误信息作为消息历史的一部分
                     error_text = f"[Error] {type(e).__name__}: {e}"
@@ -194,7 +193,7 @@ class AgentRuntime:
             raise
         finally:
             # 不等待收尾 interrupt() 的 ctx.cancel() 已取消过一轮，这里只兜底取消中断后新登记的任务
-            pending = [t for t in ctx.tasks if not t.done()]
+            pending = [t for t in list(ctx.tasks) if not t.done()]  # 后台 Future 的 done 回调在 worker 线程跑
             if ctx.interrupted:
                 for t in pending:
                     t.cancel()
@@ -228,9 +227,10 @@ class AgentRuntime:
                 try:
                     async for chunk in stream:
                         ctx.raise_if_cancelled()
+                        if chunk.usage:
+                            usage = chunk.usage
+
                         if not chunk.choices:
-                            if chunk.usage:
-                                usage = chunk.usage
                             continue
 
                         choice = chunk.choices[0]
@@ -257,9 +257,6 @@ class AgentRuntime:
                                         tool_calls[delta.index]["function"]["arguments"] += delta.function.arguments
                         if choice.finish_reason:
                             finish_reason = choice.finish_reason
-
-                        if chunk.usage:
-                            usage = chunk.usage
                 finally:
                     await stream.close()
 
@@ -268,14 +265,12 @@ class AgentRuntime:
     async def call_tools(self, tool_calls: list[dict], handlers: dict, ctx: AgentRunContext):
         tool_call_results = []
         try:
-            # todo: 采用 asyncio.TaskGroup 并发执行工具，当前工具执行实质为串行执行
+            # todo: 采用 asyncio.gather 并发执行工具，当前工具执行实质为串行执行
             for tool_call in tool_calls:
                 tool_call_id = tool_call.get("id", "")
                 if ctx.interrupted:
                     tool_call_results.append(_get_interrupt_message(tool_call_id))
                     continue
-
-                ctx.raise_if_cancelled()
 
                 try:
                     tool_call = ChatCompletionMessageToolCall(**tool_call)
@@ -326,9 +321,6 @@ class AgentRuntime:
 
                     try:
                         result = await task
-                    except AgentInterrupted:
-                        tool_call_results.append(_get_interrupt_message(tool_call_id))
-                        continue
                     except asyncio.CancelledError:
                         if not ctx.interrupted:
                             raise
@@ -370,8 +362,7 @@ async def prepare_messages(messages: list, ctx) -> list:
     """
     messages[:] = tool_result_budget(messages)
     messages[:] = micro_compact(messages)
-    if estimate_size(messages) > CONTEXT_LIMIT:
-        messages[:] = await compact_history(messages, ctx)
+    messages[:] = await compact_history(messages, ctx)
 
     return messages
 

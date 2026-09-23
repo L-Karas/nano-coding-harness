@@ -13,19 +13,21 @@ TASK_DIR = HARNESS_CONFIG_DIR / ".tasks"
 
 HARNESS_SETTING_FILE = HARNESS_CONFIG_DIR / ".setting.json"
 PROVIDER_AUTH_FILE = HARNESS_CONFIG_DIR / ".auth.json"
+CUSTOM_PROVIDER_FILE = HARNESS_CONFIG_DIR / ".custom_providers.json"
+CUSTOM_MODEL_FILE = HARNESS_CONFIG_DIR / ".custom_models.json"
 SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
 MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
 CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
 
-DEFAULT_MAX_TOKENS = int(8e3)
-ESCALATED_MAX_TOKENS = int(16e3)
+DEFAULT_MAX_TOKENS = int(1.6e4)
+ESCALATED_MAX_TOKENS = int(3.2e4)
 MAX_RETRIES = 3
 MAX_RECOVERY_RETRIES = 2
 MAX_CONSECUTIVE = 2
 
 BASE_DELAY_MS = 500
 CONTEXT_LIMIT = int(2e5)
-RESERVE_TOKENS = int(2e4)
+RESERVE_TOKENS = int(4e4)
 KEEP_RECENT_TOOL_RESULTS = 30
 PERSIST_THRESHOLD = int(3e3)
 SUMMARIZE_MAX_TOKENS = int(2e4)
@@ -60,6 +62,12 @@ def _init_harness():
             }, ensure_ascii=False, indent=4))
     if not PROVIDER_AUTH_FILE.exists():
         with PROVIDER_AUTH_FILE.open("x") as f:
+            f.write(json.dumps({}, ensure_ascii=False, indent=4))
+    if not CUSTOM_PROVIDER_FILE.exists():
+        with CUSTOM_PROVIDER_FILE.open("x") as f:
+            f.write(json.dumps({}, ensure_ascii=False, indent=4))
+    if not CUSTOM_MODEL_FILE.exists():
+        with CUSTOM_MODEL_FILE.open("x") as f:
             f.write(json.dumps({}, ensure_ascii=False, indent=4))
     if not SESSION_INDEX_FILE.exists():
         SESSION_INDEX_FILE.touch()

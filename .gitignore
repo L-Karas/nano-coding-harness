@@ -28,3 +28,4 @@ wheels/
 !/core/tui/app.css
 !/core/client/models.json
 !.gitattributes
+/core/tui/smoke/

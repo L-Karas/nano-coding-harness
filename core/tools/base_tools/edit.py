@@ -63,7 +63,8 @@ async def run_edit_file_async(path: str, old_text: str, new_text: str, cwd: Opti
             ctx.raise_if_cancelled()
         os.replace(tmp, path)
         return "Edited successfully."
-    except Exception as e:
+    except BaseException:
+        # AgentInterrupted 是 CancelledError，不是 Exception；漏了会残留临时文件
         if os.path.exists(tmp):
             os.remove(tmp)
-        raise e
+        raise

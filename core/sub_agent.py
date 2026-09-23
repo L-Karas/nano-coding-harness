@@ -10,6 +10,8 @@ from core.prompt import build_system_prompt
 
 # 延迟到函数内导入:src.tools -> extra_tools -> sub_agent -> src.tools 存在导入环,
 # 模块级导入会触发 partially initialized ImportError。
+
+# todo: 增加中断功能
 def spawn_subagent(description: str) -> str:
     from core.tools import assemble_tool_pool, call_tool_handler
 

@@ -6,17 +6,49 @@ from typing import Optional, Any
 from openai import OpenAI, Stream, AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-from core.config import HARNESS_SETTING_FILE, PROVIDER_AUTH_FILE
+from core.config import HARNESS_SETTING_FILE, PROVIDER_AUTH_FILE, CUSTOM_MODEL_FILE, CUSTOM_PROVIDER_FILE
 from core.log import get_logger
 
 _MODEL_LIST_PATH: Path = Path(__file__).parent / "models.json"
 _MODEL_LIST: dict[str, dict] = {}
-_PROVIDER_AUTH: dict[str, Any] = {}
+_PROVIDER_AUTH: dict[str, dict] = {}
+_CUSTOM_MODEL_LIST: dict[str, dict] = {}
+_CUSTOM_PROVIDER_AUTH: dict[str, dict] = {}
 _HARNESS_SETTING: dict[str, Any] = {}
 _LOGGER = get_logger(__name__)
 
 
+def _registry_custom_models() -> tuple[dict, dict]:
+    """
+    Registry custom providers and models.
+
+    Returns:
+        tuple(model list, provider list)
+    """
+    global _CUSTOM_MODEL_LIST, _CUSTOM_PROVIDER_AUTH
+
+    model_list, provider_list = {}, {}
+    if CUSTOM_MODEL_FILE.exists() and CUSTOM_PROVIDER_FILE.exists():
+        _CUSTOM_PROVIDER_AUTH = {
+            p: i for p, i in json.loads(CUSTOM_PROVIDER_FILE.read_text(encoding="utf-8")).items()
+        }
+        _CUSTOM_MODEL_LIST = {
+            m: i for m, i in json.loads(CUSTOM_MODEL_FILE.read_text(encoding="utf-8")).items()
+        }
+        for provider, item in _CUSTOM_PROVIDER_AUTH.items():
+            provider_list[provider] = {
+                "api_key": item["api_key"],
+            }
+            model_list[provider] = {
+                "base_url": item["base_url"],
+                "model_list": _CUSTOM_MODEL_LIST.get(provider, {}).get("model_list", {}),
+            }
+
+    return model_list, provider_list
+
+
 def _registry_models() -> None:
+    """Registry all providers and models"""
     global _MODEL_LIST, _PROVIDER_AUTH, _HARNESS_SETTING
 
     if not _MODEL_LIST_PATH.exists():
@@ -24,9 +56,14 @@ def _registry_models() -> None:
         raise Exception(f"{_MODEL_LIST_PATH} does not exist")
 
     try:
-        _MODEL_LIST = {m.lower(): i for m, i in json.loads(_MODEL_LIST_PATH.read_text(encoding="utf-8")).items()}
+        model_list, provider_list = _registry_custom_models()
+        _MODEL_LIST = {provider: item for provider, item in
+                       json.loads(_MODEL_LIST_PATH.read_text(encoding="utf-8")).items()}
         _PROVIDER_AUTH = json.loads(PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
+        _MODEL_LIST = _MODEL_LIST | model_list
+        _PROVIDER_AUTH = _PROVIDER_AUTH | provider_list
         _HARNESS_SETTING = json.loads(HARNESS_SETTING_FILE.read_text(encoding="utf-8"))
+        _LOGGER.info(f"[Registry Models List] {_MODEL_LIST}]")
     except Exception as e:
         _LOGGER.error(f"[Loading Model Error] {e}")
         raise e
@@ -36,6 +73,7 @@ _registry_models()
 
 
 def _update_default_settings(provider: str, model: str, thinking_level: str = "max") -> None:
+    """When update model or thinking level, update default provider, model and thinking level."""
     global _HARNESS_SETTING
 
     _HARNESS_SETTING = _HARNESS_SETTING | {
@@ -50,22 +88,37 @@ def _update_default_settings(provider: str, model: str, thinking_level: str = "m
         raise Exception(f"Update default provider, model, thinking level error. Error: {e}")
 
 
-def get_provider_list() -> list[tuple[str, bool]]:
-    """已注册 provider 及配置状态（True = 已配置 API Key）。
-    只回传结构化状态，展示文案由 UI 层负责（UI 需按状态着色，解析展示串易碎）。"""
+def get_provider_list(custom_provider: bool = False) -> list[tuple[str, bool]]:
+    """
+    Get provider list for tui
+    Args:
+        custom_provider: If True, only get custom providers. Else, get builtin providers.
+
+    Returns:
+        list tuple [(provider name, is_configured)...]
+    """
     global _MODEL_LIST
 
-    return [(provider, provider in _PROVIDER_AUTH) for provider in _MODEL_LIST]
+    if not custom_provider:
+        return [(provider, provider in _PROVIDER_AUTH)
+                for provider in _MODEL_LIST if provider not in _CUSTOM_PROVIDER_AUTH]
+    else:
+        return [(provider, provider in _PROVIDER_AUTH)
+                for provider in _MODEL_LIST if provider in _CUSTOM_PROVIDER_AUTH]
 
 
-def configure_provider(provider: str, api_key: str) -> None:
+def configure_provider(
+        provider: str,
+        api_key: str
+) -> None:
+    """Configure provider and api_key"""
     global _PROVIDER_AUTH
 
     try:
-        _PROVIDER_AUTH = _PROVIDER_AUTH | {provider.lower(): {"api_key": api_key}}
+        _PROVIDER_AUTH = _PROVIDER_AUTH | {provider: {"api_key": api_key}}
         PROVIDER_AUTH_FILE.write_text(json.dumps(_PROVIDER_AUTH, ensure_ascii=False, indent=4), encoding="utf-8")
     except Exception as e:
-        _LOGGER.error(f"[Configure Provider Error] {e}")
+        _LOGGER.exception(f"[Configure Provider Error] {e}")
         raise e
 
 
@@ -75,36 +128,157 @@ def unconfigure_provider(provider: str) -> None:
     删除的恰是当前默认提供商时：先清空 harness 默认设置并重建共享 client，再移除 key。
     顺序保证任一步落盘失败都留"设置已清、key 残留"的可自愈状态（重试时 default_provider
     已空即跳过 settings 分支，不会留"默认配置指向已删 key"的坏状态）。"""
-    global _PROVIDER_AUTH, _HARNESS_SETTING
+    global _PROVIDER_AUTH, _CUSTOM_PROVIDER_AUTH, _HARNESS_SETTING
     try:
-        provider = provider.lower()
         if provider not in _PROVIDER_AUTH:
             return  # 幂等 no-op：未配置 / 已删（UI 对未配置行或重复按 Delete 都安全）
-        if provider == _HARNESS_SETTING.get("default_provider"):  # .get：设置文件可无此键（从未配置/手改），直接索引会 KeyError
-            _HARNESS_SETTING = _HARNESS_SETTING | {
-                "default_provider": "",
-                "default_model": "",
-                "default_thinking_level": "max",
-            }
-            HARNESS_SETTING_FILE.write_text(json.dumps(_HARNESS_SETTING, ensure_ascii=False, indent=4),
-                                            encoding="utf-8")
-            shared_model_client()._init_client()  # 复位内存中持有已删 key 的 client（见 _init_client 空默认分支）
         _PROVIDER_AUTH.pop(provider)
         PROVIDER_AUTH_FILE.write_text(json.dumps(_PROVIDER_AUTH, ensure_ascii=False, indent=4), encoding="utf-8")
     except Exception as e:
         _LOGGER.error(f"[Unconfigure Provider Error] {e}")
         raise Exception(f"Unconfigure provider error. Error: {e}")
+    finally:
+        if provider == _HARNESS_SETTING.get("default_provider"):
+            _update_default_settings(provider="", model="")
+            shared_model_client()._init_client()  # 复位内存中持有已删 key 的 client（见 _init_client 空默认分支）
 
 
-def get_model_list() -> list[tuple[str, str]]:
+def get_model_list(custom_model: bool = False) -> list[tuple[str, str]]:
+    """
+    Get model list for tui
+    Args:
+        custom_model: If True, only get custom models. Else, get all models.
+
+    Returns:
+        model list [(model name, [provider name])...]
+    """
     global _MODEL_LIST, _PROVIDER_AUTH
 
+    providers = _CUSTOM_PROVIDER_AUTH if custom_model else _PROVIDER_AUTH
     model_list = []
-    for configured_provider in _PROVIDER_AUTH.keys():
+    for configured_provider in providers.keys():
         for model_name in _MODEL_LIST[configured_provider]["model_list"].keys():
-            model_list.append((model_name, f"[{configured_provider.title()}]"))
+            model_list.append((model_name, f"[{configured_provider}]"))
 
     return model_list
+
+
+def login_provider(
+        provider: str,
+        base_url: str,
+        api_key: str = ""
+) -> bool:
+    """Login a custom provider"""
+    if provider in _PROVIDER_AUTH:
+        _LOGGER.error(f"[Login Provider Error] {provider} exist")
+        return False
+    _CUSTOM_PROVIDER_AUTH[provider] = {"base_url": base_url, "api_key": api_key}
+    _CUSTOM_MODEL_LIST[provider] = {
+        "base_url": base_url,
+        "api_key": api_key,
+        "model_list": {},
+    }
+    try:
+        with open(CUSTOM_PROVIDER_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_CUSTOM_PROVIDER_AUTH, ensure_ascii=False, indent=4))
+        with open(CUSTOM_MODEL_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_CUSTOM_MODEL_LIST, ensure_ascii=False, indent=4))
+        # update provider and model list
+        _PROVIDER_AUTH[provider] = {"api_key": api_key}
+        _MODEL_LIST[provider] = {"base_url": base_url, "model_list": {}}
+        _LOGGER.info(f"[Login Provider] login {provider} success")
+    except Exception as e:
+        _LOGGER.error(f"[Login Provider Error] {e}")
+        return False
+
+    return True
+
+
+def login_model(
+        provider: str,
+        model: str,
+        thinking: bool = True,
+        vision: bool = True
+) -> bool:
+    """Login a custom model"""
+    if provider not in _PROVIDER_AUTH:
+        _LOGGER.error(f"[Login Provider Error] {provider} does not exist")
+        return False
+    _CUSTOM_MODEL_LIST[provider]["model_list"][model] = {
+        "thinking": thinking,
+        "vision": vision,
+        "thinking_level_map": {
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "max": "max",
+        }
+    }
+    try:
+        with open(CUSTOM_MODEL_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_CUSTOM_MODEL_LIST, ensure_ascii=False, indent=4))
+        _MODEL_LIST[provider]["model_list"] = _CUSTOM_MODEL_LIST[provider]["model_list"]
+        _LOGGER.info(f"[Login Model] Login {model}({provider}) success")
+    except Exception as e:
+        _LOGGER.error(f"[Login Model Error] {e}")
+        return False
+    return True
+
+
+def logout_provider(provider: str) -> bool:
+    """Logout a custom provider"""
+    if provider not in _CUSTOM_PROVIDER_AUTH:
+        _LOGGER.error(f"[Logout Provider Error] {provider} does not exist")
+        return False
+
+    try:
+        # update custom providers and models
+        _CUSTOM_PROVIDER_AUTH.pop(provider)
+        _CUSTOM_MODEL_LIST.pop(provider)
+        with open(CUSTOM_PROVIDER_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_CUSTOM_PROVIDER_AUTH, ensure_ascii=False, indent=4))
+        with open(CUSTOM_MODEL_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_CUSTOM_MODEL_LIST, ensure_ascii=False, indent=4))
+        _PROVIDER_AUTH.pop(provider)
+        _MODEL_LIST.pop(provider)
+        # update default setting if provider is default_provider
+        if provider == _HARNESS_SETTING.get("default_provider", ""):
+            _update_default_settings(provider="", model="")
+            # update client
+            shared_model_client()._init_client()
+        _LOGGER.info(f"[Logout Provider] logout {provider} success")
+    except Exception as e:
+        _LOGGER.error(f"[Logout Provider Error] {e}")
+        return False
+    return True
+
+
+def logout_model(provider: str, model: str) -> bool:
+    """Logout a custom model"""
+    if provider not in _CUSTOM_PROVIDER_AUTH:
+        _LOGGER.error(f"[Logout Provider Error] {provider} does not exist")
+        return False
+    if model not in _CUSTOM_MODEL_LIST[provider]["model_list"]:
+        _LOGGER.error(f"[Logout Model Error] {model} does not exist")
+        return False
+
+    try:
+        # update custom models
+        _CUSTOM_MODEL_LIST[provider]["model_list"].pop(model)
+        with open(CUSTOM_MODEL_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_CUSTOM_MODEL_LIST, ensure_ascii=False, indent=4))
+        # update setting if model is default_model
+        if model == _HARNESS_SETTING.get("default_model", ""):
+            _update_default_settings(provider="", model="")
+            # update client
+            shared_model_client()._init_client()
+        _LOGGER.info(f"[Logout Model] Logout {model}({provider}) success")
+    except Exception as e:
+        _LOGGER.error(f"[Logout Model Error] {e}")
+        return False
+
+    return True
 
 
 class ModelClient:
@@ -170,7 +344,7 @@ class ModelClient:
         _update_default_settings(self.current_provider, self.current_model, thinking_level)
 
     def set_model_client(self, provider: str, model: str, thinking_level: str = "max") -> None:
-        self.current_provider = provider.lower()
+        self.current_provider = provider
         self.current_model = model
         self.set_thinking_level(thinking_level)
         _update_default_settings(self.current_provider, self.current_model, thinking_level)
@@ -194,16 +368,19 @@ class ModelClient:
             _LOGGER.info("Please set provider and model")
             raise Exception(f"Please set provider and model")
 
+        request_args = self._request_kwargs()
+        _LOGGER.info(f"Model: {self.current_model}({self.current_provider}), "
+                     f"request_args: {request_args}, async_client: {async_client}")
         if async_client:
             return partial(
                 self.current_client_async.chat.completions.create,
                 model=self.current_model,
-                **self._request_kwargs()
+                **request_args
             )
         return partial(
             self.current_client.chat.completions.create,
             model=self.current_model,
-            **self._request_kwargs()
+            **request_args
         )
 
     # todo: 待完善，暂未使用

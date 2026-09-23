@@ -12,7 +12,7 @@ from openai.types.chat import ChatCompletionMessage
 
 from core.client import shared_model_client
 from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, RESERVE_TOKENS, \
-    SUMMARIZE_MAX_TOKENS
+    SUMMARIZE_MAX_TOKENS, CONTEXT_LIMIT
 from core.log.log import get_logger
 from core.template import SUMMARY_PROMPT_TEMPLATE
 
@@ -246,6 +246,8 @@ async def compact_history(messages: list, ctx=None, auto_compact: bool = True) -
     """
     if not messages:
         return []
+    if estimate_size(messages) < CONTEXT_LIMIT:
+        return messages
 
     split_index = -1
     if auto_compact:

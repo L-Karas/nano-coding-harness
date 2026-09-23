@@ -45,7 +45,7 @@ async def run_write_file_async(path: str, content: str, cwd: Optional[Path] = No
         os.replace(tmp, path)
 
         return f"Written successfully."
-    except Exception as e:
+    except BaseException:  # AgentInterrupted 是 CancelledError，不是 Exception；漏了会残留临时文件
         if os.path.exists(tmp):
             os.remove(tmp)
-        raise e
+        raise

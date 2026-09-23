@@ -11,11 +11,12 @@ dependencies = [
     "openai>=2.32.0",
     "prompt-toolkit>=3.0.53",
     "pydantic>=2.13.3",
+    "pyfiglet>=1.0.4",
     "pyreadline3>=3.5.6 ; sys_platform == 'win32'",
     "pytest>=9.1.1",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
-    "textual>=8.2.8",
+    "textual[syntax]>=8.2.8",
     "tiktoken>=0.14.0",
 ]

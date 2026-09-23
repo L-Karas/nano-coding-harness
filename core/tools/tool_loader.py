@@ -95,8 +95,6 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
 
 
 async def execute_tool(handler, args: dict, name: str, ctx=None) -> str:
-    from core.runtime_context import AgentInterrupted
-
     if not handler:
         return f"{TOOL_ERROR_PREFIXES[1]} {name}"
 
@@ -106,9 +104,7 @@ async def execute_tool(handler, args: dict, name: str, ctx=None) -> str:
             tool_cls.model_validate(args)
         _LOGGER.info(f"Executing tool: {name}, args: {args}")
         return await handler(**args, ctx=ctx)
-    except AgentInterrupted:
-        raise
-    except Exception as e:
+    except Exception as e:  # AgentInterrupted 是 CancelledError（BaseException），不会被这里吃掉
         return f"{TOOL_ERROR_PREFIXES[0]} {e}"
 
 

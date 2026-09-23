@@ -2,8 +2,8 @@
   "Deepseek": {
     "base_url": "https://api.deepseek.com",
     "model_list": {
-      "deepseek-v4-flash": {
-        "vision": false,
+      "deepseek-flash": {
+        "vision": true,
         "thinking": true,
         "thinking_level_map": {
           "minimal": "low",
@@ -15,17 +15,6 @@
       },
       "deepseek-v4-pro": {
         "vision": false,
-        "thinking": true,
-        "thinking_level_map": {
-          "minimal": "low",
-          "low": "low",
-          "medium": "high",
-          "high": "high",
-          "max": "max"
-        }
-      },
-      "deepseek-v4.1-flash": {
-        "vision": true,
         "thinking": true,
         "thinking_level_map": {
           "minimal": "low",
@@ -71,6 +60,28 @@
           "medium": false,
           "high": "high",
           "max": "xhigh"
+        }
+      },
+      "qwen3.8-2.4t-a95b": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "minimal",
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "qwen3.8-27b": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "minimal",
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "max": "max"
         }
       },
       "qwen3.7-max": {
@@ -158,15 +169,15 @@
     }
   },
   "Z.AI": {
-    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4",
     "model_list": {
       "glm-5.3": {
         "vision": false,
         "thinking": true,
         "thinking_level_map": {
-          "minimal": false,
+          "minimal": "low",
           "low": "low",
-          "medium": false,
+          "medium": "high",
           "high": "high",
           "max": "max"
         }
@@ -175,9 +186,20 @@
         "vision": true,
         "thinking": true,
         "thinking_level_map": {
-          "minimal": false,
+          "minimal": "low",
           "low": "low",
-          "medium": false,
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        }
+      },
+      "glm-5.3-flashx": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
           "high": "high",
           "max": "max"
         }
@@ -191,6 +213,158 @@
           "medium": "medium",
           "high": "high",
           "max": "max"
+        }
+      }
+    }
+  },
+  "MiniMax": {
+    "base_url": "https://api.minimax.cn/v1/chat/completions",
+    "model_list": {
+      "MiniMax-M3": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "MiniMax-M2.7": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "MiniMax-M2.7-highspeed": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      }
+    }
+  },
+  "MiniMax Token Plan": {
+    "base_url": "https://api.minimax.cn/v1",
+    "model_list": {
+      "MiniMax-M3": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "MiniMax-M2.7": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "MiniMax-M2.7-highspeed": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      }
+    }
+  },
+  "Xiaomi MiMo": {
+    "base_url": "https://api.xiaomimimo.com/v1",
+    "model_list": {
+      "mimo-v2.6-pro": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "mimo-v2.6-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "mimo-v2.6-pro-ultraspeed": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      }
+    }
+  },
+  "Xiaomi MiMo Token Plan": {
+    "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+    "model_list": {
+      "mimo-v2.6-pro": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "mimo-v2.6-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
+        }
+      },
+      "mimo-v2.6-pro-ultraspeed": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": false,
+          "high": false,
+          "max": false
         }
       }
     }
