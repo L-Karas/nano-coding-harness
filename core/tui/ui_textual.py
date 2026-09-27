@@ -491,9 +491,9 @@ class ChatApp(App):
         self._send_user_query(query)
 
     def _open_mcp(self) -> None:
-        """/mcp：取 core.mcp.mcp_client.get_mcp_server_list()（server 名 → 工具名/描述）在
+        """/mcp：取 core.mcp.mcp_client.get_mcp_server_list()（server 名 → 状态 + 工具名/描述）在
         MCPServersScreen 弹窗展示（无选中动作）。懒导入 + 异常兜底：未配置 / 建连失败 /
-        依赖缺失时只上提示卡；MCP 建连在启动预热线程里通常已就绪，同步取数不阻塞界面。"""
+        依赖缺失时只上提示卡；取数走非阻塞 peek（不触发建连，未就绪时直接上提示卡）。"""
         try:
             from core.mcp.mcp_client import get_mcp_server_list
             servers = get_mcp_server_list()

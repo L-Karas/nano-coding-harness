@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -13,10 +14,10 @@ from core.tui.screens.base import (
     _InlineConfirm,
     _ListPickerScreen,
     _NamedListScreen,
-    _entry_row,
     _error_text,
     _rebuild_options,
 )
+from core.tui.theme import _SPINNER_FRAMES
 
 # /mcp 配置窗的占位提示（placeholder，空值时显示，非真实输入）：stdio 传输示例
 _MCP_CONFIG_EXAMPLE = """{
@@ -28,16 +29,31 @@ _MCP_CONFIG_EXAMPLE = """{
     }
 }"""
 
+# /mcp server 行按连接状态着色：connected 绿 ●；connecting 橙色 Braille spinner（_cursor 轮播）；failed 红 ○
+_SERVER_STYLE = {"connected": "bold #4ade80", "connecting": "#fb923c", "failed": "#f87171"}
+_SERVER_GLYPH = {"connected": "●", "failed": "○"}
+_SERVER_DEFAULT_STYLE = "bold #4ade80"
+
+
+def _server_row(name: str, info: dict, cursor: int = 0) -> Text:
+    """server 行 = 「状态字形 名称」：绿 ●（connected）/ 橙色 spinner（connecting）/ 红 ○（failed）。"""
+    status = info.get("status", "")
+    glyph = (_SPINNER_FRAMES[cursor % len(_SPINNER_FRAMES)] if status == "connecting"
+             else _SERVER_GLYPH.get(status, "●"))
+    return Text(f"{glyph} {name}", style=_SERVER_STYLE.get(status, _SERVER_DEFAULT_STYLE))
+
 
 class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
-    """MCP 服务器列表弹窗（/mcp）：OptionList 只展示 core.mcp.mcp_client.get_mcp_server_list()
-    返回的已配置 server 名（↑/↓ 原生首尾循环，行 = 「● server 名」绿色加粗）。
+    """MCP 服务器列表弹窗（/mcp）：OptionList 展示 core.mcp.mcp_client.get_mcp_server_list()
+    返回的已配置 server 名（↑/↓ 原生首尾循环；行按连接状态着色：connected 绿 ●、connecting
+    橙色 spinner 轮播、failed 红 ○）。
 
     Enter/点击选中 → 推入 MCPToolsScreen 展示该 server 的工具（行格式同 /skills 弹窗）；
     Insert 弹 MCPConfigScreen（JSON 配置，保存成功后就地刷新列表、本窗保持打开）；
     Delete → 窗内底部红字原地确认后经
     core.mcp.mcp_client.unconfigure_mcp_server 删除（删空则关窗）；Esc 撤销确认 / 关闭。
-    servers 由调用方从 get_mcp_server_list() 取值：{server_name: [{tool_name, tool_description}]}。"""
+    servers 由调用方从 get_mcp_server_list() 取值：
+    {server_name: {"status": connecting|connected|failed, "tools": [{tool_name, tool_description}]}}。"""
 
     TITLE = "🔌 MCP Servers"
     HINT = "  ↑/↓ browse    Enter tools    Insert configure    Delete remove    Esc close"
@@ -47,14 +63,56 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
     BINDINGS = [("insert", "configure", "Configure"),
                 ("delete", "remove_selected", "Delete")]
 
-    def __init__(self, servers: dict[str, list[dict]]) -> None:
+    def __init__(self, servers: dict[str, dict]) -> None:
         super().__init__()
-        # {server_name: [{tool_name, tool_description}]} 快照（删除时只改本地副本）
-        self._servers = dict(servers)
+        # {server_name: {"status": ..., "tools": [...]}} 快照（1s 轮询状态；删除只改本地副本）
+        self._servers = servers
+        self._cursor = 0  # connecting 行 spinner 帧下标
+        self._anim = None  # spinner interval（有 connecting 行时惰性启动）
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        # 连接在后台任务里推进：窗开着时轻量轮询，连接完成/失败自动反映到行
+        self.set_interval(1.0, self._poll_status)
+
+    def _refresh(self) -> None:
+        """重取快照并就地重建；取数失败或返回空（无配置 / 重建期）时保留旧列表，不留空窗。"""
+        try:
+            from core.mcp.mcp_client import get_mcp_server_list
+            servers = get_mcp_server_list()
+        except Exception:
+            return
+        if servers and servers != self._servers:
+            self._servers = servers
+            self._reload()
+
+    def _poll_status(self) -> None:
+        """后台建连/断开是异步的，定期刷新状态；原地确认中不重建（重建会撤销确认）。"""
+        if self._pending is None:
+            self._refresh()
 
     def _reload(self) -> None:
-        _rebuild_options(self._list(), [Option(_entry_row(server), id=server)
-                                        for server in self._servers])
+        _rebuild_options(self._list(), [Option(_server_row(server, info, self._cursor), id=server)
+                                        for server, info in self._servers.items()])
+        self._sync_anim()
+
+    def _sync_anim(self) -> None:
+        """有 connecting 行时惰性启 0.1s spinner 轮播；全部落定即停并复位帧（空闲不空转重绘）。"""
+        connecting = any(info.get("status") == "connecting" for info in self._servers.values())
+        if connecting and self._anim is None:
+            self._anim = self.set_interval(0.1, self._tick)
+        elif not connecting and self._anim is not None:
+            self._anim.stop()
+            self._anim = None
+            self._cursor = 0
+
+    def _tick(self) -> None:
+        """轮播一帧：只就地替换 connecting 行的 prompt（不重建列表，高亮 / 原地确认不受影响）。"""
+        self._cursor += 1
+        olist = self._list()
+        for server, info in self._servers.items():
+            if info.get("status") == "connecting":
+                olist.replace_option_prompt(server, _server_row(server, info, self._cursor))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Enter/点击选中 server：再开一层窗展示其工具列表（原地确认中 = 确认删除）。"""
@@ -62,7 +120,8 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         if self._run_confirm():
             return
         if event.option_id:
-            self.app.push_screen(MCPToolsScreen(event.option_id, self._servers.get(event.option_id, [])))
+            tools = self._servers.get(event.option_id, {}).get("tools", [])
+            self.app.push_screen(MCPToolsScreen(event.option_id, tools))
 
     def action_remove_selected(self) -> None:
         """Delete：窗内底部红字原地确认；Enter 才真删（确认目标 = 按下 Delete 时高亮的 server）。"""
@@ -73,7 +132,7 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         self._ask_confirm(f'Remove "{server}"?', lambda: self._remove_server(server))
 
     def _remove_server(self, server: str) -> None:
-        """unconfigure_mcp_server 落盘后本地删行重建；删空则关窗（/mcp 无空列表形态）。"""
+        """unconfigure_mcp_server 只校验落盘并让后台收敛（立即返回），本地删行重建；删空则关窗。"""
         try:
             from core.mcp.mcp_client import unconfigure_mcp_server
             ok, message = unconfigure_mcp_server(server)
@@ -95,18 +154,9 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         self.app.push_screen(MCPConfigScreen(), callback=self._on_config_saved)
 
     def _on_config_saved(self, saved: bool) -> None:
-        """保存成功：重取 server 列表就地重建（本窗不关，可接着配 / 删）；取数失败或返回空
-        （重建期）时保留旧列表，不留空窗。"""
-        if not saved:
-            return
-        try:
-            from core.mcp.mcp_client import get_mcp_server_list
-            servers = get_mcp_server_list()
-        except Exception:
-            return
-        if servers:
-            self._servers = servers
-            self._reload()
+        """保存成功：仅配置已落盘（连接在后台进行），重取列表就地刷新；本窗不关，可接着配 / 删。"""
+        if saved:
+            self._refresh()
 
 
 class MCPToolsScreen(_NamedListScreen):
@@ -149,7 +199,8 @@ class MCPConfigScreen(ModalScreen[bool]):
         self.query_one("#mcp-config-input", TextArea).focus()
 
     def action_submit(self) -> None:
-        """Ctrl+S：整段 JSON 交 configure_mcp_server；成功关窗，失败留在窗内可继续改。"""
+        """Ctrl+S：整段 JSON 交 configure_mcp_server（校验 + 落盘，后台收敛连接，立即返回）：
+        成功关窗、失败留在窗内可继续改。"""
         text = self.query_one("#mcp-config-input", TextArea).text
         try:
             from core.mcp.mcp_client import configure_mcp_server

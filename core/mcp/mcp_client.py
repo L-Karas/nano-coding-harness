@@ -35,9 +35,24 @@ _manager_future: Future | None = None
 _manager_lock = threading.Lock()
 _last_attempt_at = 0.0
 
+# 建连完成后由 MCP loop 线程赋值：UI 取数走它（非阻塞），不参与建连触发
+_ready_manager = None
+# 放进 server 指令队列、让常驻 task 断连退出的哨兵（见 _manage_server）
+_STOP = object()
+
 
 def _sanitize(name: str) -> str:
     return _DISALLOWED_CHARS.sub("_", name)
+
+
+def _tool_prefix(server_name: str) -> str:
+    """mcp__<server>__ 前缀：清洗非法字符，避免 MCP 工具与内置工具重名。"""
+    return f"mcp__{_sanitize(server_name)}__"
+
+
+def _component_name(tool_name: str, server) -> str:
+    """ClientSessionGroup 的工具命名钩子。"""
+    return _tool_prefix(server.name) + _sanitize(tool_name)
 
 
 def _tool_text(tool_result) -> str:
@@ -46,17 +61,29 @@ def _tool_text(tool_result) -> str:
 
 
 class ClientManager:
+    """一个 MCP 后台 loop 上的会话集合。
+
+    每个 server 有一个常驻 task（_manage_server）独占它的 connect / disconnect：anyio 的
+    cancel scope 要求进入与退出在同一 task。配置变更只把新配置排进该 server 的指令队列，
+    由常驻 task 自己断旧连新，调用方不等待建连。
+    """
+
     def __init__(self, server_configs: dict):
         self.server_configs = server_configs
         self.exit_stack = AsyncExitStack()
         self.session_group: ClientSessionGroup | None = None
         # config_server_name -> session
         self.session_map: dict[str, ClientSession] = {}
-        # server_info_name -> config_server_name
-        self.server_to_config: dict[str, str] = {}
-        self.current_server_info: dict = {}
+        # config_server_name -> connecting / connected / failed（/mcp 展示用）
+        self.status: dict[str, str] = {}
+        # config_server_name -> [{tool_name, tool_description}]（/mcp 展示用）
+        self.tools_by_server: dict[str, list[dict]] = {}
         self.tool_handlers: dict = {}
         self.async_tool_handlers: dict = {}
+        self._tools: list[dict] = []
+        # 每个 server 的指令队列与常驻 task（key = 配置里的 server 名）
+        self._server_commands: dict[str, asyncio.Queue] = {}
+        self._server_tasks: dict[str, asyncio.Task] = {}
 
     def _submit(self, tool_name: str, tool_args: dict | None) -> Future:
         """调度回拥有 MCP 会话的后台 loop 上执行（本 loop 只 await 结果，取消也能传出）。"""
@@ -86,58 +113,109 @@ class ClientManager:
         except Exception as e:  # CancelledError 是 BaseException，不会被这里吞掉
             return str(e)
 
-    def list_server_info(self) -> dict:
-        if self.current_server_info:
-            return self.current_server_info
-
-        server_info = {}
-        for server_name, session in self.session_map.items():
-            server_info[server_name] = [
-            ]
-
     def list_tools(self) -> list[dict]:
-        """MCP tools in the OpenAI function schema (the only format used so far)."""
-        return [{
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": tool.description,
-                "parameters": tool.input_schema,
-            },
-        } for name, tool in self.session_group.tools.items()]
+        """MCP tools in the OpenAI function schema：当前连接的工具快照（只读）。"""
+        return self._tools
 
-    def _init_tool_handlers(self) -> None:
-        for name in self.session_group.tools:
-            self.tool_handlers[name] = (
-                lambda *, _name=name, **kwargs: self.tool_call(_name, kwargs))
-            self.async_tool_handlers[name] = (
-                lambda *, _name=name, ctx=None, **kwargs: self.tool_call_async(_name, ctx, kwargs))
+    def _refresh_tools(self) -> None:
+        """按当前已连会话重建全部派生数据：handler、OpenAI schema、/mcp 快照。
 
-    async def _connect_to_servers(self) -> None:
-        # 工具名统一加 mcp__server__ 前缀并清洗非法字符，避免与内置工具重名
-        name_hook = lambda tool_name, server: f"mcp__{_sanitize(server.name)}__{_sanitize(tool_name)}"
+        都是整表替换引用：别的线程读到的是完整旧表或完整新表，不会与后台的连接变化并发迭代。
+        """
+        handlers, async_handlers, schema, tools_by_server = {}, {}, [], {}
+        for server_name, session in self.session_map.items():
+            prefix = _tool_prefix(session.server_info.name)
+            rows = []
+            for tool_name, tool in self.session_group.tools.items():
+                if not tool_name.startswith(prefix):
+                    continue
+                rows.append({"tool_name": tool_name[len(prefix):],
+                             "tool_description": tool.description})
+                schema.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema,
+                    },
+                })
+                handlers[tool_name] = lambda *, _name=tool_name, **kwargs: self.tool_call(_name, kwargs)
+                async_handlers[tool_name] = (
+                    lambda *, _name=tool_name, ctx=None, **kwargs: self.tool_call_async(_name, ctx, kwargs))
+            tools_by_server[server_name] = rows
+        self.tool_handlers, self.async_tool_handlers = handlers, async_handlers
+        self._tools, self.tools_by_server = schema, tools_by_server
+
+    def _register_session(self, server_name: str, session: ClientSession) -> None:
+        """连接成功后登记会话：状态转 connected，工具表立刻带上它的工具。"""
+        _LOGGER.info(f"[MCP] connect {server_name} success")
+        self.status[server_name] = "connected"
+        self.session_map[server_name] = session
+        self._refresh_tools()
+
+    async def _close_session(self, server_name: str) -> None:
+        """断开并注销该 server 的会话（本来没有会话则为空操作）；随后移除它的工具。"""
+        session = self.session_map.pop(server_name, None)
+        if session is None:
+            return
+        try:
+            await self.session_group.disconnect_from_server(session)
+        except Exception as e:
+            _LOGGER.error(f"[MCP] disconnect {server_name} failed: {e!r}")
+        self._refresh_tools()
+
+    async def _manage_server(self, server_name: str, config: dict, commands: asyncio.Queue,
+                             ready: asyncio.Event) -> None:
+        """该 server 的常驻 task：它的 connect / disconnect 只在本 task 内执行。
+
+        ready 在首个连接结果（成功或失败）落地后置位，供 init 判断"首次尝试已结束"。
+
+        ponytail: connect 不设超时 —— 挂死的 server 会停在 connecting，init（及 warmup 线程、
+        /mcp 状态）会一直等它；调用方 get_client_manager 有 _MANAGER_WAIT_TIMEOUT 兜底。
+        """
+        try:
+            while True:
+                self.status[server_name] = "connecting"
+                try:
+                    session = await self.session_group.connect_to_server(
+                        self._server_params(server_name, config))
+                except Exception as e:
+                    self.status[server_name] = "failed"
+                    _LOGGER.error(f"[MCP] connect {server_name} failed: {e!r}")
+                else:
+                    self._register_session(server_name, session)
+                ready.set()
+                config = await commands.get()
+                await self._close_session(server_name)  # 收到新配置 / 停止：先断旧
+                if config is _STOP:
+                    return
+        finally:
+            ready.set()  # 首个连接结果落地前就退出，也不能让 init 一直等
+            if self._server_tasks.get(server_name) is asyncio.current_task():
+                self._server_tasks.pop(server_name, None)  # 已被新 task 顶替时不删掉它的槽位
+
+    def _start_server_task(self, server_name: str, config: dict) -> asyncio.Event:
+        """为 server 建专属指令队列并启动常驻 task（只在 MCP loop 上调用）。
+
+        队列随创建一起传入 task：删掉 server 又立刻重加时，旧 task 读的是旧队列，
+        不会误收到新 task 的指令。
+        """
+        commands: asyncio.Queue = asyncio.Queue()
+        ready = asyncio.Event()
+        self._server_commands[server_name] = commands
+        self.status[server_name] = "connecting"
+        self._server_tasks[server_name] = asyncio.create_task(
+            self._manage_server(server_name, config, commands, ready))
+        return ready
+
+    async def _connect_all_servers(self) -> None:
         self.session_group = await self.exit_stack.enter_async_context(
-            ClientSessionGroup(component_name_hook=name_hook))
+            ClientSessionGroup(component_name_hook=_component_name))
 
-        connects = []
-        connect_server_names = []
-        for server_name, config in self.server_configs["mcpServers"].items():
-            try:
-                connects.append(self.session_group.connect_to_server(self._server_params(server_name, config)))
-                connect_server_names.append(server_name)
-            except Exception as e:
-                _LOGGER.error(f"[MCP] connect {server_name} failed: {e!r}")
-                continue
-
-        # concurrent connect servers
-        results = await asyncio.gather(*connects, return_exceptions=True)
-        for server_name, res in zip(connect_server_names, results):
-            if isinstance(res, Exception):
-                _LOGGER.error(f"[MCP] connect failed: {res!r}")
-            elif isinstance(res, ClientSession):
-                _LOGGER.info(f"[MCP] connect {server_name} success")
-                self.server_to_config[res.server_info.name] = server_name
-                self.session_map[server_name] = res
+        # 每个 server 一个常驻 task，首连彼此并发；等各自的首次尝试落地，init 即视为就绪
+        ready_events = [self._start_server_task(server_name, config)
+                        for server_name, config in self.server_configs["mcpServers"].items()]
+        await asyncio.gather(*(event.wait() for event in ready_events))
 
     @staticmethod
     def _server_params(server_name: str, config: dict):
@@ -153,110 +231,92 @@ class ClientManager:
             return StreamableHttpParameters(url=config["url"])
         raise ValueError(f"MCP server '{server_name}' type invalid: {transport!r}")
 
-    async def update_client_manager(self, new_server_configs: dict) -> "ClientManager":
-        """
-        Update the MCP client manager with new server configs.
-        Connect new servers, disconnect removed servers and update existing servers.
-        Args:
-            new_server_configs:
+    def _apply_latest_config(self) -> None:
+        """读盘 + 校验 + 同步配置；只在 MCP loop 上调用（无 await，天然串行不打架）。"""
+        if self.session_group is None:  # 尚未建连完成 / 已关闭：init 或下次调用会兜底
+            return
+        try:
+            configs = _read_config()
+            _validate_config(configs)
+        except Exception as e:
+            _LOGGER.warning(f"[MCP] config reload skipped, keeping current servers: {e!r}")
+            return
+        self._apply_config(configs)
 
-        Returns:
-
-        """
-        # merge old and new config
-        old_configs, new_configs = self.server_configs["mcpServers"], new_server_configs["mcpServers"]
-        all_configs = old_configs | new_configs
-
-        updates = []
-        update_server_names = []
-        for server_name, config in all_configs.items():
-            # 4 Conditions:
-            # 1. server_name in old_configs and server_name in new_configs:
-            # 1.1  new_configs[server_name] == old_configs[server_name] -> continue
-            # 1.2  new_configs[server_name] != old_configs[server_name] -> update
-            # 2. server_name in old_configs and server_name not in new_configs -> disconnect
-            # 3. server_name not in old_configs and server_name in new_configs -> connect
-            try:
-                if server_name in old_configs and server_name in new_configs:
-                    if old_configs[server_name] != new_configs[server_name]:
-                        # update an existing server
-                        _LOGGER.info(f"[MCP] update {server_name} config")
-                        updates.extend([
-                            self.session_group.disconnect_from_server(self.session_map[server_name]),
-                            self.session_group.connect_to_server(self._server_params(server_name, config))
-                        ])
-                        update_server_names.extend([server_name] * 2)
-                        self.session_map.pop(server_name)
-                elif server_name in old_configs and server_name not in new_configs:
-                    # disconnect an existing server
-                    _LOGGER.info(f"[MCP] disconnect {server_name}")
-                    updates.append(self.session_group.disconnect_from_server(self.session_map[server_name]))
-                    update_server_names.append(server_name)
-                    self.session_map.pop(server_name)
-                elif server_name not in old_configs and server_name in new_configs:
-                    # connect a new server
-                    _LOGGER.info(f"[MCP] connect {server_name}")
-                    updates.append(self.session_group.connect_to_server(
-                        self._server_params(server_name, new_configs[server_name])))
-                    update_server_names.append(server_name)
-
-            except Exception as e:
-                _LOGGER.error(f"[MCP] update {server_name} failed: {e!r}")
-
-        # concurrent update servers
-        update_results = await asyncio.gather(*updates, return_exceptions=True)
-        for server_name, res in zip(update_server_names, update_results):
-            if isinstance(res, Exception):
-                _LOGGER.error(f"[MCP] {server_name} error: {res!r}")
-            elif isinstance(res, ClientSession):
-                _LOGGER.info(f"[MCP] connect {server_name} success")
-                self.server_to_config[res.server_info.name] = server_name
-                self.session_map[server_name] = res
-
+    def _apply_config(self, new_server_configs: dict) -> None:
+        """对比新旧配置，把新增 / 改配置 / 删除交给各 server 的常驻 task（不等待建连）。"""
+        old_configs = self.server_configs.get("mcpServers", {})
+        new_configs = new_server_configs.get("mcpServers", {})
+        if old_configs == new_configs:
+            return
+        for server_name in new_configs.keys() - old_configs.keys():
+            _LOGGER.info(f"[MCP] connect {server_name}")
+            self._start_server_task(server_name, new_configs[server_name])
+        for server_name in old_configs.keys() & new_configs.keys():
+            if old_configs[server_name] == new_configs[server_name]:
+                continue
+            _LOGGER.info(f"[MCP] update {server_name} config")
+            self.status[server_name] = "connecting"  # 排队即置状态，UI 不显示旧连接的 connected
+            self._server_commands[server_name].put_nowait(new_configs[server_name])
+        for server_name in old_configs.keys() - new_configs.keys():
+            _LOGGER.info(f"[MCP] disconnect {server_name}")
+            if commands := self._server_commands.pop(server_name, None):
+                commands.put_nowait(_STOP)
+            self.status.pop(server_name, None)
         self.server_configs = new_server_configs
 
-        return self
-
     async def aclose(self) -> None:
-        self.server_to_config = {}
+        for commands in self._server_commands.values():
+            commands.put_nowait(_STOP)
+        if self._server_tasks:
+            await asyncio.gather(*self._server_tasks.values(), return_exceptions=True)
+
         self.session_map = {}
+        self.status = {}
+        self.tools_by_server = {}
         self.tool_handlers = {}
         self.async_tool_handlers = {}
-        self.current_server_info = {}
+        self._tools = []
+        self._server_commands = {}
+        self._server_tasks = {}
 
         await self.exit_stack.aclose()
         self.session_group = None
 
     @classmethod
     async def init_client_manager(cls, server_configs: dict) -> "ClientManager":
+        global _ready_manager
         manager = cls(server_configs)
         try:
-            await manager._connect_to_servers()
-            manager._init_tool_handlers()
+            await manager._connect_all_servers()
+            manager._apply_latest_config()  # 兜底：init 期间落盘的配置变更也能生效
+            _ready_manager = manager  # 建连就绪：UI 取数走 peek_client_manager
         except Exception:
             await manager.aclose()
             raise
         return manager
 
 
-def get_mcp_server_list() -> dict:
+def get_mcp_server_list() -> dict[str, dict]:
     """
-    Get MCP server list
-    Returns:
-        dict: {"server_name": [{"tool_name": "...", "tool_description"}...],...}
-    """
-    client_manager = get_client_manager()
-    tools = client_manager.list_tools()
-    server_info = {}
-    for tool in tools:
-        _, server_info_name, tool_name = tool["function"]["name"].split("__")
-        tool_description = tool["function"]["description"]
-        server_name = client_manager.server_to_config[server_info_name]
-        if server_name not in server_info:
-            server_info[server_name] = []
-        server_info[server_name].append({"tool_name": tool_name, "tool_description": tool_description})
+    MCP server snapshot for the /mcp UI (non-blocking).
 
-    return server_info
+    Returns:
+        dict: {server_name: {"status": "connecting|connected|failed", "tools": [
+              {"tool_name": "...", "tool_description": "..."}]}}
+
+    行以配置文件为准（增删立即反映），status / tools 来自后台 loop 维护的快照。
+    """
+    manager = peek_client_manager()
+    if manager is None:
+        raise RuntimeError("MCP still connecting")
+    return {
+        server_name: {
+            "status": manager.status.get(server_name, "connecting"),
+            "tools": manager.tools_by_server.get(server_name, []),
+        }
+        for server_name in _read_config().get("mcpServers", {})
+    }
 
 
 def _validate_config(configs: dict):
@@ -265,13 +325,12 @@ def _validate_config(configs: dict):
         raise ValueError("MCP server config empty")
     if not isinstance(configs, dict):
         _LOGGER.warning(f"MCP server config type invalid: {type(configs)}")
-        raise ValueError(f"MCP server config invalid")
-    if "mcpServers" not in configs:
-        raise ValueError(f"MCP server config invalid")
-    if not isinstance(configs["mcpServers"], dict):
-        _LOGGER.warning(f"MCP server config type invalid: {type(configs['mcpServers'])}")
-        raise ValueError(f"MCP server config invalid")
-    for server_name, config in configs["mcpServers"].items():
+        raise ValueError("MCP server config invalid")
+    servers = configs.get("mcpServers")
+    if not isinstance(servers, dict):
+        _LOGGER.warning(f"MCP server config type invalid: {type(servers)}")
+        raise ValueError("MCP server config invalid")
+    for server_name, config in servers.items():
         # 与 _server_params 支持的两种传输形态一致：stdio（command + args 两项）
         # 或 url（type 为 sse / streamable_http）
         valid = isinstance(config, dict) and len(config) == 2 and (
@@ -279,7 +338,13 @@ def _validate_config(configs: dict):
                 or ("url" in config and config.get("type") in ("sse", "streamable_http")))
         if not valid:
             _LOGGER.warning(f"MCP server config type invalid: {server_name}={config}")
-            raise ValueError(f"MCP server config invalid")
+            raise ValueError("MCP server config invalid")
+
+
+def _reload_config_in_background() -> None:
+    """配置已落盘：请已建连的 manager 在 MCP loop 上重读；未就绪时 init 会直接读到新文件。"""
+    if manager := peek_client_manager():
+        _get_loop().call_soon_threadsafe(manager._apply_latest_config)
 
 
 def configure_mcp_server(mcp_configs: str) -> tuple[bool, str]:
@@ -291,18 +356,16 @@ def configure_mcp_server(mcp_configs: str) -> tuple[bool, str]:
     Returns:
         tuple[whether configure success, configure information]
     """
-    global _loop
     try:
-        mcp_configs = json.loads(mcp_configs)
-        _validate_config(mcp_configs)
-        mcp_configs["mcpServers"] = _read_config().get("mcpServers", {}) | mcp_configs["mcpServers"]
-        # update client
-        with open(MCP_CONFIG_FILE, "w", encoding="utf-8") as f:
-            f.write(json.dumps(mcp_configs, ensure_ascii=False, indent=4))
-        get_client_manager()
+        new_servers = json.loads(mcp_configs)
+        _validate_config(new_servers)
+        configs = _read_config()
+        configs["mcpServers"] = configs.get("mcpServers", {}) | new_servers["mcpServers"]
+        MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
+        _reload_config_in_background()  # 落盘即返回，连接在 MCP loop 后台完成
         return True, "Configured MCP Servers"
     except Exception as e:
-        _LOGGER.warning(f"MCP server config invalid: {e}")
+        _LOGGER.warning(f"[MCP] server config invalid: {e}")
         return False, str(e)
 
 
@@ -315,20 +378,16 @@ def unconfigure_mcp_server(mcp_server_name: str) -> tuple[bool, str]:
     Returns:
         tuple[whether unconfigure success, unconfigure information]
     """
-    global _loop
-
     mcp_configs = _read_config()
     if mcp_server_name not in mcp_configs.get("mcpServers", {}):
         return False, f"MCP server {mcp_server_name} not found"
     mcp_configs["mcpServers"].pop(mcp_server_name)
     try:
-        # update client
-        with open(MCP_CONFIG_FILE, "w", encoding="utf-8") as f:
-            f.write(json.dumps(mcp_configs, ensure_ascii=False, indent=4))
-        get_client_manager()
+        MCP_CONFIG_FILE.write_text(json.dumps(mcp_configs, ensure_ascii=False, indent=4), encoding="utf-8")
+        _reload_config_in_background()  # 落盘即返回，断开在 MCP loop 后台完成
         return True, "Unconfigured MCP Servers"
     except Exception as e:
-        _LOGGER.warning(f"Unconfigure mcp server error: {e}")
+        _LOGGER.warning(f"[MCP] unconfigure server error: {e}")
         return False, f"Unconfigure mcp server error: {e}"
 
 
@@ -342,17 +401,6 @@ async def aget_client_manager() -> ClientManager:
     server_configs = _read_config()
     _validate_config(server_configs)
     return await ClientManager.init_client_manager(server_configs)
-
-
-async def _update_client_manager(manager: ClientManager) -> ClientManager:
-    """配置有变化则重建，无变化返回原实例。"""
-    server_configs = _read_config()
-    _validate_config(server_configs)
-    if server_configs.get("mcpServers") == manager.server_configs.get("mcpServers"):
-        _LOGGER.info("[MCP] Server config remains unchanged. Return original manager")
-        return manager
-
-    return await manager.update_client_manager(server_configs)
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
@@ -370,10 +418,16 @@ def _get_loop() -> asyncio.AbstractEventLoop:
         return _loop
 
 
+def peek_client_manager() -> ClientManager | None:
+    """非阻塞取已就绪的 manager（UI 取数用）；建连未完成/失败时返回 None。"""
+    return _ready_manager
+
+
 def _reset_manager_future() -> None:
-    global _manager_future
+    global _manager_future, _ready_manager
     with _manager_lock:
         _manager_future = None
+    _ready_manager = None
 
 
 def _ensure_manager_started() -> Future:
@@ -392,6 +446,7 @@ def get_client_manager() -> ClientManager:
     调用方不会被无限期卡住：首次获取最多等 _MANAGER_WAIT_TIMEOUT，且每个
     _RETRY_INTERVAL 窗口内至多等一次；建连仍未完成时抛 RuntimeError（由调用方
     记录日志并回退到内置工具）——工具池每轮都会重组装，下一轮建连完成自然带上 MCP 工具。
+    配置变化不再同步等待：交给 MCP loop 后台处理，本轮用当前已连工具。
     """
     global _last_attempt_at
 
@@ -404,22 +459,17 @@ def get_client_manager() -> ClientManager:
         # 建连仍在后台进行：保留 pending future；刚等过一轮，窗口内后续轮次不再等
         with _manager_lock:
             _last_attempt_at = time.monotonic()
-        _LOGGER.warning(f"[MCP] MCP manager still connecting, falling back to builtin tools this round")
-        # raise RuntimeError(
-        #     "MCP manager still connecting, falling back to builtin tools this round"
-        # ) from None
+        _LOGGER.warning("[MCP] MCP manager still connecting, falling back to builtin tools this round")
+        raise RuntimeError(
+            "MCP manager still connecting, falling back to builtin tools this round"
+        ) from None
     except Exception:
         _reset_manager_future()  # 建连失败：清缓存，下次调用重试
         raise
 
-    # 已就绪：配置有变化则重建，否则沿用原实例
-    try:
-        return asyncio.run_coroutine_threadsafe(
-            _update_client_manager(manager), _get_loop()
-        ).result()
-    except Exception:
-        _reset_manager_future()
-        raise
+    # 已就绪：配置变化交给 MCP loop 后台处理（立即返回），本轮先用当前已连上的工具
+    _reload_config_in_background()
+    return manager
 
 
 def warmup() -> None:
@@ -428,25 +478,3 @@ def warmup() -> None:
         _ensure_manager_started().result()
     except Exception as e:
         _LOGGER.error(f"[MCP] warmup failed: {e!r}")
-
-
-if __name__ == '__main__':
-    fetch_server = {
-        "mcpServers": {
-            "fetch": {
-                "type": "streamable_http",
-                "url": "https://mcp.api-inference.modelscope.net/baefb50094ae45/mcp"
-            }
-        }
-    }
-
-
-    async def main():
-        client_manager = await aget_client_manager()
-        ser_info_list = get_mcp_server_list()
-        configure_mcp_server(json.dumps(fetch_server))
-        unconfigure_mcp_server("fetch")
-        print("stop")
-
-
-    asyncio.run(main())

@@ -7,6 +7,7 @@ from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注
 from core.tools.extra_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _camel_to_snake
+from core.tools.web_search import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
 
 _LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}

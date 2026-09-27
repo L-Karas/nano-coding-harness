@@ -47,6 +47,7 @@ async def run_bash_async(command: str, cwd: Optional[Path] = None, ctx=None):
         if ctx:
             ctx.raise_if_cancelled()
         output = (_to_text(out) + _to_text(error)).strip()
+        # todo: tool output budget
         return output[:int(5e4)] if output else "(Tool no output)"
     except asyncio.CancelledError:
         process.terminate()
