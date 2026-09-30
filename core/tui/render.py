@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from rich.text import Text
 
+from core.config import TOOL_ERROR_PREFIXES
 from core.template import INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
 
 if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免与 ui_textual 循环导入
@@ -79,7 +80,6 @@ def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MA
 
 def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
     """工具输出卡片：失败输出（TOOL_ERROR_PREFIXES 前缀）渲染为暗红 error 卡，其余为 result 卡。"""
-    from core.tools import TOOL_ERROR_PREFIXES  # 懒导入：core.tools 链经 hook_permission 回导本模块，顶层导入成环
     output_str = str(output)
     kind = "error" if output_str.startswith(TOOL_ERROR_PREFIXES) else "result"
     _add_capped_card(kind, _dim_body(output_str), max_lines)
@@ -112,9 +112,21 @@ def _is_injected_message(content: Any) -> bool:
             and content.endswith(INJECTION_MESSAGES_SUFFIX))
 
 
+def _render_tool_message(message: Any) -> None:
+    """工具结果卡片：有 diff payload 时先渲染 diff，再渲染结果正文。"""
+    if message.payload:
+        render_tool_result_diff(message.payload)
+    render_tool_result(message.content)
+
+
 def render_session_history(session: Any) -> None:
-    """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复（跳过内部注入消息）。"""
-    for message in session.messages:
+    """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复（跳过内部注入消息）。
+    一条助手消息的多个 tool_call 与其结果按 tool_call_id 配对：call、result、call、result…"""
+    messages = session.messages
+    pending: dict[str, Any] = {m.tool_call_id: m for m in messages
+                               if m.role == "tool" and m.tool_call_id}  # tool_call_id → 尚未渲染的 tool 消息
+
+    for message in messages:
         if message.role == "user":
             if not _is_injected_message(message.content):
                 render_user_input(message.content)
@@ -126,12 +138,16 @@ def render_session_history(session: Any) -> None:
                 except (TypeError, ValueError):
                     args = fn.get("arguments", "")
                 render_tool_call(fn.get("name", "tool"), args)
+                result = pending.pop(tool_call.get("id", ""), None)
+                if result is not None:
+                    _render_tool_message(result)
             if message.content:
                 render_assistant_response(message.content)
         elif message.role == "tool":
-            if message.payload:
-                render_tool_result_diff(message.payload)
-            render_tool_result(message.content)
+            if not message.tool_call_id:  # 无 id 无法配对，按原位置渲染
+                _render_tool_message(message)
+            elif pending.pop(message.tool_call_id, None) is message:  # 未被 tool_call 消费的孤儿结果
+                _render_tool_message(message)
 
 
 @contextmanager

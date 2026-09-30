@@ -162,11 +162,12 @@ class ChatApp(App):
                 yield _Welcome(title, subtitle)  # 空聊板居中欢迎标题（有卡片时由 _set_welcome 隐藏）
                 yield _ChatBoard(id="chat")
                 yield _ChatDock(id="dock")
-            with Vertical(id="right"):  # 折叠时整体隐藏（聊天区吃满全宽），仅右缘 ▸ 标签可点
-                yield Static("▼ Information", id="right-title")
-                yield _InfoPanel()  # 分区卡片与轮询同步见 core/tui/info_panel.py
-        with Vertical(id="info-tab"):  # 折叠态展开标签：仅 ▸ 字形，dock 右侧垂直居中（点击展开）
-            yield Static("▸", id="info-tab-glyph")
+            with Vertical(id="right"):  # 右栏左缘 »/« 标签切换；折叠时收成 1 列（聊天区吃满其余宽度）
+                with Vertical(id="info-tab"):  # 标签列：宽 1，dock 右栏左缘（分栏线旁）垂直居中
+                    tab = Static("»", id="info-tab-glyph")
+                    tab.tooltip = "Collapse info panel"  # 图标含义：» 收起右栏 / « 展开右栏
+                    yield tab
+                yield _InfoPanel(id="info-panel")  # 分区卡片与轮询同步见 core/tui/info_panel.py
 
     def on_mount(self) -> None:
         self._prompt().focus()
@@ -184,19 +185,19 @@ class ChatApp(App):
 
     def on_click(self, event: events.Click) -> None:
         """可展开卡片正文（-expandable 标记）点击：截断 ↔ 完整内容；
-        右栏标题 / 折叠标签点击：折叠时右栏整体隐藏、聊天区吃满全宽，右缘标签可点回。
+        右栏左缘 »/« 标签点击：右栏整体折叠/展开（折叠时聊天区吃满其余宽度）。
         右栏分区标题与条目行的点击由 _InfoPanel 就地处理（已阻止冒泡）。"""
         target = event.widget
         if target.has_class("-expandable"):  # 截断卡片正文
             self._toggle_expand(target)
             return
-        if target.id not in ("right-title", "info-tab-glyph"):
+        if target.id != "info-tab-glyph":
             return
         right = self.query_one("#right", Vertical)
         collapsed = not right.has_class("-collapsed")
         right.set_class(collapsed, "-collapsed")
-        self.query_one("#info-tab", Vertical).set_class(collapsed, "-show")
-        self.query_one("#right-title", Static).update(("▶ " if collapsed else "▼ ") + "Information")
+        target.update("«" if collapsed else "»")  # 图标随状态换向：指向点击后右栏的移动方向
+        target.tooltip = "Expand info panel" if collapsed else "Collapse info panel"
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """停靠区三个 OptionList 的选中（冒泡统一收口）：权限列表直接作答（yes/no 选项 id）；
@@ -492,17 +493,14 @@ class ChatApp(App):
 
     def _open_mcp(self) -> None:
         """/mcp：取 core.mcp.mcp_client.get_mcp_server_list()（server 名 → 状态 + 工具名/描述）在
-        MCPServersScreen 弹窗展示（无选中动作）。懒导入 + 异常兜底：未配置 / 建连失败 /
-        依赖缺失时只上提示卡；取数走非阻塞 peek（不触发建连，未就绪时直接上提示卡）。"""
+        MCPServersScreen 弹窗展示；servers 为空也照常打开（窗内 Insert 配 server）。
+        懒导入 + 异常兜底：建连未就绪 / 依赖缺失时只上提示卡；取数走非阻塞 peek
+        （不触发建连，未就绪时直接上提示卡）。"""
         try:
             from core.mcp.mcp_client import get_mcp_server_list
             servers = get_mcp_server_list()
         except Exception as exc:
             render_background_notification(str(exc), title="⚠️ MCP Servers")
-            return
-        if not servers:
-            render_background_notification("No MCP tools available: configure servers in .harness/.mcp/.mcp.json",
-                                           title="⚠️ MCP Servers")
             return
         self.push_screen(MCPServersScreen(servers))
 

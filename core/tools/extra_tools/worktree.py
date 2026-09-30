@@ -1,7 +1,7 @@
 from pydantic import Field
 
+from core.experimental.worktree import create_worktree, remove_worktree, keep_worktree
 from core.tools.tool_base import BaseTool
-from core.worktree import create_worktree, remove_worktree, keep_worktree
 
 
 class CreateWorktree(BaseTool):
@@ -10,6 +10,7 @@ class CreateWorktree(BaseTool):
     task_id: str | None = Field(default=None, description="Optional task ID to associate with the worktree.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class RemoveWorktree(BaseTool):
@@ -19,6 +20,7 @@ class RemoveWorktree(BaseTool):
                                   description="Set to true to force removal even with uncommitted changes.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class KeepWorktree(BaseTool):
@@ -26,6 +28,7 @@ class KeepWorktree(BaseTool):
     name: str = Field(description="The name of the worktree to keep.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 def run_create_worktree(name: str, task_id: str = "") -> str:

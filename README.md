@@ -162,7 +162,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 | 工具 | 参数 | 可见 | 说明 |
 | --- | --- | --- | --- |
 | `todo_write` | `todos[{content,status}]` | main | 整体替换任务清单，右栏实时展示 |
-| `spawn_subagent` | `description` | main | 独立上下文子代理，最多 30 轮，只返回最终文本摘要 |
+| `spawn_subagent` | `description` | main | 独立上下文子代理，后台运行，最多 30 轮，结论经后台通知回传 |
 | `load_skill` | `name` | main | 返回技能全文 |
 | `save_memory` | `title`, `content`, `mem_type` | main | `mem_type`: user / feedback / project / reference |
 | `create_task` | `subject`, `description`, `blockedBy` | main | 创建任务（可声明依赖） |
@@ -208,7 +208,7 @@ MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main 
 
 ## 子代理 / 团队 / Worktree
 
-- **子代理**：`spawn_subagent` 用 `agent_type="sub-agent"` 单独组装提示词与工具池（同步调用，最多 30 轮），
+- **子代理**：`spawn_subagent` 用 `agent_type="sub-agent"` 单独组装提示词与工具池（后台运行，最多 30 轮），
   全程不进主会话历史，只回传最后一条文本结论。
 - **队友**：`spawn_teammate` 起独立线程跑自己的模型循环（工具集 = 基础工具 + 任务认领/完成 + 消息 + `submit_plan`，
   `check_inbox` 在队友线程内被排除、由邮箱轮询代替），

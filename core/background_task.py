@@ -21,23 +21,7 @@ BG_COUNTER = 0
 BACKGROUND_TASKS: dict[str, dict] = {}
 BACKGROUND_RESULTS: dict[str, str] = {}
 BACKGROUND_LOCK = threading.Lock()
-_LOGER = get_logger(__name__)
-
-# 慢命令判定只看命令位置的词(每条 ; && | 分隔的命令的第一个词)，不看参数/路径/字符串里的词。
-_CMD_SEP = re.compile(r"&&|\|\||[;&|\n]")
-_WORD = re.compile(r"[A-Za-z0-9_./+@=-]+")
-_WRAPPERS = {"sudo", "time", "env", "command", "nohup", "exec"}
-_ALWAYS_SLOW = {"make", "pytest", "sleep", "install", "build", "deploy", "compile"}
-_SLOW_SUBCMDS = {  # 这些命令只有跟了慢子命令才算慢：npm test 慢，npm run lint 不慢
-    "pip": {"install"}, "pip3": {"install"}, "uv": {"sync"},
-    "npm": {"install", "ci", "test"}, "pnpm": {"install", "test"}, "yarn": {"install", "test"},
-    "bun": {"install"}, "poetry": {"install", "build"}, "conda": {"install"},
-    "cargo": {"build", "test", "run"}, "go": {"build", "test"},
-    "docker": {"build"}, "docker-compose": {"build"},
-    "gradle": {"build", "test"}, "mvn": {"install", "build", "test", "deploy"},
-    "apt": {"install", "upgrade"}, "apt-get": {"install", "upgrade"}, "brew": {"install", "upgrade"},
-}
-
+_LOGGER = get_logger(__name__)
 
 # 慢命令判定只看命令位置的词(每条 ; && | 分隔的命令的第一个词)，不看参数/路径/字符串里的词。
 _CMD_SEP = re.compile(r"&&|\|\||[;&|\n]")
@@ -74,7 +58,16 @@ def is_slow_operation(tool_name: str, tool_args: dict) -> bool:
 
 
 def should_run_background(tool_name: str, tool_args: dict) -> bool:
+    if tool_name == "spawn_subagent":
+        # 子代理固定后台跑：主代理不等待结论，结果稍后经 background notification 注入
+        return True
     return bool(tool_args.get("should_run_in_background")) or is_slow_operation(tool_name, tool_args)
+
+
+def _complete_background(bg_id: str, result) -> None:
+    with BACKGROUND_LOCK:
+        BACKGROUND_TASKS[bg_id]["status"] = "completed"
+        BACKGROUND_RESULTS[bg_id] = str(result)
 
 
 def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handlers: dict, ctx=None, loop=None) -> str:
@@ -86,27 +79,7 @@ def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handler
     tool_call_str = f"{tool_call.function.name}({', '.join(f'{k}={v}' for k, v in tool_args.items())})"
 
     loop = loop or asyncio.get_running_loop()
-
-    def worker():
-        try:
-            if ctx and ctx.interrupted:
-                result = USER_INTERRUPT_PROMPT
-            else:
-                handler = handlers.get(tool_call.function.name)
-                if inspect.iscoroutinefunction(handler):
-                    fut = asyncio.run_coroutine_threadsafe(
-                        execute_tool(handler, tool_args, tool_call.function.name, ctx), loop
-                    )
-                    if ctx:
-                        ctx.track(fut)  # Esc 时 ctx.cancel() 经 concurrent Future 传回内层 task
-                    result = fut.result()
-                else:
-                    result = call_tool_handler(handler, tool_args, tool_call.function.name)
-        except BaseException as e:
-            result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else f"[Tool Error] {type(e).__name__}: {e}"
-        with BACKGROUND_LOCK:
-            BACKGROUND_TASKS[bg_id]["status"] = "completed"
-            BACKGROUND_RESULTS[bg_id] = str(result)
+    handler = handlers.get(tool_call.function.name)
 
     with BACKGROUND_LOCK:
         BACKGROUND_TASKS[bg_id] = {
@@ -115,8 +88,37 @@ def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handler
             "status": "running",
         }
 
+    _LOGGER.info(f"[Background Task] {bg_id}: {tool_call_str[:60]}")
+
+    if inspect.iscoroutinefunction(handler):
+        # 协程 handler 直接挂在调用方的 loop 上（call_tools 就跑在 runtime loop 上），
+        # 免掉一个只用来 fut.result() 空等的 worker 线程。
+        task = loop.create_task(execute_tool(handler, tool_args, tool_call.function.name, ctx))
+
+        def done(t):
+            if t.cancelled():
+                result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else "[Background task cancelled]"
+            else:
+                error = t.exception()
+                result = f"[Tool Error] {type(error).__name__}: {error}" if error else t.result()
+            _complete_background(bg_id, result)
+
+        task.add_done_callback(done)
+        if ctx:
+            ctx.track(task)  # Esc 时 ctx.cancel() 直接 task.cancel()
+        return bg_id
+
+    def worker():
+        try:
+            if ctx and ctx.interrupted:
+                result = USER_INTERRUPT_PROMPT
+            else:
+                result = call_tool_handler(handler, tool_args, tool_call.function.name)
+        except BaseException as e:
+            result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else f"[Tool Error] {type(e).__name__}: {e}"
+        _complete_background(bg_id, result)
+
     threading.Thread(target=worker, daemon=True).start()
-    _LOGER.info(f"[Background Task] {bg_id}: {str(tool_call_str)[:60]}")
     return bg_id
 
 
@@ -140,6 +142,6 @@ def collect_background_results() -> list[str]:
             f"</background-task-notification>"
         )
 
-    _LOGER.info(f"[Collect Background Results] {completed_tasks}]")
+    _LOGGER.info(f"[Collect Background Results] {completed_tasks}")
 
     return notifications

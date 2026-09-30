@@ -10,7 +10,7 @@ class SkillsScreen(_NamedListScreen):
     Enter/点击选中 → dismiss 技能名，由 ChatApp 填入输入条并发送 "Invoke skill '<name>'"；
     Esc 关闭。skills 由调用方从 core.skill.SKILL_REGISTRY 取值。"""
 
-    TITLE = "🧩 Available Skills"
+    TITLE = "Available Skills"
     HINT = "  ↑/↓ browse    Enter invoke    Esc close"
     LIST_ID = "skills-list"
 

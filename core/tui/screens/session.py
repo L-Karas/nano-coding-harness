@@ -15,7 +15,7 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
     dismiss 结果: (选中的 session id 或 None, 列表是否已删空)。
     删除当前会话时经 on_delete_current 立即通知调用方清空主界面聊板（不等弹窗关闭）。"""
 
-    TITLE = "📂 Select a session (current one is marked)"
+    TITLE = "Select a session"
     HINT = "  ↑/↓ browse    Enter switch    Delete remove    Esc close"
     LIST_ID = "sess-list"
     CONFIRM = True

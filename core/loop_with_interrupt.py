@@ -225,8 +225,8 @@ class AgentRuntime:
         with render_thinking_status():
             with render_scope():
                 try:
+                    # stream 内部 __anext__ 方法使用 await 挂起任务，可省略 ctx 触发中断
                     async for chunk in stream:
-                        ctx.raise_if_cancelled()
                         if chunk.usage:
                             usage = chunk.usage
 
@@ -367,22 +367,25 @@ async def prepare_messages(messages: list, ctx) -> list:
     return messages
 
 
-def inject_background_notifications():
+def inject_background_notifications() -> list[str]:
+    """把已完成的后台任务结果写成注入消息（UI 回放会跳过它，只喂模型）；返回注入了哪些通知。"""
     notes = collect_background_results()
     if notes:
         SESSION_MANAGER.add_message({
             "role": "user",
             "content": INJECTION_MESSAGES_PREFIX + "\n".join(notes) + INJECTION_MESSAGES_SUFFIX,
         })
+    return notes
 
 
-def cron_auto_loop(agent: AgentRuntime):
+def auto_loop(agent: AgentRuntime):
+    """每秒轮询：定时任务到期 / 后台任务完成 → 注入消息并自动开一轮。
+
+    与用户回合共用 AGENT_LOCK 串行；等锁期间运行中的回合可能已自行消费（run() 循环顶部
+    会消费 cron 队列并注入后台结果），故拿到锁后再取一次，避免重复注入 / 空跑。"""
     while True:
         time.sleep(1)
         fired = consume_cron_queue()
-        if not fired:
-            continue
-
         with AGENT_LOCK:
             for job in fired:
                 SESSION_MANAGER.add_message({
@@ -391,12 +394,21 @@ def cron_auto_loop(agent: AgentRuntime):
                 })
                 render_background_notification(f"Cron Auto Prompt: {job.prompt}", title="⏰ Cron Triggered")
 
+            notes = inject_background_notifications()
+            if not fired and not notes:  # 等锁期间已被运行中的回合消费
+                continue
+            for note in notes:
+                render_background_notification(note, title="🔔 Background Task")
+
             try:
                 agent.submit(agent.run())  # submit 内部已阻塞至回合结束
+            except AgentInterrupted:
+                pass  # 自动回合被 Esc 取消，不应该把线程带走
             except Exception as e:
-                _LOGGER.warning(f"[Cron] run skipped: {type(e).__name__}: {e}")
+                _LOGGER.warning(f"[Auto Loop] run skipped: {type(e).__name__}: {e}")
 
 
+# todo: teammates experimental
 def absorb_lead_inbox() -> None:
     """把 lead inbox 消息作为一条用户消息注入会话（agent 回合结束后调用）。"""
     inbox = consume_lead_inbox(route_protocol=True)
@@ -418,7 +430,7 @@ def absorb_lead_inbox() -> None:
 
 
 def start_agent_runtime() -> AgentRuntime:
-    """建 runtime 并起 MCP 预热 / cron 自动回合线程（各一次）；调用方拿它做中断收口。"""
+    """建 runtime 并起 MCP 预热 / 自动回合轮询线程（各一次）；调用方拿它做中断收口。"""
     runtime = AgentRuntime()
 
     def _warmup() -> None:
@@ -427,7 +439,7 @@ def start_agent_runtime() -> AgentRuntime:
 
     # 后台线程预热 MCP 连接（阻塞至就绪或失败），避免首个 agent 轮次被慢建连卡住
     threading.Thread(target=_warmup, name="mcp-warmup", daemon=True).start()
-    threading.Thread(target=cron_auto_loop, args=(runtime,), name="cron-auto", daemon=True).start()
+    threading.Thread(target=auto_loop, args=(runtime,), name="auto-loop", daemon=True).start()
     return runtime
 
 

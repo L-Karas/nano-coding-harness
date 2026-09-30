@@ -11,9 +11,9 @@ from typing import Optional
 
 from core.client import shared_model_client
 from core.experimental import message_bus
+from core.experimental.task import TASK_DIR, can_start, claim_task, load_task, complete_task
+from core.experimental.worktree import WORKTREES_DIR
 from core.log.log import get_logger
-from core.task import TASK_DIR, can_start, claim_task, load_task, complete_task
-from core.worktree import WORKTREES_DIR
 
 _LOGGER = get_logger(__name__)
 

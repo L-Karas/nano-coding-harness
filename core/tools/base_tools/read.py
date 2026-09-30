@@ -1,7 +1,8 @@
-import asyncio
 from pathlib import Path
 from typing import Optional
 
+import aiofiles
+import anydoc
 from pydantic import Field
 
 from core.config import WORKDIR
@@ -28,7 +29,7 @@ def run_read_file(path: str, limit: Optional[int] = 2000, offset: Optional[int] 
     lines = lines[offset:]
     if limit is not None and limit < len(lines):
         lines = lines[:limit] + [
-            f"[Truncated ({len(lines) - limit}) more lines. Use 'offset={offset + limit - 1}' to continue.]"]
+            f"[Truncated ({len(lines) - limit}) more lines. Use 'offset={offset + limit + 1}' to continue.]"]
     return "\n".join(lines)
 
 
@@ -39,10 +40,19 @@ async def run_read_file_async(
         cwd: Optional[Path] = None,
         ctx=None
 ) -> str:
-    if ctx:
-        ctx.raise_if_cancelled()
-    # to_thread：读大文件不能卡住事件循环（卡住时 task.cancel() 也送不进来）
-    result = await asyncio.to_thread(run_read_file, path, limit, offset, cwd)
-    if ctx:
-        ctx.raise_if_cancelled()
-    return result
+    base = cwd or WORKDIR
+    fp = (base / path).resolve()
+
+    if anydoc.format_from_path(path):
+        content = anydoc.to_markdown(fp)
+    else:
+        async with aiofiles.open(fp, "r", encoding="utf-8") as f:
+            content = await f.read()
+    lines = content.splitlines()
+    offset = max(int(offset or 1) - 1, 0)
+    lines = lines[offset:]
+    if limit is not None and limit < len(lines):
+        lines = lines[:limit] + [
+            f"[Truncated ({len(lines) - limit}) more lines. Use 'offset={offset + limit + 1}' to continue.]"
+        ]
+    return "\n".join(lines)

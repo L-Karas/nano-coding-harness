@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from core.task import create_task, list_tasks, get_task_json, claim_task, complete_task
+from core.experimental.task import create_task, list_tasks, get_task_json, claim_task, complete_task
 from core.tools.tool_base import BaseTool
 
 
@@ -13,11 +13,13 @@ class CreateTask(BaseTool):
                                              "task can start.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class ListTasks(BaseTool):
     """List all tasks with their status, owner, and worktree."""
     agent_type: set = {"main", "teammate"}
+    experimental: bool = True
 
 
 class GetTask(BaseTool):
@@ -25,6 +27,7 @@ class GetTask(BaseTool):
     task_id: str = Field(description="The task ID to retrieve details for.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class ClaimTask(BaseTool):
@@ -32,6 +35,7 @@ class ClaimTask(BaseTool):
     task_id: str = Field(description="The task ID to claim.")
 
     agent_type: set = {"main", "teammate"}
+    experimental: bool = True
 
 
 class CompleteTask(BaseTool):
@@ -39,6 +43,7 @@ class CompleteTask(BaseTool):
     task_id: str = Field(description="The task ID to complete.")
 
     agent_type: set = {"main", "teammate"}
+    experimental: bool = True
 
 
 def run_create_task(subject: str, description: str, blockedBy: list[str] = []) -> str:

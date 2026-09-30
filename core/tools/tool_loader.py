@@ -1,6 +1,7 @@
 import sys
 from typing import Any, Literal
 
+from core.config import TOOL_ERROR_PREFIXES
 from core.log import get_logger
 from core.mcp import get_client_manager
 from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
@@ -12,10 +13,6 @@ from core.tools.web_search import *  # noqa: F401  # 导入内置工具类以注
 _LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}
 
-# 工具失败统一前缀（call_tool_handler 返回串由此生成；loop_with_interrupt 的 tool_failed 判定
-# 与 TUI 渲染 error 卡均 import 本常量，避免三处手写同一字面量）
-TOOL_ERROR_PREFIXES = ("[Tool Error]:", "[Unknown Tool]:")
-
 
 def _register_tools() -> None:
     """Index every BaseTool subclass by snake_case tool name (read_file) — the name callers pass in."""
@@ -23,32 +20,40 @@ def _register_tools() -> None:
         _TOOLS[_camel_to_snake(cls.__name__)] = cls
 
 
-def _builtin_tool_classes(agent_type: Literal["main", "sub-agent", "teammate"]) -> list[type[BaseTool]]:
-    """BaseTool subclasses usable by this agent level."""
+def _builtin_tool_classes(
+        agent_type: Literal["main", "sub-agent", "teammate"],
+        enable_experimental: bool = False
+) -> list[type[BaseTool]]:
+    """BaseTool subclasses usable by this agent level and experimental status."""
     return [cls for cls in _TOOLS.values()
-            if agent_type in cls.model_fields["agent_type"].get_default()]
+            if agent_type in cls.model_fields["agent_type"].get_default()
+            and (enable_experimental or not cls.model_fields["experimental"].get_default())]
 
 
 _register_tools()
 
 
-def get_builtin_tools(agent_type: Literal["main", "sub-agent", "teammate"] = "main") -> list[dict[str, Any]]:
+def get_builtin_tools(
+        agent_type: Literal["main", "sub-agent", "teammate"] = "main",
+        enable_experimental: bool = False
+) -> list[dict[str, Any]]:
     """
     Load tool list based on agent_type, defaults to "main" agent level.
     """
-    return [cls.to_openai_tool() for cls in _builtin_tool_classes(agent_type)]
+    return [cls.to_openai_tool() for cls in _builtin_tool_classes(agent_type, enable_experimental)]
 
 
 def get_builtin_tool_handlers(
         agent_type: Literal["main", "sub-agent", "teammate"] = "main",
-        tool_type: Literal["sync", "async"] = "sync"
+        tool_type: Literal["sync", "async"] = "sync",
+        enable_experimental: bool = False
 ) -> dict[str, Any]:
     """
     Map each builtin tool name to its handler: the run_<tool name> function
     defined in the tool class's own module (e.g. run_read_file for ReadFile).
     """
     handlers = {}
-    for cls in _builtin_tool_classes(agent_type):
+    for cls in _builtin_tool_classes(agent_type, enable_experimental):
         name = _camel_to_snake(cls.__name__)
         if tool_type == "sync":
             handlers[name] = getattr(sys.modules[cls.__module__], f"run_{name}")
@@ -59,13 +64,14 @@ def get_builtin_tool_handlers(
 
 def assemble_tool_pool(
         agent_type: Literal["main", "sub-agent", "teammate"] = "main",
-        tool_type: Literal["sync", "async"] = "sync"
+        tool_type: Literal["sync", "async"] = "sync",
+        enable_experimental: bool = False
 ):
     """
     Merge builtin tools + all MCP tools into a single tool pool.
     """
-    tools = get_builtin_tools(agent_type)
-    handlers = get_builtin_tool_handlers(agent_type, tool_type)
+    tools = get_builtin_tools(agent_type, enable_experimental)
+    handlers = get_builtin_tool_handlers(agent_type, tool_type, enable_experimental)
 
     if agent_type != "teammate":
         try:
@@ -111,6 +117,6 @@ async def execute_tool(handler, args: dict, name: str, ctx=None) -> str:
 
 if __name__ == '__main__':
     tools = get_builtin_tools(agent_type="main")
-    handlers = get_builtin_tool_handlers(agent_type="main")
+    handlers = get_builtin_tool_handlers(agent_type="main", tool_type="async")
     assert set(t["function"]["name"] for t in tools) == set(handlers) and all(handlers.values())
     print(list(handlers))

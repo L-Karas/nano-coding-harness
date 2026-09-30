@@ -13,7 +13,7 @@ from core.config import WORKDIR
 from core.log.log import get_logger
 from core.tui.render import ask_permission
 
-_LOGER = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 
 HOOKS = {"PreToolUse": [], "PostToolUse": []}
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
@@ -67,17 +67,18 @@ def permission_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = No
 
 
 def log_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None):
-    _LOGER.info(f"[HOOK] call tool {tool_call.function.name} with arguments: {tool_call.function.arguments}")
+    _LOGGER.info(f"[HOOK] call tool {tool_call.function.name} with arguments: {tool_call.function.arguments}")
     return None
 
 
-def large_output_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None, tool_output: str = ""):
+# todo: 处理工具结果过多的情况
+def large_tool_output_hook(tool_call: Optional[ChatCompletionMessageToolCallUnion] = None, tool_output: str = ""):
     if len(str(tool_output)) > 1e5:
-        _LOGER.warning(f"[HOOK] large output from {tool_call.function.name}: "
-                       f"{len(str(tool_output))} chars")
+        _LOGGER.warning(f"[HOOK] large output from {tool_call.function.name}: "
+                        f"{len(str(tool_output))} chars")
     return None
 
 
 register_hook("PreToolUse", permission_hook)
 register_hook("PreToolUse", log_hook)
-register_hook("PostToolUse", large_output_hook)
+register_hook("PostToolUse", large_tool_output_hook)

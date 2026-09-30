@@ -13,6 +13,7 @@ class BaseTool(BaseModel):
         Field(default_factory=lambda: {"main"},
               description="Agent types (main, sub-agent, teammate) that are allowed to use this tool; "
                           "a tool is available to an agent only if that agent's type is included in this set."))
+    experimental: bool = Field(default=False, description="Whether the tool is in experimental status.")
 
     @classmethod
     def to_openai_tool(cls) -> dict[str, Any]:

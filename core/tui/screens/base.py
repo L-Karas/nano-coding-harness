@@ -179,13 +179,14 @@ class _ListPickerScreen(ModalScreen[Any]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static(self.TITLE, classes="picker-title"),
+        picker = Vertical(
             OptionList(id=self.LIST_ID),
             Static(self.HINT, id="confirm-hint" if self.CONFIRM else None, classes="picker-hint"),
             classes="picker",
             id=self.PICKER_ID,
         )
+        picker.border_title = self.TITLE  # 标题嵌在上边框左端（----title----，样式见 app.css .picker）
+        yield picker
 
     def on_mount(self) -> None:
         self._reload()

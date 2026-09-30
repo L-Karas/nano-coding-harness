@@ -31,7 +31,7 @@ class ModelPickerScreen(_ListPickerScreen):
     rows 由调用方从 core.client.get_model_list() 取值，本类只负责展示与切换。
     """
 
-    TITLE = "🤖 Select a model (Enter switches the current model)"
+    TITLE = "Select a model"
     HINT = "  ↑/↓ browse    Enter switch model    Esc close"
     LIST_ID = "model-list"
 
@@ -93,13 +93,14 @@ class EffortScreen(ModalScreen[None]):
         self._current = current
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static("🎯 Thinking effort (Enter applies)", classes="picker-title"),
+        picker = Vertical(
             _InstantTabs(*(Tab(level, id=level) for level in _EFFORT_LEVELS), id="effort-tabs"),
             Static("  ←/→ switch   Enter apply   Esc close", classes="picker-hint"),
             classes="picker",
             id="effort-picker",
         )
+        picker.border_title = "Thinking effort"
+        yield picker
 
     def on_mount(self) -> None:
         tabs = self.query_one("#effort-tabs", Tabs)

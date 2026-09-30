@@ -40,8 +40,7 @@ def load_task(task_id: str) -> Task:
 
 
 def list_tasks() -> list[Task]:
-    return [Task(**json.loads(path.read_text(encoding="utf-8")))
-            for path in sorted(TASK_DIR.glob("task_*.json"))]
+    return [load_task(path.stem) for path in sorted(TASK_DIR.glob("task_*.json"))]
 
 
 def get_task_json(task_id: str) -> str:
@@ -51,9 +50,7 @@ def get_task_json(task_id: str) -> str:
 def can_start(task_id: str) -> bool:
     task = load_task(task_id)
     for dep_task_id in task.blockedBy:
-        if not _task_path(dep_task_id).exists():
-            return False
-        if load_task(dep_task_id).status != "completed":
+        if not _task_path(dep_task_id).exists() or load_task(dep_task_id).status != "completed":
             return False
 
     return True
@@ -77,7 +74,7 @@ def create_task(
     except Exception as e:
         raise Exception(f"Failed to create task: {e}")
 
-    _LOGGER.info(f"[Create Task] {task.subject} (Blocked by tasks: {', '.join(blockedBy)})")
+    _LOGGER.info(f"[Create Task] {task.subject} (Blocked by tasks: {', '.join(task.blockedBy)})")
 
     return task
 
@@ -117,8 +114,8 @@ def complete_task(task_id: str) -> str:
     task.status = "completed"
     save_task(task)
 
-    unblocked_tasks = [f"Task {task.id} ({task.subject})" for task in list_tasks()
-                       if task.status == "pending" and task.blockedBy and can_start(task.id)]
+    unblocked_tasks = [f"Task {t.id} ({t.subject})" for t in list_tasks()
+                       if t.status == "pending" and t.blockedBy and can_start(t.id)]
 
     _LOGGER.info(f"[Complete Task] {task.owner} completed task {task_id}, ({task.subject}) ✓")
 

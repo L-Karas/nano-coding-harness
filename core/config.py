@@ -19,6 +19,11 @@ SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
 MCP_CONFIG_FILE = HARNESS_CONFIG_DIR / ".mcp" / ".mcp.json"
 CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
 
+# 工具失败统一前缀（call_tool_handler 返回串由此生成；loop_with_interrupt 的 tool_failed 判定
+# 与 TUI 渲染 error 卡共用）。放 config 叶子模块：core.tools 会拉起工具注册表，
+# core.tui.render 顶层 import core.tools 会经 hook_permission 成环。
+TOOL_ERROR_PREFIXES = ("[Tool Error]:", "[Unknown Tool]:")
+
 DEFAULT_MAX_TOKENS = int(1.6e4)
 ESCALATED_MAX_TOKENS = int(3.2e4)
 MAX_RETRIES = 3

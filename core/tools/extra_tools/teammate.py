@@ -14,6 +14,7 @@ class SpawnTeammate(BaseTool):
     prompt: str = Field(description="The initial task or instructions for the teammate.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class SendMessage(BaseTool):
@@ -22,11 +23,13 @@ class SendMessage(BaseTool):
     content: str = Field(description="The message content to send.")
 
     agent_type: set = {"main", "teammate"}
+    experimental: bool = True
 
 
 class CheckInbox(BaseTool):
     """Check inbox for messages and protocol responses."""
     agent_type: set = {"main", "teammate"}
+    experimental: bool = True
 
 
 class RequestShutdown(BaseTool):
@@ -34,6 +37,7 @@ class RequestShutdown(BaseTool):
     teammate: str = Field(description="The name of the teammate to request shutdown from.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class RequestPlan(BaseTool):
@@ -42,6 +46,7 @@ class RequestPlan(BaseTool):
     task: str = Field(description="The task description for which a plan is needed.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class ReviewPlan(BaseTool):
@@ -51,6 +56,7 @@ class ReviewPlan(BaseTool):
     feedback: str | None = Field(default=None, description="Optional feedback when rejecting a plan.")
 
     agent_type: set = {"main"}
+    experimental: bool = True
 
 
 class SubmitPlan(BaseTool):
@@ -58,6 +64,7 @@ class SubmitPlan(BaseTool):
     plan: str = Field(description="The plan content to submit for approval.")
 
     agent_type: set = {"teammate"}
+    experimental: bool = True
 
 
 def run_submit_plan(from_agent: str, plan: str) -> str:

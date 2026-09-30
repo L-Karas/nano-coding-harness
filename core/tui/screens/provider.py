@@ -24,7 +24,7 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
     取值；本类只负责展示，状态变更后重取真源而非本地维护镜像。
     """
 
-    TITLE = "🔌 Model Providers (config status)"
+    TITLE = "Model Providers"
     HINT = "  ↑/↓ browse    Enter set API Key    Delete remove config    Esc close"
     LIST_ID = "provider-list"
     CONFIRM = True
@@ -116,12 +116,13 @@ class ApiKeyScreen(ModalScreen[Optional[str]]):
         self._provider = provider
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static(f"🔑 Enter the API Key for {self._provider}", classes="picker-title"),
+        picker = Vertical(
             Input(placeholder="API Key (masked)", password=True, id="api-key-input"),
             Static("  Enter save    Esc cancel", classes="picker-hint"),
             classes="picker",
         )
+        picker.border_title = f"Enter the API Key for {self._provider}"
+        yield picker
 
     def on_mount(self) -> None:
         self.query_one("#api-key-input", Input).focus()

@@ -34,7 +34,7 @@ class LoginScreen(_ListPickerScreen):
     关闭弹窗后回到本菜单，Esc 逐层关闭。
     """
 
-    TITLE = "🔐 Custom providers & models (register / unregister)"
+    TITLE = "Custom providers & models"
     HINT = "  ↑/↓ browse    Enter select    Esc close"
     LIST_ID = "login-list"
     PICKER_ID = "login-picker"
@@ -85,8 +85,7 @@ class RegisterProviderScreen(ModalScreen[None]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static("🔐 Register a custom provider", classes="picker-title"),
+        picker = Vertical(
             Input(placeholder="Provider name", id="reg-provider-name"),
             Input(placeholder="Base URL (e.g. https://api.example.com/v1)", id="reg-provider-url"),
             Input(placeholder="API Key (optional, masked)", password=True, id="reg-provider-key"),
@@ -94,6 +93,8 @@ class RegisterProviderScreen(ModalScreen[None]):
             classes="picker",
             id="reg-provider-picker",
         )
+        picker.border_title = "Register a custom provider"
+        yield picker
 
     def on_mount(self) -> None:
         self.query_one("#reg-provider-name", Input).focus()
@@ -135,8 +136,7 @@ class RegisterModelScreen(ModalScreen[None]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static("🔐 Register a custom model", classes="picker-title"),
+        picker = Vertical(
             Select([], prompt="Custom provider", id="reg-model-provider"),
             Input(placeholder="Model name", id="reg-model-name"),
             Horizontal(Static("Supports thinking mode", classes="switch-label"),
@@ -147,6 +147,8 @@ class RegisterModelScreen(ModalScreen[None]):
             classes="picker",
             id="reg-model-picker",
         )
+        picker.border_title = "Register a custom model"
+        yield picker
 
     def on_mount(self) -> None:
         """装配提供方下拉（自定义提供方列表）；焦点落在模型名输入，Enter 直接提交。"""
@@ -196,7 +198,7 @@ class UnregisterProviderScreen(_InlineConfirm, _ListPickerScreen):
     （该提供方的自定义模型一并清除），成功后 notify + 刷新列表留在窗内（可连续注销）；列表为空
     （无自定义提供方）时窗内提示，Esc 撤销确认 / 取消。"""
 
-    TITLE = "🔐 Unregister a custom provider"
+    TITLE = "Unregister a custom provider"
     HINT = "  ↑/↓ browse    Delete unregister    Esc close"
     LIST_ID = "unreg-provider-list"
     PICKER_ID = "unreg-provider-picker"
@@ -242,7 +244,7 @@ class UnregisterModelScreen(_InlineConfirm, _ListPickerScreen):
     core.client.logout_model(provider, model) 注销，成功后 notify + 刷新列表留在窗内（可连续注销）；
     列表为空（无自定义模型）时窗内提示，Esc 撤销确认 / 取消。"""
 
-    TITLE = "🔐 Unregister a custom model"
+    TITLE = "Unregister a custom model"
     HINT = "  ↑/↓ browse    Delete unregister    Esc close"
     LIST_ID = "unreg-model-list"
     PICKER_ID = "unreg-model-picker"

@@ -49,13 +49,14 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
     橙色 spinner 轮播、failed 红 ○）。
 
     Enter/点击选中 → 推入 MCPToolsScreen 展示该 server 的工具（行格式同 /skills 弹窗）；
-    Insert 弹 MCPConfigScreen（JSON 配置，保存成功后就地刷新列表、本窗保持打开）；
+    Insert 弹 MCPConfigScreen（JSON 配置，保存成功后就地刷新列表、本窗保持打开；
+    servers 为空也可打开本窗，靠 Insert 配第一个 server）；
     Delete → 窗内底部红字原地确认后经
     core.mcp.mcp_client.unconfigure_mcp_server 删除（删空则关窗）；Esc 撤销确认 / 关闭。
     servers 由调用方从 get_mcp_server_list() 取值：
     {server_name: {"status": connecting|connected|failed, "tools": [{tool_name, tool_description}]}}。"""
 
-    TITLE = "🔌 MCP Servers"
+    TITLE = "MCP Servers"
     HINT = "  ↑/↓ browse    Enter tools    Insert configure    Delete remove    Esc close"
     LIST_ID = "mcp-list"
     PICKER_ID = "mcp-picker"
@@ -71,18 +72,20 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         self._anim = None  # spinner interval（有 connecting 行时惰性启动）
 
     def on_mount(self) -> None:
-        super().on_mount()
+        # 不调 super().on_mount()：Textual 按 MRO 自动派发各级 on_mount（_ListPickerScreen 的
+        # _reload/focus 也会被调到），显式再调会 _reload 两次（空列表时双 Toast）
         # 连接在后台任务里推进：窗开着时轻量轮询，连接完成/失败自动反映到行
         self.set_interval(1.0, self._poll_status)
 
     def _refresh(self) -> None:
-        """重取快照并就地重建；取数失败或返回空（无配置 / 重建期）时保留旧列表，不留空窗。"""
+        """重取快照并就地重建；取数失败时保留旧列表，不留空窗。空快照（未配置 server）
+        也照常重建，空窗仍可 Insert 配置（Toast 提示）。"""
         try:
             from core.mcp.mcp_client import get_mcp_server_list
             servers = get_mcp_server_list()
         except Exception:
             return
-        if servers and servers != self._servers:
+        if servers != self._servers:
             self._servers = servers
             self._reload()
 
@@ -92,8 +95,11 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
             self._refresh()
 
     def _reload(self) -> None:
-        _rebuild_options(self._list(), [Option(_server_row(server, info, self._cursor), id=server)
-                                        for server, info in self._servers.items()])
+        rows = [Option(_server_row(server, info, self._cursor), id=server)
+                for server, info in self._servers.items()]
+        _rebuild_options(self._list(), rows)
+        if not rows:  # 空列表无行可看：走 Toast 提示去 Insert 配 server（提示行保持通用文案）
+            self.app.notify("No MCP servers configured: press Insert to add one", title="⚠️ MCP Servers")
         self._sync_anim()
 
     def _sync_anim(self) -> None:
@@ -169,7 +175,7 @@ class MCPToolsScreen(_NamedListScreen):
 
     def __init__(self, server: str, tools: list[dict]) -> None:
         super().__init__([(tool["tool_name"], tool.get("tool_description", "")) for tool in tools])
-        self.TITLE = f"🔧 {server} tools"  # server 名进标题，行内只有工具
+        self.TITLE = f"{server} tools"  # server 名进标题，行内只有工具
 
 
 class MCPConfigScreen(ModalScreen[bool]):
@@ -186,14 +192,15 @@ class MCPConfigScreen(ModalScreen[bool]):
     ]
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static("🔌 Configure MCP Servers (JSON)", classes="picker-title"),
+        picker = Vertical(
             TextArea(language="json", placeholder=_MCP_CONFIG_EXAMPLE, tab_behavior="indent",
                      id="mcp-config-input"),
             Static("  Ctrl+S save    Esc cancel", classes="picker-hint"),
             classes="picker",
             id="mcp-config-picker",
         )
+        picker.border_title = "Configure MCP Servers"
+        yield picker
 
     def on_mount(self) -> None:
         self.query_one("#mcp-config-input", TextArea).focus()

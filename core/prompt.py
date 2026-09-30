@@ -28,7 +28,7 @@ def build_system_prompt(agent_type: Literal["main", "sub-agent", "teammate"] = "
         return SYSTEM_PROMPT_TEMPLATE.format(
             tool_list=tool_list,
             memory_list=memory_list,
-            skill_list=list_skills,
+            skill_list=list_skills(),
             guidelines=guidelines,
             working_directory=WORKDIR
         )

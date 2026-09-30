@@ -4,7 +4,7 @@ from .cron import ScheduleCron, ListCrons, CancelCron, \
     run_schedule_cron_async, run_list_crons_async, run_cancel_cron_async
 from .memory import SaveMemory, run_save_memory, run_save_memory_async
 from .skill import LoadSkill, run_load_skill, run_load_skill_async
-from .subagent import SpawnSubagent, run_spawn_subagent, run_spawn_subagent_async
+from .subagent import SpawnSubagent, run_spawn_subagent_async
 from .task import CreateTask, ListTasks, ClaimTask, CompleteTask, GetTask, \
     run_create_task, run_list_tasks, run_claim_task, run_get_task, run_complete_task, \
     run_create_task_async, run_list_tasks_async, run_claim_task_async, run_get_task_async, run_complete_task_async
@@ -26,7 +26,7 @@ __all__ = [
     "run_schedule_cron_async", "run_list_crons_async", "run_cancel_cron_async",
     "SaveMemory", "run_save_memory", "run_save_memory_async",
     "LoadSkill", "run_load_skill", "run_load_skill_async",
-    "SpawnSubagent", "run_spawn_subagent", "run_spawn_subagent_async",
+    "SpawnSubagent", "run_spawn_subagent_async",
     "CreateTask", "ListTasks", "ClaimTask", "CompleteTask", "GetTask",
     "run_create_task", "run_list_tasks", "run_claim_task", "run_get_task", "run_complete_task",
     "run_create_task_async", "run_list_tasks_async", "run_claim_task_async", "run_get_task_async",

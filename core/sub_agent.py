@@ -1,57 +1,148 @@
 """
 Sub Agent
+
+跑在调用方的 event loop（AgentRuntime.loop）上：模型客户端绑定该 loop，子代理不另起线程/loop。
+后台语义（主代理不等结论、结果稍后注入）由 background_task 的占位符 + notification 提供，
+这里只负责跑完并把最终结论返回。
 """
 import json
 
+from openai import AsyncStream
+from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageToolCall
+
 from core.client import shared_model_client
+from core.config import DEFAULT_MAX_TOKENS
+from core.log.log import get_logger
 from core.permission.hook_permission import trigger_hooks
 from core.prompt import build_system_prompt
+from core.recovery.error_recovery import with_retry_async
+
+MAX_SUB_AGENT_ROUNDS = 30
+_LOGGER = get_logger(__name__)
+
+# TUI 数据源：运行中的子代理及其执行阶段（用法同 core.background_task.BACKGROUND_TASKS）。
+# phase: "thinking" = 等 LLM 生成中， "tool" = 工具执行中；detail 为正在跑的工具名。结束即移除。
+SUBAGENT_TASKS: dict[str, dict] = {}
+_SUBAGENT_COUNTER = 0
 
 
-# 延迟到函数内导入:src.tools -> extra_tools -> sub_agent -> src.tools 存在导入环,
-# 模块级导入会触发 partially initialized ImportError。
+def _set_phase(agent_id: str, phase: str, detail: str = "") -> None:
+    info = SUBAGENT_TASKS.get(agent_id)
+    if info is not None:
+        info["phase"], info["detail"] = phase, detail
 
-# todo: 增加中断功能
-def spawn_subagent(description: str) -> str:
-    from core.tools import assemble_tool_pool, call_tool_handler
 
-    sub_tools, sub_handlers = assemble_tool_pool(agent_type="sub-agent")
-    system_prompt = build_system_prompt("sub-agent", tools=sub_tools)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": description}
-    ]
+async def streaming_message(stream: AsyncStream[ChatCompletionChunk], ctx=None):
+    content, reasoning_content = "", ""
+    tool_calls: list[dict] = []
+    finish_reason = ""
+    usage = None
+    try:
+        async for chunk in stream:
+            if chunk.usage:
+                usage = chunk.usage
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            delta = choice.delta
+            if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                reasoning_content += delta.reasoning_content
+            if delta.content:
+                content += delta.content
 
-    for _ in range(30):
-        response = shared_model_client().get_model_client()(
-            messages=messages,
-            tools=sub_tools,
-            max_tokens=8000,
-        )
-        response_message = response.choices[0].message.model_dump()
-        messages.append(response_message)
-        if not response_message.tool_calls:
-            break
+            if delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    while len(tool_calls) <= tool_call.index:
+                        tool_calls.append({
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""}
+                        })
+                    if tool_call.id:
+                        tool_calls[tool_call.index]["id"] = tool_call.id
+                    if tool_call.function:
+                        if tool_call.function.name and not tool_calls[tool_call.index]["function"]["name"]:
+                            tool_calls[tool_call.index]["function"]["name"] = tool_call.function.name
+                        if tool_call.function.arguments:
+                            tool_calls[tool_call.index]["function"]["arguments"] += tool_call.function.arguments
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+    finally:
+        await stream.aclose()
 
-        for tool_call in response_message.tool_calls:
-            blocked = trigger_hooks("PreToolUse", tool_call)
-            if blocked:
-                output = str(blocked)
-            else:
-                handler = sub_handlers.get(tool_call.function.name)
-                tool_args = json.loads(tool_call.function.arguments)
-                output = call_tool_handler(handler, tool_args, tool_call.function.name)
+    return content, reasoning_content, tool_calls, finish_reason, usage
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": str(output),
-            })
 
-    for message in reversed(messages):
-        if isinstance(message, dict) and message["role"] == "assistant":
-            summary = message["content"]
-            if summary:
-                return summary
+async def spawn_subagent(description: str, ctx=None) -> str:
+    """在调用方 loop 上跑完一个子代理，返回它的最终文本结论。
 
-    return "Subagent finished without a text conclusion."
+    ctx 为父回合的 AgentRunContext：每轮模型调用前协作式检查取消（Esc），
+    并透传给工具执行，使中断能到达子进程。
+    """
+    global _SUBAGENT_COUNTER
+
+    from core.tools import assemble_tool_pool
+    from core.tools.tool_loader import execute_tool
+
+    _SUBAGENT_COUNTER += 1
+    agent_id = f"sa-{_SUBAGENT_COUNTER:04d}"
+    SUBAGENT_TASKS[agent_id] = {"description": description, "phase": "thinking", "detail": ""}
+
+    try:
+        tools, handlers = assemble_tool_pool("sub-agent", tool_type="async")
+        messages = [
+            {"role": "system", "content": build_system_prompt("sub-agent", tools=tools)},
+            {"role": "user", "content": description},
+        ]
+
+        for _ in range(MAX_SUB_AGENT_ROUNDS):
+            if ctx:
+                ctx.raise_if_cancelled()
+
+            _set_phase(agent_id, "thinking")
+            stream = await with_retry_async(
+                lambda: shared_model_client().get_model_client(async_client=True)(
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=DEFAULT_MAX_TOKENS,
+                    stream=True
+                )
+            )
+            content, reasoning_content, tool_calls, _, _ = await streaming_message(stream, ctx)
+
+            assistant_message = {
+                "role": "assistant",
+                "content": content,
+                "reasoning_content": reasoning_content,
+            }
+            if tool_calls:
+                assistant_message["tool_calls"] = tool_calls
+            messages.append(assistant_message)
+
+            if not tool_calls:
+                return content or "(subagent finished without a text conclusion)"
+
+            _set_phase(agent_id, "tool", ", ".join(tc["function"]["name"] for tc in tool_calls))
+            for tool_call in tool_calls:
+                name = tool_call["function"]["name"]
+                blocked = trigger_hooks("PreToolUse", ChatCompletionMessageToolCall(**tool_call))
+                if blocked:
+                    output = str(blocked)
+                else:
+                    try:
+                        tool_args = json.loads(tool_call["function"]["arguments"] or "{}")
+                    except json.JSONDecodeError as e:
+                        output = f"[Error] {type(e).__name__}: {e}"
+                    else:
+                        output = await execute_tool(handlers.get(name), tool_args, name, ctx)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": str(output),
+                })
+
+        _LOGGER.warning(f"[Subagent] reached {MAX_SUB_AGENT_ROUNDS} rounds without a conclusion")
+        return f"(subagent reached the {MAX_SUB_AGENT_ROUNDS}-round limit without a conclusion)"
+    finally:
+        SUBAGENT_TASKS.pop(agent_id, None)
