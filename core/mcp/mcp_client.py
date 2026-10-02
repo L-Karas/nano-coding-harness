@@ -222,14 +222,16 @@ class ClientManager:
         """Build the transport parameters for one mcpServers entry."""
         if not isinstance(config, dict):
             raise ValueError(f"MCP server '{server_name}' config type invalid: {type(config)}")
-        if config.get("command"):
-            return StdioServerParameters(command=config["command"], args=config.get("args", []))
-        transport = config.get("type")
-        if transport == "sse":
-            return SseServerParameters(url=config["url"])
-        if transport == "streamable_http":
-            return StreamableHttpParameters(url=config["url"])
-        raise ValueError(f"MCP server '{server_name}' type invalid: {transport!r}")
+        transport = _transport_of(config)
+        if transport is None:
+            raise ValueError(f"MCP server '{server_name}' type invalid: {config.get('type')!r}")
+        # 可选键仅在配置里实际存在时透传：pydantic 的 float 字段不接受显式 None
+        _, optional = _TRANSPORT_KEYS[transport]
+        extra = {key: config[key] for key in optional if key in config}
+        if transport == "stdio":
+            return StdioServerParameters(command=config["command"], **extra)
+        cls = SseServerParameters if transport == "sse" else StreamableHttpParameters
+        return cls(url=config["url"], **extra)
 
     def _apply_latest_config(self) -> None:
         """读盘 + 校验 + 同步配置；只在 MCP loop 上调用（无 await，天然串行不打架）。"""
@@ -319,6 +321,22 @@ def get_mcp_server_list() -> dict[str, dict]:
     }
 
 
+# 每种传输：(必填键, 可选项)；可选项原样透传给底层传输参数类
+_TRANSPORT_KEYS = {
+    "stdio": ({"command"}, {"args", "env", "cwd"}),
+    "sse": ({"type", "url"}, {"headers", "timeout"}),
+    "streamable_http": ({"type", "url"}, {"headers", "timeout"}),
+}
+
+
+def _transport_of(config) -> str | None:
+    """stdio 由 command 判定，其余按 type；未知/非法类型返回 None。"""
+    if not isinstance(config, dict):
+        return None
+    transport = "stdio" if config.get("command") else config.get("type")
+    return transport if isinstance(transport, str) and transport in _TRANSPORT_KEYS else None
+
+
 def _validate_config(configs: dict):
     """Validate mcp server config format"""
     if not configs:
@@ -331,11 +349,9 @@ def _validate_config(configs: dict):
         _LOGGER.warning(f"MCP server config type invalid: {type(servers)}")
         raise ValueError("MCP server config invalid")
     for server_name, config in servers.items():
-        # 与 _server_params 支持的两种传输形态一致：stdio（command + args 两项）
-        # 或 url（type 为 sse / streamable_http）
-        valid = isinstance(config, dict) and len(config) == 2 and (
-                ("command" in config and "args" in config)
-                or ("url" in config and config.get("type") in ("sse", "streamable_http")))
+        # 与 _server_params 同源：必填键齐全且无多余键才算合法
+        required, optional = _TRANSPORT_KEYS.get(_transport_of(config), (set(), set()))
+        valid = bool(required) and required <= set(config) <= required | optional
         if not valid:
             _LOGGER.warning(f"MCP server config type invalid: {server_name}={config}")
             raise ValueError("MCP server config invalid")
