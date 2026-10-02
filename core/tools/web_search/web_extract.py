@@ -18,17 +18,15 @@ class WebExtract(BaseTool):
 
 
 async def defuddle_extract(url: str) -> tuple[bool, str]:
-    from asyncio import create_subprocess_shell
-
     try:
-        if not shutil.which("npx"):
+        npx = shutil.which("npx")
+        if not npx:
             raise RuntimeError("[Web Extraction] npx not found; use another method to extract the URL content")
-        command = ["npx", "defuddle", "parse", url, "--md"]
-        process = await create_subprocess_shell(
-            " ".join(command),
+        # 参数分离（非 shell 拼接）：URL 里的 shell 元字符不再有注入/截断风险
+        process = await asyncio.create_subprocess_exec(
+            npx, "defuddle", "parse", url, "--md",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            shell=True,
         )
         stdout, stderr = await process.communicate()
         if process.returncode != 0:
@@ -147,7 +145,7 @@ async def ddgs_extract(url: str) -> tuple[bool, str]:
     try:
         with ddgs.DDGS() as client:
             response = await asyncio.to_thread(client.extract, url)
-        return response.get("content", NO_CONTENT)
+        return True, response.get("content", NO_CONTENT)
     except Exception:
         raise
 

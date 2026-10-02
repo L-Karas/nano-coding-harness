@@ -1,4 +1,6 @@
 import asyncio
+import glob as g
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -17,12 +19,10 @@ class Glob(BaseTool):
 
 
 def has_ripgrep() -> bool:
-    import shutil
     return bool(shutil.which("rg"))
 
 
 def run_glob(pattern: str, cwd: Optional[Path] = None) -> str:
-    import glob as g
     root = cwd or WORKDIR
     results = ["[Matches]\n"]
     for match in g.glob(pattern, root_dir=root):
@@ -59,7 +59,7 @@ async def run_glob_async(pattern: str, cwd: Optional[Path] = None, ctx=None, use
         if process.returncode not in (0, 1):
             raise RuntimeError(_to_text(stderr))
 
-        paths = [_to_text(line) for line in stdout.split(b"\0") if p]
+        paths = [_to_text(line) for line in stdout.split(b"\0") if line]
         outputs.extend(paths)
     except asyncio.CancelledError:
         process.terminate()

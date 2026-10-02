@@ -18,7 +18,6 @@ class ReadFile(BaseTool):
     agent_type: set = {"main", "sub-agent", "teammate"}
 
 
-# todo: 可以为工具增加读取范围的功能
 def run_read_file(path: str, limit: Optional[int] = 2000, offset: Optional[int] = 1, cwd: Optional[Path] = None) -> str:
     base = cwd or WORKDIR
     fp = (base / path).resolve()

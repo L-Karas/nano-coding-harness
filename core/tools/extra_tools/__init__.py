@@ -1,4 +1,3 @@
-# from .compact import Compact, run_compact, run_compact_async
 from .cron import ScheduleCron, ListCrons, CancelCron, \
     run_schedule_cron, run_list_crons, run_cancel_cron, \
     run_schedule_cron_async, run_list_crons_async, run_cancel_cron_async
@@ -20,7 +19,6 @@ from .worktree import CreateWorktree, RemoveWorktree, KeepWorktree, \
     run_create_worktree_async, run_keep_worktree_async, run_remove_worktree_async
 
 __all__ = [
-    # "Compact", "run_compact", "run_compact_async",
     "ScheduleCron", "ListCrons", "CancelCron",
     "run_schedule_cron", "run_list_crons", "run_cancel_cron",
     "run_schedule_cron_async", "run_list_crons_async", "run_cancel_cron_async",

@@ -7,7 +7,8 @@ compose 只保留左右分栏骨架，逐区 yield 本模块的自定义部件�
 
 - _Welcome：聊板为空（首次启动 / 新建会话）时的居中欢迎标题（大字标题 + 小字副标题）；
 - _ChatBoard：聊天画板滚动容器（不满一屏时消息从顶部向下填充，见类 docstring）；
-- _ChatDock：底部固定区（状态行 + / 指令与 @ 文件候选列表 + 权限 yes/no 列表 + 输入条 + 工作目录行）。
+- _ChatDock：底部固定区（状态行 + / 指令与 @ 文件候选列表 + 权限 yes/no 列表 + clarify
+  选项列表 + 输入条 + 工作目录行）。
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from core.tui.theme import _PLACEHOLDER
-from core.tui.widgets import _CommandInput
+from core.tui.widgets import _ClarifyList, _CommandInput
 
 
 def _welcome_text(title: str, subtitle: str) -> Text:
@@ -60,7 +61,8 @@ class _ChatBoard(VerticalScroll):
 
 
 class _ChatDock(Vertical):
-    """底部固定区：状态行 + 指令补全列表（按需显示）+ @ 文件补全列表 + 权限确认列表 + 输入条 + 最底工作目录行。
+    """底部固定区：状态行 + 指令补全列表（按需显示）+ @ 文件补全列表 + 权限确认列表
+    + clarify 选项列表 + 输入条 + 最底工作目录行。
 
     / 与 @ 候选 OptionList 默认隐藏（见 app.css）：选项是纯数据（无 DOM 子项），
     由 _CommandInput 在键入时按 id 用 set_options 整批重建；同刻至多一组可见。
@@ -73,6 +75,8 @@ class _ChatDock(Vertical):
         yield OptionList(id="file-suggest")  # @ 文件补全列表（仅 @ 提及编辑时可见）
         # 权限确认 yes/no 列表：默认隐藏，权限请求时由 ChatApp 弹出并聚焦（行为见 ui_textual 权限确认段）
         yield OptionList(Option("✓ Yes", id="yes"), Option("✗ No", id="no"), id="perm-list")
+        # clarify 选项列表（含末尾 Other）：默认隐藏，工具请求时由 ChatApp 弹出并聚焦（见 ui_textual clarify 段）
+        yield _ClarifyList(id="clarify-list")
         with Horizontal(id="inputbar"):  # 上下粗实线输入条：>> 前缀 + 输入框
             yield Static(">> ", id="prompt-mark")
             yield _CommandInput(placeholder=_PLACEHOLDER, id="prompt")

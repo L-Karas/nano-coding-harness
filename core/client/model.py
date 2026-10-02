@@ -3,8 +3,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Any
 
-from openai import OpenAI, Stream, AsyncOpenAI
-from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from openai import OpenAI, AsyncOpenAI
 
 from core.config import HARNESS_SETTING_FILE, PROVIDER_AUTH_FILE, CUSTOM_MODEL_FILE, CUSTOM_PROVIDER_FILE
 from core.log import get_logger
@@ -156,8 +155,8 @@ def get_model_list(custom_model: bool = False) -> list[tuple[str, str]]:
 
     providers = _CUSTOM_PROVIDER_AUTH if custom_model else _PROVIDER_AUTH
     model_list = []
-    for configured_provider in providers.keys():
-        for model_name in _MODEL_LIST[configured_provider]["model_list"].keys():
+    for configured_provider in providers:
+        for model_name in _MODEL_LIST.get(configured_provider, {}).get("model_list", {}):
             model_list.append((model_name, f"[{configured_provider}]"))
 
     return model_list
@@ -381,14 +380,6 @@ class ModelClient:
             self.current_client.chat.completions.create,
             model=self.current_model,
             **request_args
-        )
-
-    # todo: 待完善，暂未使用
-    def call(self, messages: list[dict[str, Any]], **kwargs) -> ChatCompletion | Stream[ChatCompletionChunk]:
-        return self.current_client.chat.completions.create(
-            model=self.current_model,
-            messages=messages,
-            **kwargs | self._request_kwargs()
         )
 
 

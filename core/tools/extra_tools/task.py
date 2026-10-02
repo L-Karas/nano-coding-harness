@@ -46,8 +46,8 @@ class CompleteTask(BaseTool):
     experimental: bool = True
 
 
-def run_create_task(subject: str, description: str, blockedBy: list[str] = []) -> str:
-    task = create_task(subject, description, blockedBy)
+def run_create_task(subject: str, description: str, blockedBy: list[str] | None = None) -> str:
+    task = create_task(subject, description, blockedBy or [])
     dependencies = f" (Blocked by tasks: {', '.join(blockedBy) if blockedBy else ''})"
     return f"Created {task.id}: {task.subject}{dependencies}"
 
@@ -58,7 +58,7 @@ def run_list_tasks() -> str:
         return "No tasks"
 
     return "\n".join(f"  {task.id}: {task.subject} [{task.status}]"
-                     + f" (worktree: {task.worktree})" if task.worktree else ""
+                     + (f" (worktree: {task.worktree})" if task.worktree else "")
                      for task in tasks)
 
 
@@ -83,8 +83,8 @@ def run_complete_task(task_id: str) -> str:
         raise Exception(f"Task {task_id} not found")
 
 
-async def run_create_task_async(subject: str, description: str, blockedBy: list[str] = [], ctx=None) -> str:
-    return run_create_task(subject, description, blockedBy)
+async def run_create_task_async(subject: str, description: str, blockedBy: list[str] | None = None, ctx=None) -> str:
+    return run_create_task(subject, description, blockedBy or [])
 
 
 async def run_list_tasks_async(ctx=None) -> str:

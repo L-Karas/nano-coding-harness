@@ -1,11 +1,9 @@
-# 执行前渲染 diff 预览的工具；preview 函数见 preview_write / preview_edit
 import difflib
 from pathlib import Path
 from typing import Optional
 
 from core.config import WORKDIR
 
-# 执行前渲染 diff 预览的工具；preview 函数见 preview_write / preview_edit
 DIFF_TOOLS = ("write_file", "edit_file")
 
 

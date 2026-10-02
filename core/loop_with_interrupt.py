@@ -18,12 +18,13 @@ from core.compact.context_compact import tool_result_budget, micro_compact, comp
 from core.config import DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
 from core.cron_scheduler import consume_cron_queue
 from core.experimental.protocol_state import consume_lead_inbox
+from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
-from core.permission.hook_permission import trigger_hooks
 from core.prompt import build_system_prompt
 from core.recovery.error_recovery import RecoveryState, with_retry_async
 from core.runtime_context import AgentRunContext, AgentInterrupted
 from core.session.session import SESSION_MANAGER
+from core.streaming import streaming_message
 from core.template import CONTINUATION_PROMPT, INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX, \
     USER_INTERRUPT_PROMPT
 from core.template.prompt_template import INJECTION_MESSAGES_TEMPLATE
@@ -148,13 +149,12 @@ class AgentRuntime:
                     render_background_notification(error_text, title="⚠️ Agent Error")
                     return
 
-                # todo: usage 变量暂未使用
-                accumulated_text, reasoning_text, tool_calls, finish_reason, usage = await self.stream(stream, ctx)
+                accumulated_text, reasoning_text, tool_calls, finish_reason, _ = await self.stream(stream)
 
                 assistant_message = {
                     "role": "assistant",
-                    "content": "" or accumulated_text,
-                    "reasoning_content": "" or reasoning_text
+                    "content": accumulated_text,
+                    "reasoning_content": reasoning_text
                 }
                 if finish_reason == "length":
                     # todo: 半截 tool_calls 情况
@@ -216,51 +216,9 @@ class AgentRuntime:
                 )
             )
 
-    async def stream(self, stream: AsyncStream[ChatCompletionChunk], ctx: AgentRunContext):
-        accumulated_text = ""
-        reasoning_text = ""
-        tool_calls: list[dict] = []
-        finish_reason = ""
-        usage = None
-        with render_thinking_status():
-            with render_scope():
-                try:
-                    # stream 内部 __anext__ 方法使用 await 挂起任务，可省略 ctx 触发中断
-                    async for chunk in stream:
-                        if chunk.usage:
-                            usage = chunk.usage
-
-                        if not chunk.choices:
-                            continue
-
-                        choice = chunk.choices[0]
-                        if hasattr(choice.delta, "reasoning_content") and choice.delta.reasoning_content:
-                            reasoning_text += choice.delta.reasoning_content
-                        if choice.delta.content:
-                            accumulated_text += choice.delta.content
-                            stream_assistant_response(choice.delta.content)
-
-                        if choice.delta.tool_calls:
-                            for delta in choice.delta.tool_calls:
-                                while len(tool_calls) <= delta.index:
-                                    tool_calls.append({
-                                        "id": "",
-                                        "type": "function",
-                                        "function": {"name": "", "arguments": ""}
-                                    })
-                                if delta.id:
-                                    tool_calls[delta.index]["id"] = delta.id
-                                if delta.function:
-                                    if delta.function.name and not tool_calls[delta.index]["function"]["name"]:
-                                        tool_calls[delta.index]["function"]["name"] = delta.function.name
-                                    if delta.function.arguments:
-                                        tool_calls[delta.index]["function"]["arguments"] += delta.function.arguments
-                        if choice.finish_reason:
-                            finish_reason = choice.finish_reason
-                finally:
-                    await stream.close()
-
-        return accumulated_text, reasoning_text, tool_calls, finish_reason, usage
+    async def stream(self, stream: AsyncStream[ChatCompletionChunk]):
+        with render_thinking_status(), render_scope():
+            return await streaming_message(stream, on_text=stream_assistant_response)
 
     async def call_tools(self, tool_calls: list[dict], handlers: dict, ctx: AgentRunContext):
         tool_call_results = []
@@ -286,7 +244,7 @@ class AgentRuntime:
 
                 render_tool_call(tool_name, tool_args)
 
-                blocked = trigger_hooks("PreToolUse", tool_call)
+                blocked = trigger_hooks("pre_tool_call", tool_call)
                 if blocked:
                     tool_call_results.append({
                         "role": "tool",

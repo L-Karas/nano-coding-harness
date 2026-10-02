@@ -1,6 +1,6 @@
 import asyncio
 import re
-from importlib.metadata import _text
+import shutil
 from pathlib import Path
 from typing import Optional, Literal
 
@@ -21,8 +21,11 @@ class Grep(BaseTool):
     agent_type: set = {"main", "sub-agent", "teammate"}
 
 
+_MATCH_RE = re.compile(r"^(.*?):(\d+):(.*)$")
+_MATCH_LIMIT = 50
+
+
 def _find_grep_tool() -> Literal["grep", "ripgrep", "python"]:
-    import shutil
     if shutil.which("rg"):
         return "ripgrep"
     if shutil.which("grep"):
@@ -47,26 +50,28 @@ def _validate_path(path: str = "", cwd: Optional[Path] = None) -> Path:
     return path
 
 
-def _parse_match(lines: list[str]) -> list[tuple]:
-    line_re = re.compile(r"^(.*?):(\d+):(.*)$")
-
+def _parse_match(lines: list[str]) -> list[tuple[str, str, str]]:
     matches = []
     for line in lines:
-        m = line_re.match(line)
-        if not m:
-            return None
-        path, line_no, content = m.groups()
-        matches.append((path, line_no, content))
+        m = _MATCH_RE.match(line)
+        if m:
+            matches.append(m.groups())
     return matches
+
+
+def _format_matches(output: list[str]) -> str:
+    if len(output) > _MATCH_LIMIT:
+        output = output[:_MATCH_LIMIT] + ["Results truncated. More than 50 matches found. "
+                                          "Consider a more specific path or pattern if needed."]
+    return "\n".join(output)
 
 
 def run_grep(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optional[Path] = None) -> str:
     path = _validate_path(path, cwd)
     regex = re.compile(pattern)
 
-    iterator = path.rglob(file_pattern)
     output = ["[Matches]\n"]
-    for file_path in iterator:
+    for file_path in path.rglob(file_pattern):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 for line_no, line in enumerate(f, 1):
@@ -75,11 +80,7 @@ def run_grep(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optiona
         except Exception:
             continue
 
-    if len(output) > 50:
-        output = output[:50] + ["Results truncated. More than 50 matches found. "
-                                "Consider a more specific path or pattern if needed."]
-
-    return "\n".join(output) if output else "(No matches found)"
+    return _format_matches(output)
 
 
 async def run_grep_async(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optional[Path] = None,
@@ -91,11 +92,11 @@ async def run_grep_async(pattern: str, path: str = "", file_pattern: str = "*", 
 
     grep_tool = _find_grep_tool()
     if grep_tool == "ripgrep":
-        command = ["rg", "--no-heading", "-n", "--glob", file_pattern, pattern, path]
+        command = ["rg", "--no-heading", "-n", "--glob", file_pattern, pattern, str(path)]
     elif grep_tool == "grep":
-        command = ["grep", "-r", "-n", "--include", file_pattern, pattern, path]
+        command = ["grep", "-r", "-n", "--include", file_pattern, pattern, str(path)]
     else:
-        return await asyncio.to_thread(run_grep, grep_tool, pattern, file_pattern, cwd)
+        return await asyncio.to_thread(run_grep, pattern, path, file_pattern, cwd)
 
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -111,8 +112,7 @@ async def run_grep_async(pattern: str, path: str = "", file_pattern: str = "*", 
         if process.returncode not in (0, 1):
             raise RuntimeError(_to_text(stderr))
 
-        result_lines = _to_text(stdout).splitlines()
-        for file_path, line_no, content in _parse_match(result_lines):
+        for file_path, line_no, content in _parse_match(_to_text(stdout).splitlines()):
             output.append(
                 f"file path: \"{file_path}\", line: [{line_no}], content: \"{content}\""
             )
@@ -129,8 +129,4 @@ async def run_grep_async(pattern: str, path: str = "", file_pattern: str = "*", 
             process.kill()
             await process.wait()
 
-    if len(output) > 50:
-        output = output[:50] + ["Results truncated. More than 50 matches found. "
-                                "Consider a more specific path or pattern if needed."]
-
-    return "\n".join(output) if output else "(No matches found)"
+    return _format_matches(output)

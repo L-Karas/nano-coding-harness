@@ -7,15 +7,15 @@ Sub Agent
 """
 import json
 
-from openai import AsyncStream
-from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageToolCall
+from openai.types.chat import ChatCompletionMessageToolCall
 
 from core.client import shared_model_client
 from core.config import DEFAULT_MAX_TOKENS
+from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
-from core.permission.hook_permission import trigger_hooks
 from core.prompt import build_system_prompt
 from core.recovery.error_recovery import with_retry_async
+from core.streaming import streaming_message
 
 MAX_SUB_AGENT_ROUNDS = 30
 _LOGGER = get_logger(__name__)
@@ -30,47 +30,6 @@ def _set_phase(agent_id: str, phase: str, detail: str = "") -> None:
     info = SUBAGENT_TASKS.get(agent_id)
     if info is not None:
         info["phase"], info["detail"] = phase, detail
-
-
-async def streaming_message(stream: AsyncStream[ChatCompletionChunk], ctx=None):
-    content, reasoning_content = "", ""
-    tool_calls: list[dict] = []
-    finish_reason = ""
-    usage = None
-    try:
-        async for chunk in stream:
-            if chunk.usage:
-                usage = chunk.usage
-            if not chunk.choices:
-                continue
-            choice = chunk.choices[0]
-            delta = choice.delta
-            if hasattr(delta, "reasoning_content") and delta.reasoning_content:
-                reasoning_content += delta.reasoning_content
-            if delta.content:
-                content += delta.content
-
-            if delta.tool_calls:
-                for tool_call in delta.tool_calls:
-                    while len(tool_calls) <= tool_call.index:
-                        tool_calls.append({
-                            "id": "",
-                            "type": "function",
-                            "function": {"name": "", "arguments": ""}
-                        })
-                    if tool_call.id:
-                        tool_calls[tool_call.index]["id"] = tool_call.id
-                    if tool_call.function:
-                        if tool_call.function.name and not tool_calls[tool_call.index]["function"]["name"]:
-                            tool_calls[tool_call.index]["function"]["name"] = tool_call.function.name
-                        if tool_call.function.arguments:
-                            tool_calls[tool_call.index]["function"]["arguments"] += tool_call.function.arguments
-            if choice.finish_reason:
-                finish_reason = choice.finish_reason
-    finally:
-        await stream.aclose()
-
-    return content, reasoning_content, tool_calls, finish_reason, usage
 
 
 async def spawn_subagent(description: str, ctx=None) -> str:
@@ -108,7 +67,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
                     stream=True
                 )
             )
-            content, reasoning_content, tool_calls, _, _ = await streaming_message(stream, ctx)
+            content, reasoning_content, tool_calls, _, _ = await streaming_message(stream)
 
             assistant_message = {
                 "role": "assistant",
@@ -125,7 +84,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
             _set_phase(agent_id, "tool", ", ".join(tc["function"]["name"] for tc in tool_calls))
             for tool_call in tool_calls:
                 name = tool_call["function"]["name"]
-                blocked = trigger_hooks("PreToolUse", ChatCompletionMessageToolCall(**tool_call))
+                blocked = trigger_hooks("pre_tool_call", ChatCompletionMessageToolCall(**tool_call))
                 if blocked:
                     output = str(blocked)
                 else:

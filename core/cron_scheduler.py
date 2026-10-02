@@ -14,7 +14,7 @@ from datetime import datetime
 from core.config import CRON_TASK_FILE
 from core.log.log import get_logger
 
-_LOGER = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 
 SCHEDULED_JOBS: dict[str, "CronJob"] = {}
 CRON_QUEUE: list["CronJob"] = []
@@ -116,7 +116,7 @@ def validate_cron(cron_expression: str) -> str | None:
         return f"Invalid cron expression. Expect 5 fields, got {len(fields)}: {cron_expression}"
 
     bounds = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
-    names = ["minute", "hour", "day-of-,month", "month", "day-of-week"]
+    names = ["minute", "hour", "day-of-month", "month", "day-of-week"]
     for field, (low, high), name in zip(fields, bounds, names):
         err = _validate_cron_field(field, low, high)
         if err:
@@ -139,8 +139,8 @@ def load_durable_jobs():
             job = CronJob(**job_data)
             if not validate_cron(job.cron):
                 SCHEDULED_JOBS[job.id] = job
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.warning(f"[Cron] load durable jobs failed: {e}")
 
 
 def schedule_job(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> CronJob | str:
@@ -166,7 +166,7 @@ def schedule_job(cron_expression: str, prompt: str, recurring: bool = True, dura
 
 def cancel_job(job_id: str) -> str:
     with CRON_LOCK:
-        job = SCHEDULED_JOBS.pop(job_id)
+        job = SCHEDULED_JOBS.pop(job_id, None)
 
     if not job:
         return f"Job {job_id} not found"
@@ -193,7 +193,7 @@ def cron_scheduler_loop():
                             if job.durable:
                                 save_durable_jobs()
                 except Exception as e:
-                    _LOGER.warning(f"[Cron error] {job.id}: {e}")
+                    _LOGGER.warning(f"[Cron error] {job.id}: {e}")
 
 
 def consume_cron_queue() -> list[CronJob]:

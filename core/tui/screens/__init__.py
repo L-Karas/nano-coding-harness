@@ -16,6 +16,7 @@ from core.tui.screens.base import (
     _model_row_text,
     _rebuild_options,
 )
+from core.tui.screens.fork import ForkScreen
 from core.tui.screens.login import (
     LoginScreen,
     RegisterModelScreen,
@@ -30,7 +31,7 @@ from core.tui.screens.session import SessionPickerScreen
 from core.tui.screens.skills import SkillsScreen
 
 __all__ = [
-    "ApiKeyScreen", "EffortScreen", "LoginScreen", "MCPConfigScreen", "MCPServersScreen",
+    "ApiKeyScreen", "EffortScreen", "ForkScreen", "LoginScreen", "MCPConfigScreen", "MCPServersScreen",
     "MCPToolsScreen", "ModelPickerScreen", "ProviderScreen", "RegisterModelScreen",
     "RegisterProviderScreen", "SessionPickerScreen", "SkillsScreen", "UnregisterModelScreen",
     "UnregisterProviderScreen",

@@ -34,7 +34,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | `core/compact/context_compact.py` | 三层上下文压缩与 token 估算 |
 | `core/background_task.py` | 慢工具转后台执行，结果回流注入 |
 | `core/cron_scheduler.py` | 5 段式 cron 解析、队列、持久化 |
-| `core/permission/hook_permission.py` | `PreToolUse` / `PostToolUse` hook 与权限策略 |
+| `core/hook/hook.py` | `pre_tool_call` / `post_tool_call` hook 与权限策略 |
 | `core/recovery/error_recovery.py` | 按 provider 分类错误、指数退避重试、恢复状态 |
 | `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环） |
 | `core/skill/skills.py` | 扫描 `.harness/skills/` 下的 `SKILL.md` |
@@ -65,7 +65,6 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | `.harness/.mailboxes/*.jsonl` | 队友消息邮箱（追加写，读取即清空） |
 | `.harness/.task_outputs/tool_results/` | 超长工具输出落盘文件 |
 | `.harness/log/<module>.log` | 各模块日志 |
-| `.harness/.transcripts/` | 预留目录（当前代码未写入） |
 
 ## 模型配置
 
@@ -97,6 +96,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 | `Ctrl+C` | 不退出（有选中文本时复制）；退出用 `/exit` 或 `Ctrl+Q` |
 
 内置指令：`/new`（新会话）、`/sessions`（会话选择）、`/compact`（压缩当前上下文，可被 Esc 中断）、
+`/fork`（列出当前会话的用户消息，选中后从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改）、
 `/skills`（技能列表，选中即作为一轮对话发出）、`/mcp`（MCP server 名列表，Enter 查看该 server
 的工具列表，`Insert` 弹出 JSON 配置窗、`Ctrl+S` 落盘，`Delete` 删除 server）、
 `/provider`、`/model`、`/effort`、
@@ -154,6 +154,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
 | `glob` | `pattern` | 按 glob 模式查找文件（异步路径优先 ripgrep 并尊重 .gitignore，缺失时回退 Python glob） |
 | `grep` | `pattern`, `path`, `file_pattern` | 优先 ripgrep / grep，缺失时回退纯 Python 实现 |
+| `clarify` | `options`, `multi_select=false` | 停靠区选项列表询问用户（main / sub-agent）：单选或 Space 多选 + Enter 确认，末尾 Other 可键入自定义回答，Esc 取消 |
 
 文件类工具支持 `cwd` 注入，teammate 认领带 worktree 的任务后会切到对应目录执行。
 
@@ -199,12 +200,13 @@ MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main 
 
 ## 权限与 Hook
 
-`core/permission/hook_permission.py` 注册了三个 hook，`PreToolUse` 在工具分发前运行：
+`core/hook/hook.py` 注册了三个 hook，`pre_tool_call` 在工具分发前运行：
 
-- 硬拒绝：`rm -rf /`、`sudo`、`shutdown`、`reboot`、`mkfs`、`dd if=`；
-- 危险命令（`rm `、`> /etc/`、`chmod 777`）弹出确认卡，用户从停靠区 yes/no 列表作答，默认高亮「No」；
+- 硬拒绝（`DENY_LIST`）：清根删除、提权（`sudo`/`doas`）、关机重启、`mkfs`/`wipefs`、`dd` 与裸设备覆写、fork bomb、Windows `diskpart`/`format c:`，命中即拒；
+- 危险命令（`DESTRUCTIVE`）：删除类（`rm`/`del`/`shred`…）、系统目录重定向、递归 chmod/chown、强杀进程、`git reset --hard`/强推、`crontab -r`、`curl | sh` 等管道执行，弹出确认卡，用户从停靠区 yes/no 列表作答，默认高亮「No」；
+- 匹配大小写不敏感；词条首尾为字母或数字时要求单词边界（`sudo` 不命中 `sudoku`，`| sh` 不命中 `| shasum`）；
 - `read_file` / `write_file` / `edit_file` 的路径解析后落在工作目录之外时同样需要确认；
-- 另注册了 `log_hook`（调用日志）与 `PostToolUse` 的 `large_output_hook`（超长输出告警）。
+- 另注册了 `tool_call_log_hook`（调用日志）与 `post_tool_call` 的 `large_tool_output_hook`（超长输出告警）。
 
 ## 子代理 / 团队 / Worktree
 

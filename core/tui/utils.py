@@ -1,7 +1,4 @@
-"""
-TUI 实用工具（与终端渲染无关，从 ui_textual.py 拆出）
-供 Rich/prompt_toolkit、Textual 等各 UI 实现复用的环境信息与指令表。
-"""
+"""TUI 实用工具（与终端渲染无关）：环境信息（cwd / git 分支 / 当前模型）与 / 指令元数据。"""
 
 import os
 import subprocess
@@ -13,6 +10,7 @@ _SLASH_COMMAND_META: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("/new", (), "Start a fresh session"),
     ("/sessions", (), "Open the session picker"),
     ("/compact", (), "Compact the conversation history"),
+    ("/fork", (), "Fork session from a user message"),
     ("/skills", (), "List available skills"),
     ("/mcp", (), "List configured MCP servers"),
     ("/provider", (), "Configure API providers"),
@@ -31,8 +29,8 @@ SLASH_COMMAND_ALIASES = {cmd: aliases for cmd, aliases, _desc in _SLASH_COMMAND_
 def slash_command_rows() -> list[tuple[str, str]]:
     """/ 候选列表行显示文本（分两段返回）：(指令名列, 简短说明)。
     指令名（含别名括注）左对齐定宽（宽 = 最长指令名），说明经调用方接固定空距后
-    与指令名保持距离，且各行说明左端对齐于同一列；分段供各 UI 实现独立着色
-    （如 Textual 界面将说明段显示为较淡的颜色）"""
+    与指令名保持距离，且各行说明左端对齐于同一列；分两段返回便于候选行对说明段
+    单独着色（见 widgets._cmd_row）"""
     rows = [(cmd + (f" ({', '.join(a.lstrip('/') for a in aliases)})" if aliases else ""), desc)
             for cmd, aliases, desc in _SLASH_COMMAND_META]
     width = max(len(label) for label, _desc in rows)

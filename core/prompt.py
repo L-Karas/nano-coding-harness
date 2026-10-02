@@ -13,17 +13,17 @@ from core.template.prompt_template import SUB_AGENT_PROMPT_TEMPLATE
 _LOGGER = get_logger(__name__)
 
 
-def build_system_prompt(agent_type: Literal["main", "sub-agent", "teammate"] = "main", tools: list[dict] = []) -> str:
-    _LOGGER.debug(f"Building system prompt for {agent_type}, tools: {tools}")
+def build_system_prompt(agent_type: Literal["main", "sub-agent", "teammate"] = "main",
+                        tools: list[dict] | None = None) -> str:
+    tools = tools or []
+    _LOGGER.debug(f"Building system prompt for {agent_type}, {len(tools)} tools")
     tool_list = "\n".join(f"- `{tool['function']['name']}`: {tool['function']['description']}" for tool in tools)
     memory_list = "\n".join(f"- {memory.title}: {memory.content}" for memory in MEMORY_MANAGER.load_memories())
-    guidelines = [
+    guidelines = "\n".join(f"- {guide}" for guide in [
         "Be concise in your responses",
         "Show file paths clearly when working with files"
-    ]
+    ])
 
-    # todo: 对不同类型智能体使用不同的提示词
-    guidelines = "\n".join(f"- {guide}" for guide in guidelines)
     if agent_type == "main":
         return SYSTEM_PROMPT_TEMPLATE.format(
             tool_list=tool_list,

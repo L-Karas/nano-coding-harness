@@ -1,8 +1,5 @@
-"""主题与展示常量：标题文案 / 加载动画帧。
-
-从 ui_textual.py 拆出（widgets 不依赖本模块）。全局样式表拆至同目录 app.css
-（原 _APP_CSS，ChatApp 经 CSS_PATH 加载），卡片配色随样式表维护。
-"""
+"""主题与展示常量：默认标题 / 副标题、输入框占位文案、加载动画帧（Braille spinner）。
+全局样式表在同目录 app.css（ChatApp 经 CSS_PATH 加载）。"""
 
 from __future__ import annotations
 

@@ -3,9 +3,10 @@ Context Compaction
 
 # Compaction is layered: first shrink oversized tool results, then trim old
 # message ranges, and only call the model for a summary when the context is
-# still too large or the model explicitly asks for compact.
+# still too large or the user explicitly runs /compact.
 """
-from functools import wraps
+import inspect
+from functools import lru_cache, wraps
 from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
@@ -20,42 +21,47 @@ REMAIN_TOOL_RESULT_THRESHOLD = 2000
 _LOGGER = get_logger(__name__)
 
 
-def log_compact_info(func):
+@lru_cache(maxsize=1)
+def _encoder():
+    import tiktoken
+    return tiktoken.encoding_for_model("gpt-5")
+
+
+def log_compact_step(func):
+    """给压缩步骤加开始/结束日志（同步/异步函数通用）。"""
+    if inspect.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            _LOGGER.info(f"Running {func.__name__} ...")
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as e:
+                _LOGGER.exception(e)
+                raise
+            _LOGGER.info(f"Finished {func.__name__}.")
+            return result
+
+        return async_wrapper
+
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def sync_wrapper(*args, **kwargs):
         _LOGGER.info(f"Running {func.__name__} ...")
         try:
             result = func(*args, **kwargs)
         except Exception as e:
             _LOGGER.exception(e)
-            raise e
+            raise
         _LOGGER.info(f"Finished {func.__name__}.")
         return result
 
-    return wrapper
-
-
-def async_log_compact_info(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        _LOGGER.info(f"Running {func.__name__} ...")
-        try:
-            result = await func(*args, **kwargs)
-        except Exception as e:
-            _LOGGER.exception(e)
-            raise e
-        _LOGGER.info(f"Finished {func.__name__}.")
-        return result
-
-    return wrapper
+    return sync_wrapper
 
 
 def estimate_token(text: str) -> int:
     """
     Roughly count tokens
     """
-    import tiktoken
-    return len(tiktoken.encoding_for_model("gpt-5").encode(text))
+    return len(_encoder().encode(text))
 
 
 def estimate_size(messages: list[Union[dict, ChatCompletionMessage]]) -> int:
@@ -109,31 +115,28 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
     if len(output) <= PERSIST_THRESHOLD:
         return output
 
-    TOOL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     path = TOOL_RESULTS_DIR / f"{tool_use_id}.text"
     if not path.exists():
         path.write_text(output, encoding="utf-8")
 
-    return (f"<persisted-output>\nFull output saved in: {path}\n"
-            f"Preview content:\n{output[:3000]}\n</persisted-output>")
+    return (f"<persisted-output>\n"
+            f"<saved-path>Full output saved in: {path}</saved-path>\n"
+            f"<preview>Preview content:\n{output[:PERSIST_THRESHOLD]}</preview>\n"
+            f"</persisted-output>")
 
 
-# todo: tool result budge
 def tool_result_budget(messages: list, max_bytes: int = int(2e6)) -> list:
-    """
-
-    """
+    """尾部连续 tool 结果超预算时，从最大的开始落盘并替换为预览。"""
     if not messages:
         return messages
 
     tool_results = []
     for message in reversed(messages):
         if not isinstance(message, dict) or message.get("role") != "tool":
-            if not tool_results:
-                return messages
-            else:
-                break
+            break
         tool_results.append(message)
+    if not tool_results:
+        return messages
 
     total = sum(len(message.get("content")) for message in tool_results)
     if total <= max_bytes:
@@ -153,7 +156,7 @@ def tool_result_budget(messages: list, max_bytes: int = int(2e6)) -> list:
     return messages
 
 
-@log_compact_info
+@log_compact_step
 def micro_compact(messages: list) -> list:
     """
     Compact earlier tool call result messages.
@@ -171,36 +174,29 @@ def micro_compact(messages: list) -> list:
 
 
 def find_index_to_split(messages: list) -> int:
-    # 1. 按 turn 粗划分，每个 turn 由 user 信息划分
-    # 2. 在满足 total_tokens <= RESERVE_TOKENS 的前提下，从后到前尽可能的保留多个 turn
-    # 3. 若在单个 turn 的 total_tokens > RESERVE_TOKENS，则按一下规则划分：
-    #    - 按 assistant 信息划分，在满足 total_tokens <= RESERVE_TOKENS 前提下，尽可能多的保留 assistant - tool 信息组
-    #    - assistant - tool 信息组：tool_calls 信息和相应的 tool 信息
-
-    # turn_index_tokens 元素由 (index, tokens) 组成，其中 tokens 指 messages[index:] 的 token 总数
-    # user_message_index 从小到大保存 user 信息索引
+    # 1. 优先按 turn（user 消息分界）切：从最早的 user 开始，保留部分不超过 RESERVE_TOKENS
+    # 2. 单个 turn 就超预算时，退化为按 assistant 消息切：尽量多地保留 assistant - tool 组
+    #    （tool_calls 与其对应的 tool 结果不得被拆开）
     n = len(messages)
-    user_message_index = []
-    turn_index_tokens = [[i, 0] for i in range(len(messages))]
-    for index, message in enumerate(messages):
-        end = n - index - 1
-        if message["role"] == "user":
-            user_message_index.append(index)
-        if end == n - 1:
-            turn_index_tokens[end][1] = estimate_size(messages[end:])
-        else:
-            turn_index_tokens[end][1] = estimate_size(messages[end:end + 1]) + turn_index_tokens[end + 1][1]
+    # suffix_tokens[i] = messages[i:] 的 token 总数；user_index 按出现顺序记录 user 消息下标
+    suffix_tokens = [0] * n
+    user_index = []
+    total = 0
+    for i in range(n - 1, -1, -1):
+        total += estimate_size(messages[i:i + 1])
+        suffix_tokens[i] = total
+        if messages[i]["role"] == "user":
+            user_index.append(i)
+    user_index.reverse()
 
-    # 从前往后查找满足要求的 turn
-    for index in user_message_index:
-        if turn_index_tokens[index][1] <= RESERVE_TOKENS:
+    for index in user_index:
+        if suffix_tokens[index] <= RESERVE_TOKENS:
             return index
 
-    # 任意单个 turn 均大于 RESERVE_TOKENS，查找满足要求的 assistant - tool 信息组的 assistant 信息索引
-    # 从最后一个 turn 开始查找；若无 user 信息，则从第一个信息查找
-    end = user_message_index[-1] if user_message_index else 0
+    # 任意单个 turn 均大于 RESERVE_TOKENS：从最后一个 turn 开始找可切分的 assistant 下标
+    end = user_index[-1] if user_index else 0
     while end < n:
-        if turn_index_tokens[end][1] <= RESERVE_TOKENS and messages[end]["role"] == "assistant":
+        if suffix_tokens[end] <= RESERVE_TOKENS and messages[end]["role"] == "assistant":
             return end
         end += 1
 
@@ -208,19 +204,18 @@ def find_index_to_split(messages: list) -> int:
     return n
 
 
-@async_log_compact_info
+@log_compact_step
 async def summarize_history(messages: list, ctx=None) -> str:
     """
     Summarize history messages
     """
-    # todo: 当前上下文压缩会覆盖原会话历史，为压缩后的信息保存额外副本？
     summary_text = ""
-    messages.append({
+    request_messages = messages + [{
         "role": "user",
         "content": SUMMARY_PROMPT_TEMPLATE,
-    })
+    }]
     stream = await shared_model_client().get_model_client(async_client=True)(
-        messages=messages,
+        messages=request_messages,
         max_tokens=SUMMARIZE_MAX_TOKENS,
         stream=True
     )
@@ -239,7 +234,7 @@ async def summarize_history(messages: list, ctx=None) -> str:
     return summary_text
 
 
-@async_log_compact_info
+@log_compact_step
 async def compact_history(messages: list, ctx=None, auto_compact: bool = True) -> list:
     """
     Summarize history messages

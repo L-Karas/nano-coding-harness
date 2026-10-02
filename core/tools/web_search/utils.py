@@ -20,6 +20,12 @@ PROVIDER_STATE: WebSearchProviderState = WebSearchProviderState(
 PROVIDER_LIST = ["firecrawl", "tavily", "exa", "brave_search", "ddgs"]
 NO_CONTENT = "(No content)"
 
+_RESULT_FORMAT = "**TITLE**: {title}\n**URL**: {url}\n**DESCRIPTION**: {description}"
+_NO_VALUE = "(none)"
+# provider -> 结果里承载 url 的字段；ddgs 用 href，其余用 url
+_URL_FIELD = {"firecrawl": "url", "tavily": "url", "exa": "url", "ddgs": "href"}
+_DESC_FIELD = {"firecrawl": "description", "tavily": "content", "ddgs": "body"}
+
 
 def format_search_result(
         search_results: list[dict],
@@ -27,60 +33,27 @@ def format_search_result(
 ) -> str:
     if not search_results:
         return "(no search result)"
+    if provider == "brave_search":  # 未实现：保持旧行为返回空串
+        return ""
 
     results = []
-    result_format = "**TITLE**: {title}\n**URL**: {url}\n**DESCRIPTION**: {description}"
-    default_value = "(none)"
-    if provider == "firecrawl":
-        for result in search_results:
-            results.append(
-                result_format.format(
-                    title=result.get("title", default_value),
-                    url=result.get("url", default_value),
-                    description=result.get("description", default_value)
-                )
-            )
-    elif provider == "tavily":
-        for result in search_results:
-            results.append(
-                result_format.format(
-                    title=result.get("title", default_value),
-                    url=result.get("url", default_value),
-                    description=result.get("content", default_value)
-                )
-            )
-    elif provider == "exa":
-        for result in search_results:
-            results.append(
-                result_format.format(
-                    title=result.get("title", default_value),
-                    url=result.get("url", default_value),
-                    description="\n".join(result.get("highlights", [default_value]))
-                ) + f"\n**PUBLISHED DATE**: {result.get('publishedDate', default_value)}"
-            )
-    # todo: brave search
-    elif provider == "brave_search":
-        pass
-    else:
-        for result in search_results:
-            results.append(
-                result_format.format(
-                    title=result.get("title", default_value),
-                    url=result.get("href", default_value),
-                    description=result.get("body", default_value)
-                )
-            )
+    for result in search_results:
+        if provider == "exa":
+            description = "\n".join(result.get("highlights", [_NO_VALUE]))
+        else:
+            description = result.get(_DESC_FIELD[provider], _NO_VALUE)
+        formatted = _RESULT_FORMAT.format(
+            title=result.get("title", _NO_VALUE),
+            url=result.get(_URL_FIELD[provider], _NO_VALUE),
+            description=description,
+        )
+        if provider == "exa":
+            formatted += f"\n**PUBLISHED DATE**: {result.get('publishedDate', _NO_VALUE)}"
+        results.append(formatted)
 
     return "\n---\n".join(results)
 
 
 def update_provider_state(provider: Literal["firecrawl", "tavily", "exa", "brave_search"],
                           enable: bool) -> None:
-    if provider == "firecrawl":
-        PROVIDER_STATE.firecrawl_enabled = enable
-    elif provider == "tavily":
-        PROVIDER_STATE.tavily_enabled = enable
-    elif provider == "exa":
-        PROVIDER_STATE.exa_enabled = enable
-    elif provider == "brave_search":
-        PROVIDER_STATE.brave_search_enabled = enable
+    setattr(PROVIDER_STATE, f"{provider}_enabled", enable)

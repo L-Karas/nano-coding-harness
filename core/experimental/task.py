@@ -4,10 +4,8 @@ Task System
 import json
 import random
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-
-from pydantic.dataclasses import dataclass
 
 from core.config import TASK_DIR
 from core.log import get_logger

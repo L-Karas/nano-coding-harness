@@ -1,7 +1,7 @@
 """输入框与补全：_CommandInput（/ 指令与 @ 文件两组候选）+ 候选匹配纯函数。
 
-弹窗部件已按功能拆到 core/tui/screens/；本模块仍转出会话弹窗与原地确认，
-兼容既有导入路径（tests、外部调用）。
+弹窗部件已按功能拆到 core/tui/screens/；本模块仍转出 SessionPickerScreen 与
+_InlineConfirm，兼容既有导入路径（tests 等）。
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 from rich.text import Text
 from textual import events
+from textual.binding import Binding
+from textual.message import Message
 from textual.widgets import Input, OptionList, TextArea
 from textual.widgets.option_list import Option
 
@@ -106,10 +108,20 @@ class _CommandInput(TextArea):
       （不发送）；带目录前缀时同级逐级下钻、目录显示为 name/，匹配到文件夹内内容时展示完整路径；
     - 普通消息 Enter 提交、Shift+Enter / Ctrl+J 换行。
 
+    ctrl+←/→ 覆盖 TextArea 的词移光标（见 BINDINGS），转发给 App 调右栏宽度
+    （ChatApp.action_narrow/widen_info_panel）；其余编辑键交回 TextArea。
+
     两组候选同刻至多一组非空，互斥显示。按键全部在 _on_key 拦截：TextArea 的 _on_key
     会消费 Enter（插换行）/Tab（缩进）/Esc，普通 BINDINGS 要等键未被消费、冒泡到 App
     才检查，永远轮不到。
     """
+
+    # 覆盖 TextArea 的 ctrl+←/→（cursor_word_left/right）：焦点恒在本输入条，
+    # 改用于调右栏宽度；弹窗里的普通 TextArea/Input 不受影响（同键仅本部件覆盖）
+    BINDINGS = [
+        ("ctrl+left", "app.widen_info_panel", "Widen info panel"),
+        ("ctrl+right", "app.narrow_info_panel", "Narrow info panel"),
+    ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -247,3 +259,20 @@ class _CommandInput(TextArea):
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         event.stop()
         self._refresh_suggestions()
+
+
+# ---------- clarify 选项列表（clarify 工具：单选 / 空格多选 + Enter 确认，见 ui_textual） ----------
+
+
+class ClarifyConfirmed(Message):
+    """clarify 列表 Enter 确认（多选 = 提交已勾选；单选 = 选中高亮项）。"""
+
+
+class _ClarifyList(OptionList):
+    """clarify 选项列表：Enter 发 ClarifyConfirmed（同键覆盖 OptionList 继承的 Enter=select）；
+    Space 的勾选切换由 ChatApp 的 space 绑定处理（本部件不绑定，按键冒泡到 App 的动作）。"""
+
+    BINDINGS = [Binding("enter", "confirm", "Confirm", show=False)]
+
+    def action_confirm(self) -> None:
+        self.post_message(ClarifyConfirmed())

@@ -2,7 +2,8 @@
 Background tasks
 
 # Slow tools return a placeholder tool_result immediately. Their real output is
-# later injected as a task_notification, so the main loop can keep moving.
+# later injected as a <background-task-notification> message, so the main loop can
+# keep moving.
 """
 import asyncio
 import inspect

@@ -26,7 +26,9 @@ Toast, Toast:ansi { background: #1e293b; }
    右栏折叠开关（»/«）固定在右栏左缘，随分栏线移动 */
 #left { width: 4fr; border-right: solid #475569; }
 
-/* 右栏折叠态：收成左缘标签一列，聊天区吃满其余宽度 */
+/* 右栏折叠态：收成左缘标签一列，聊天区吃满其余宽度。
+   Ctrl+←/→（ui_textual._resize_info_panel）调整后的内联百分比宽度优先于本规则，
+   折叠/展开由 on_click 同步设宽（1 ↔ 原百分比） */
 #right.-collapsed { width: 1; }
 #right.-collapsed > #info-panel { display: none; }
 /* 右栏左缘常驻 »/« 标签：点击折叠/展开右栏（height:1fr 占满整列，字形垂直居中） */
@@ -65,12 +67,20 @@ Toast, Toast:ansi { background: #1e293b; }
 /* 条目行（_InfoPanel._sync_rows 按数据源重建）：一行一个 Static，点整行在 ▸ 摘要 ↔ ▾ 全文间切换 */
 .info-row.-expandable { pointer: pointer; }
 
+/* 组合键提示（_InfoPanel.compose 末行）：钉在右栏最底部一行；随 #info-panel 折叠一起隐藏 */
+#info-hint {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+    color: #64748b;
+}
+
 /* ── 滚动条：所有滚动区共用 ──
    宽度收窄为 1 列（Textual 默认 2 列），轨道透明，滑块色同卡片描边，hover / 拖动高亮 */
 #todos-list, #bg-list, #subagents-list,
 #chat,
-#cmd-suggest, #file-suggest, #perm-list,
-#sess-list, #provider-list, #model-list, #skills-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list {
+#cmd-suggest, #file-suggest, #perm-list, #clarify-list,
+#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list {
     scrollbar-size-vertical: 1;
     scrollbar-background: transparent;
     scrollbar-background-hover: transparent;
@@ -142,15 +152,28 @@ Toast, Toast:ansi { background: #1e293b; }
     background-tint: transparent;   /* OptionList 聚焦默认叠 5% 前景色 */
 }
 
+/* clarify 选项列表（含末尾 Other）：青色描边，默认隐藏，工具请求时显示并聚焦；
+   多选勾选标记 ◉/◯ 由 ui_textual 换行实现，行数 = 选项数 + Other */
+#clarify-list {
+    display: none;
+    margin: 0 2;
+    background: transparent;
+    border: round #38bdf8;
+    background-tint: transparent;
+    max-height: 10;
+}
+
 /* 高亮行统一暗底亮字：Textual 默认聚焦选中是亮青 block-cursor，太刺眼。
    这里不加 :focus 限定（id 选择器特异性本就高于 OptionList:focus 的默认规则） */
 #cmd-suggest > .option-list--option-highlighted,
 #file-suggest > .option-list--option-highlighted,
 #perm-list > .option-list--option-highlighted,
+#clarify-list > .option-list--option-highlighted,
 #sess-list > .option-list--option-highlighted,
 #provider-list > .option-list--option-highlighted,
 #model-list > .option-list--option-highlighted,
 #skills-list > .option-list--option-highlighted,
+#fork-list > .option-list--option-highlighted,
 #mcp-list > .option-list--option-highlighted,
 #mcp-tools-list > .option-list--option-highlighted,
 #login-list > .option-list--option-highlighted,
@@ -188,12 +211,13 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* Markdown 块可见性：
    代码块 —— ansi_color=True 下自带 `MarkdownFence:ansi { background: transparent }`，与终端底色
-   融成一片；app.css 优先级高于部件 DEFAULT_CSS，覆写背景即可（内层 Label 默认 padding
-   1 0/1 2，改由外层 padding 统一提供）。
+   融成一片；app.css 优先级高于部件 DEFAULT_CSS，覆写背景即可（内层 Label 默认
+   padding 1 0/1 2，改由外层 padding 统一提供）。
    表格 —— 默认 keyline 是 thin $foreground 20%，深色终端近乎不可见，改 heavy。
    标题 —— 默认 margin 2/1（H3~H6 为 1），Textual 的 margin 不折叠，前后各叠一行显得空；
-   压成「上间距靠前一块的 margin-bottom 1 行、下间距 1 行」。颜色沿用主题自带值，全粗体；
-   ansi 主题自带的 H2/H6 underline（非 ansi 是 H2/H4）一并去掉。 */
+   压成「上间距靠前一块的 margin-bottom 1 行、下间距 1 行」。颜色统一亮橙（覆盖主题
+   自带的 magenta/blue/cyan），全粗体；ansi 主题自带的 H2/H6 underline（非 ansi 是 H2/H4）
+   一并去掉。 */
 .card.assistant MarkdownFence {
     background: #1e293b;
     padding: 1 1;
@@ -206,7 +230,7 @@ Toast, Toast:ansi { background: #1e293b; }
 }
 .card.assistant MarkdownTableContent > .header { color: #c084fc; text-style: bold; }
 
-.card.assistant MarkdownHeader { text-style: bold; margin: 0 0 1 0; }
+.card.assistant MarkdownHeader { color: #fb923c; text-style: bold; margin: 0 0 1 0; }
 
 /* Markdown 细节配色：行内代码换成石板底/浅蓝字（ansi 默认是黄底），引用与 assistant
    卡片同系，列表符号用强调紫，链接亮青（可点感），分隔线压暗不抢眼 */
@@ -220,9 +244,9 @@ Toast, Toast:ansi { background: #1e293b; }
 .card.assistant MarkdownHorizontalRule { border-bottom: solid #334155; }
 
 /* 每类卡片：底色与左边色条二选一（user 只有底色、assistant 只有色条，
-   其余兼有），颜色对齐原 ui 配色 */
+   其余兼有）；assistant 色条 #babbf1，其余对齐原 ui 配色 */
 .card.user      { background: #374151; }
-.card.assistant { border-left: heavy #c084fc; }
+.card.assistant { border-left: heavy #babbf1; }
 .card.tool      { background: #4c3e1a; border-left: heavy #f59e0b; }
 .card.result,
 .card.diff      { background: #283228; border-left: heavy #10b981; }
@@ -233,7 +257,7 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* ── 弹窗（/sessions /skills /provider /model /effort / API Key）──
    遮罩保持全透明：底层主界面是 ansi_default / transparent（无 RGB 值），半透明合成会
-   把它当纯黑参与混合、窗外整片发黑。弹窗本体靠居中 + 圆角亮蓝描边与主界面区分 */
+   把它当纯黑参与混合、窗外整片发黑。弹窗本体靠居中 + 圆角描边与主界面区分 */
 ModalScreen {
     background: transparent;
     align: center middle;   /* 弹窗框直接 yield，居中由屏自身承担 */
@@ -243,9 +267,9 @@ ModalScreen {
     height: 60%;
     padding: 1 2;
     background: ansi_default;   /* 不透明，遮住底下的聊天内容 */
-    border: round #38bdf8;
+    border: round #7287fd;
     border-title-align: left;   /* 标题嵌在上边框左端：╭─ title ────╮ */
-    border-title-color: #38bdf8;
+    border-title-color: #c6d0f5;
 }
 /* ── /mcp server 列表：内容少，高度随内容收缩（同 /login 弹窗思路），上限定 60% ── */
 #mcp-picker { width: 56; height: auto; max-height: 60%; }
@@ -253,7 +277,7 @@ ModalScreen {
 .picker-hint  { color: #64748b; padding-top: 1; }
 
 /* 弹窗内列表：去掉 OptionList 默认边框与底色，撑满弹窗剩余高度 */
-#sess-list, #provider-list, #model-list, #skills-list, #mcp-list, #mcp-tools-list {
+#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list {
     border: none;
     background: transparent;
     height: 1fr;

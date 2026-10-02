@@ -96,26 +96,3 @@ MEMORY_MANAGER = MemoryManager()
 
 def run_save_memory(title: str, content: str, mem_type: Literal["user", "feedback", "project", "reference"]):
     return MEMORY_MANAGER.create_memory(title, content, mem_type)
-
-
-if __name__ == '__main__':
-    manager = MemoryManager()
-    _, mid = manager.create_memory(
-        title="always_respond_in_chinese",
-        content="无论用户使用何种语言输入（中文、英文或其他语言），所有回答都必须使用中文。这是强制性的语言偏好设置。",
-        mem_type="user"
-    )
-    manager.create_memory(
-        title="module_docstring_style",
-        content="为模块添加文档注释时，仅使用模块级 docstring（放在文件开头的三重引号字符串），不需要为每个变量添加行内注释。",
-        mem_type="user"
-    )
-    # self-check: create -> load -> delete round trip
-    assert len(manager.load_memories()) >= 2, "seeded memories must load back"
-    assert manager.load_memory(mid).title == "always_respond_in_chinese"
-    assert manager.delete_memory(mid)
-    assert not manager.delete_memory(mid)
-
-    memories = manager.load_memories()
-
-    print("memory self-check OK")

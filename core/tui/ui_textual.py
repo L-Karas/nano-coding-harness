@@ -9,6 +9,7 @@ smoke/ 冒烟自检（`python -m core.tui.ui_textual --smoke`）。
     App 事件循环跑主线程；每个用户回合在独立后台线程里调用 handle_query。
     渲染函数（core.tui.render）可从任意线程调用（App 线程内直接执行，其它线程经 call_from_thread 桥接）。
     ask_permission 只能在非 App 线程调用（阻塞等待用户从停靠区 yes/no 列表作答）。
+    ask_clarify 同理，阻塞等待用户从停靠区选项列表（含 Other 输入）作答。
     Esc：权限确认挂起时先拒绝；否则中断进行中的回合/压缩（on_interrupt，默认 AgentRuntime.interrupt）。
 
 接入自有 Agent：
@@ -33,6 +34,7 @@ from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Input, Markdown, OptionList, Static
+from textual.widgets.option_list import Option
 from textual.widgets.markdown import MarkdownStream
 
 import core.tui.render as _render  # run() 期间把 ChatApp 实例挂到渲染桥接的 _APP 全局（见 run()）
@@ -50,6 +52,7 @@ from core.tui.render import (
 )
 from core.tui.screens import (
     EffortScreen,
+    ForkScreen,
     LoginScreen,
     MCPServersScreen,
     ModelPickerScreen,
@@ -64,7 +67,7 @@ from core.tui.theme import (
     _SPINNER_FRAMES,
 )
 from core.tui.utils import current_git_branch, current_model_state, working_directory
-from core.tui.widgets import _CommandInput
+from core.tui.widgets import ClarifyConfirmed, _ClarifyList, _CommandInput
 
 
 class _ChatScreen(Screen):
@@ -72,12 +75,13 @@ class _ChatScreen(Screen):
 
     焦点变更都汇经 Screen.set_focus（Tab 切焦、点击可聚焦部件、弹窗关闭后的焦点还原），
     在此统一改道：目标不是 #prompt 时交回输入栏——输入信息无需先点输入框。
-    例外：权限确认期间 #perm-list 持焦作答、输入栏禁用（回合执行中）时目标按原样落下
+    例外：权限确认 / clarify 期间对应列表或输入条持焦作答、输入栏禁用（回合执行中）时目标按原样落下
     （回合结束 _set_idle 收回焦点）。
     """
 
     def set_focus(self, widget, scroll_visible=True, from_app_focus=False) -> None:
-        if widget is not None and self.app.screen is self and not self.app._perm_pending:
+        if widget is not None and self.app.screen is self and not self.app._perm_pending \
+                and not self.app._clarify_pending:
             try:
                 prompt = self.query_one("#prompt")
             except NoMatches:  # 挂载早期 / 卸载期无输入栏：按原样落下
@@ -106,12 +110,14 @@ class ChatApp(App):
     # ctrl+c 覆盖 Textual App 默认的 help_quit（系统绑定）：Ctrl+C 不再提示/退出（退出请用
     # /exit 或 ctrl+q）。有选中文本时复制由更内层绑定完成（输入框自身的 ctrl+c -> copy，
     # 或屏层 screen.copy_text 复制鼠标选中文本），两者都无选中才会落到本动作的空操作分支。
-    BINDINGS = [("escape", "deny_permission", "Deny/Interrupt"),  # 权限确认优先，其次中断进行中的回合
+    BINDINGS = [("escape", "deny_permission", "Deny/Interrupt"),  # 权限/clarify 确认优先，其次中断进行中的回合
+                ("space", "toggle_clarify", "Toggle clarify selection"),  # 多选勾选（仅 clarify 列表聚焦时生效）
                 ("ctrl+c", "copy_or_ignore", "Ignore")]
 
-    # / 弹窗指令 → 打开方法名（别名同表）；这类指令在忙碌时也可用
+    # / 弹窗指令 → 打开方法名（别名同表）；多数指令忙碌时也可用（/fork 会换会话，例外）
     _OPENERS = {
         "/sessions": "_open_sessions",
+        "/fork": "_open_fork",
         "/skills": "_open_skills",
         "/mcp": "_open_mcp",
         "/provider": "_open_providers",
@@ -152,6 +158,13 @@ class ChatApp(App):
         self._status_interval: Any = None  # 动画 interval 句柄（首次出现动画状态时惰性启动）
         self._perm_pending = False
         self._perm_future: Optional[Future[str]] = None
+        self._clarify_pending = False
+        self._clarify_future: Optional[Future[str]] = None
+        self._clarify_multi = False
+        self._clarify_chosen: set[int] = set()  # 多选：已勾选选项的下标
+        self._clarify_options: list[str] = []  # 原始选项文本（下标与列表前 N 行一一对应）
+        self._clarify_other = False  # Other 输入模式（焦点在 #prompt）
+        self._panel_pct: Optional[int] = None  # 右栏宽度百分比（Ctrl+←/→ 调整）；None = 未调整（默认 1fr）
 
     # ---------- 基础部件 ----------
 
@@ -196,18 +209,43 @@ class ChatApp(App):
         right = self.query_one("#right", Vertical)
         collapsed = not right.has_class("-collapsed")
         right.set_class(collapsed, "-collapsed")
+        if self._panel_pct is not None:  # 调整过宽度：内联宽度优先于 CSS 折叠规则，折叠/展开须同步设宽
+            right.styles.width = 1 if collapsed else f"{self._panel_pct}%"
+        self.call_after_refresh(self._refresh_footer)  # 左栏宽度随右栏变化，页脚右对齐重算
         target.update("«" if collapsed else "»")  # 图标随状态换向：指向点击后右栏的移动方向
         target.tooltip = "Expand info panel" if collapsed else "Collapse info panel"
 
+    # ---------- 右栏调宽（Ctrl+←/→，绑定见 _CommandInput.BINDINGS） ----------
+
+    def action_narrow_info_panel(self) -> None:
+        """Ctrl+→：右栏收窄一档（默认 20%，每档 10%，夹在 20%–40%）"""
+        self._resize_info_panel(-10)
+
+    def action_widen_info_panel(self) -> None:
+        """Ctrl+←：右栏加宽一档（默认 20%，每档 10%，夹在 20%–40%）"""
+        self._resize_info_panel(10)
+
+    def _resize_info_panel(self, delta: int) -> None:
+        """按档位设右栏宽度（百分比随终端宽度缩放）；折叠态忽略（先点 »/« 展开）。"""
+        right = self.query_one("#right", Vertical)
+        if right.has_class("-collapsed"):
+            return
+        self._panel_pct = max(20, min(40, (self._panel_pct or 20) + delta))
+        right.styles.width = f"{self._panel_pct}%"
+        self.call_after_refresh(self._refresh_footer)
+
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """停靠区三个 OptionList 的选中（冒泡统一收口）：权限列表直接作答（yes/no 选项 id）；
-        / 指令把选中项 id（= 指令串）填进输入；@ 文件把选中路径补全进输入（均不发送）。
-        弹窗（/sessions /provider /model /skills）各自的 OptionList 在弹窗内已 stop，
-        冒泡至此的按 id 过滤，只认停靠区三个列表。"""
+        """停靠区列表的选中（冒泡统一收口）：权限列表直接作答（yes/no 选项 id）、clarify 列表
+        走 _select_clarify；/ 指令把选中项 id（= 指令串）填进输入；@ 文件把选中路径补全进输入
+        （均不发送）。弹窗内各自的 OptionList 已在弹窗内 stop，冒泡至此的按 id 过滤。"""
         oid = event.option_list.id
         if oid == "perm-list":  # 选项 id 固定 yes/no（见 panels._ChatDock.compose）
             event.stop()
             self._answer_permission(event.option_id or "no")
+            return
+        if oid == "clarify-list":  # 点击：单选直接作答、多选切换勾选、Other 走输入模式（见 _select_clarify）
+            event.stop()
+            self._select_clarify(event.option_index)
             return
         prompt = self._prompt()
         if oid == "cmd-suggest":
@@ -233,7 +271,8 @@ class ChatApp(App):
     # ---------- 页脚（cwd / git 分支 / 当前模型） ----------
 
     def _current_model_label(self) -> str:
-        """当前模型信息串 '(provider) model * level'；未配置 / 无 level 时省略后缀（页脚只显 cwd）。"""
+        """当前模型信息串 '(provider) model * level'；未配置返回空串（页脚只显 cwd），
+        无 level 时省略 ' * level' 后缀。"""
         provider, model, level = current_model_state()
         if not provider or not model:
             return ""
@@ -341,6 +380,14 @@ class ChatApp(App):
     # ---------- 用户输入回合 ----------
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self._clarify_pending and self._clarify_other:  # clarify 的 Other 输入：不当作新回合
+            self._prompt().text = ""
+            text = event.value.strip()
+            if text:
+                self._answer_clarify(self._clarify_answer(text) if self._clarify_multi else text)
+            else:
+                self._leave_clarify_other()  # 空提交：回到选项列表继续选择
+            return
         query = event.value.strip()
         self._prompt().text = ""
         if not query:
@@ -407,10 +454,15 @@ class ChatApp(App):
         return thread
 
     def _set_idle(self) -> None:
-        """回合 / 压缩结束：复位忙碌态、收起权限列表、恢复输入条并收回焦点"""
+        """回合 / 压缩结束：复位忙碌态、收起权限/clarify 列表、恢复输入条并收回焦点"""
         self._busy = False
         self._perm_pending = False
+        self._perm_future = None
+        self._clarify_pending = False
+        self._clarify_other = False
+        self._clarify_future = None
         self.query_one("#perm-list", OptionList).styles.display = "none"  # 兜底收起（回答流程内已隐藏）
+        self.query_one("#clarify-list", _ClarifyList).styles.display = "none"  # 同上
         self._set_status_text("")
         prompt = self._prompt()
         prompt.placeholder = _PLACEHOLDER
@@ -468,6 +520,41 @@ class ChatApp(App):
             return
         self.push_screen(SessionPickerScreen(self._manager, on_delete_current=self._clear_cards),
                          callback=self._on_session_picked)
+
+    def _open_fork(self) -> None:
+        """/fork：当前会话全部用户消息（load_user_messages）在 ForkScreen 弹窗展示；选中消息 →
+        fork_session 从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改。"""
+        if self._manager is None:
+            render_background_notification("SessionManager not connected — /fork unavailable", title="⚠️ Fork")
+            return
+        if self._busy:  # 分叉会换当前会话，进行中的回合必须拒绝（其它 / 弹窗指令忙碌可用，此例不同）
+            self._reject_busy()
+            return
+        messages = self._manager.load_user_messages()
+        if not messages:
+            render_background_notification("No user messages to fork from", title="⚠️ Fork")
+            return
+        self.push_screen(ForkScreen(messages),
+                         callback=lambda message_id: self._on_fork_picked(message_id, messages))
+
+    def _on_fork_picked(self, message_id: Optional[str], messages: list[Any]) -> None:
+        """ForkScreen 关闭回调：选中消息 id → 分叉（新会话不含该消息）并重放新会话历史，
+        原文填入输入条；None = Esc 取消不动，分叉失败（id 已不在当前会话）只提示。"""
+        if not message_id or self._manager is None:
+            return
+        forked = self._manager.fork_session(message_id)
+        if forked is None:
+            render_background_notification("Fork failed: message not found", title="⚠️ Fork")
+            return
+        if forked.messages:
+            self._reload_history()
+        else:
+            self._clear_cards()  # 分叉到起点：新会话尚无历史，清板不回放
+        content = next((m.content for m in messages if m.id == message_id), "")
+        prompt = self._prompt()
+        prompt.text = content
+        prompt.cursor_location = prompt.document.end  # text setter 会把光标归位到开头，置于末尾
+        prompt.focus()
 
     def _open_skills(self) -> None:
         """/skills：取 core.skill 扫描到的技能（名 → {name, description, content}）在
@@ -577,20 +664,142 @@ class ChatApp(App):
         回合继续，输入条由 _set_idle 在回合结束时统一恢复。"""
         if not self._perm_pending:
             return
-        self._perm_future.set_result(value)
+        future, self._perm_future = self._perm_future, None
         self._perm_pending = False
         self.query_one("#perm-list", OptionList).styles.display = "none"
         self._set_status_text("Working…", spin=True)
+        if future is not None:
+            future.set_result(value)
 
     def action_deny_permission(self) -> None:
-        """Esc 键位：权限确认优先（挂起请求 → 拒绝）；无挂起请求且回合进行中 → 中断 agent 并 notify；
-        空闲时空操作。中断后回合由 _turn_worker 收尾并复位忙碌态。"""
+        """Esc 键位：权限确认优先（挂起请求 → 拒绝），其次 clarify（挂起请求 → 取消）；
+        无挂起请求且回合进行中 → 中断 agent 并 notify；空闲时空操作。中断后回合由
+        _turn_worker 收尾并复位忙碌态。"""
         if self._perm_pending:
             self._answer_permission("no")
+        elif self._clarify_pending:
+            self._answer_clarify("[User cancelled]")
         elif self._busy and self._interrupt:
             self._set_status_text("Interrupting…", spin=True)
             self._interrupt()
             self.notify("User interrupted")
+
+    # ---------- clarify 询问（clarify 工具：停靠区选项列表 + 末尾 Other 输入；与权限确认
+    # 同为阻塞式后台线程等待；ponytail: 同一时刻仅一个澄清请求（agent 工具串行），并发需改请求队列） ----------
+
+    def _begin_clarify(self, questions: list[str], multi_select: bool, future: Future[str]) -> None:
+        """澄清询问：停靠区弹出选项列表（末尾 Other 用于自由输入）并聚焦；
+        单选 Enter/点击直接作答，多选 Space 勾选、Enter 提交；future 由发起线程等待。"""
+        self._clarify_future = future
+        self._clarify_pending = True
+        self._clarify_multi = multi_select
+        self._clarify_chosen = set()
+        self._clarify_options = list(questions)
+        self._clarify_other = False
+        ol = self.query_one("#clarify-list", _ClarifyList)
+        ol.set_options(self._clarify_rows())
+        ol.styles.display = "block"  # 先显示再落高亮（watch_highlighted 会滚动，隐藏态无内容区）
+        ol.highlighted = 0
+        ol.focus()
+        self._prompt().disabled = True  # 仅 Other 输入模式启用输入条，此处兜底（回合内本就禁用）
+        self._set_status_text(self._clarify_hint(), spin=True)
+
+    def _clarify_rows(self):
+        """选项行：多选加 ◉/◯ 勾选标记；末尾 Other（id=other，其余 id=数字下标）。
+        prompt 用 Text：问题文本来自模型，不得按 markup 解析（OptionList 默认 markup=True）"""
+        for index, text in enumerate(self._clarify_options):
+            label = (f"{'◉' if index in self._clarify_chosen else '◯'} {text}"
+                     if self._clarify_multi else text)
+            yield Option(Text(label), id=str(index))
+        yield Option(Text("Other (type your own answer)", style="dim"), id="other")
+
+    def _clarify_hint(self) -> str:
+        return ("Clarify: ↑/↓ move, Space toggle, Enter confirm, Esc cancel." if self._clarify_multi
+                else "Clarify: ↑/↓ move, Enter select, Esc cancel.")
+
+    def _select_clarify(self, index: int) -> None:
+        """列表第 index 项被选中（点击 / Enter 单选 / Space 多选统一入口）：
+        末行 Other → 输入模式，多选 → 切换勾选，单选 → 直接作答。"""
+        if not self._clarify_pending or self._clarify_other:
+            return
+        if index >= len(self._clarify_options):  # 末行固定为 Other（见 _clarify_rows）
+            self._enter_clarify_other()
+        elif self._clarify_multi:
+            self._toggle_clarify(index)
+        else:
+            self._answer_clarify(self._clarify_options[index])
+
+    def _toggle_clarify(self, index: int) -> None:
+        """多选：切换第 index 项勾选并刷新行首 ◉/◯"""
+        if index in self._clarify_chosen:
+            self._clarify_chosen.discard(index)
+        else:
+            self._clarify_chosen.add(index)
+        ol = self.query_one("#clarify-list", _ClarifyList)
+        label = f"{'◉' if index in self._clarify_chosen else '◯'} {self._clarify_options[index]}"
+        ol.replace_option_prompt_at_index(index, Text(label))
+
+    def action_toggle_clarify(self) -> None:
+        """Space（App 绑定）：多选时切换高亮项勾选；单选 / Other 输入模式空操作"""
+        if not (self._clarify_pending and self._clarify_multi and not self._clarify_other):
+            return
+        ol = self.query_one("#clarify-list", _ClarifyList)
+        if ol.has_focus and ol.highlighted is not None:
+            self._select_clarify(ol.highlighted)
+
+    def on_clarify_confirmed(self, event: ClarifyConfirmed) -> None:
+        """Enter（_ClarifyList 确认消息）：多选提交勾选；单选选中高亮项（Other → 输入模式）"""
+        if not self._clarify_pending or self._clarify_other:
+            return
+        ol = self.query_one("#clarify-list", _ClarifyList)
+        if self._clarify_multi:
+            self._answer_clarify(self._clarify_answer())
+        elif ol.highlighted is not None:
+            self._select_clarify(ol.highlighted)
+
+    def _clarify_answer(self, other: str = "") -> str:
+        """多选答案：勾选项逐行（Other 文本追加在末行）；空选择给占位文本"""
+        chosen = [self._clarify_options[i] for i in sorted(self._clarify_chosen)]
+        if other:
+            chosen.append(other)
+        return "\n".join(f"- {text}" for text in chosen) if chosen else "[User made no selection]"
+
+    def _enter_clarify_other(self) -> None:
+        """Other：启用输入条并以提示语占位，等待用户键入自定义回答"""
+        self._clarify_other = True
+        prompt = self._prompt()
+        prompt.text = ""
+        prompt.placeholder = "Type your own answer…"
+        prompt.disabled = False
+        prompt.focus()
+        self._set_status_text("Clarify: type your answer, Enter confirm, Esc cancel.", spin=False)
+
+    def _leave_clarify_other(self) -> None:
+        """Other 空提交：回到选项列表继续选择"""
+        self._clarify_other = False
+        self._reset_prompt()
+        self.query_one("#clarify-list", _ClarifyList).focus()
+        self._set_status_text(self._clarify_hint(), spin=True)
+
+    def _reset_prompt(self) -> None:
+        """输入条回到默认占位禁用态（clarify 作答 / Other 空提交共用；回合结束 _set_idle 再启用）"""
+        prompt = self._prompt()
+        prompt.text = ""
+        prompt.placeholder = _PLACEHOLDER
+        prompt.disabled = True
+
+    def _answer_clarify(self, value: str) -> None:
+        """落地澄清回答：写回渲染桥等待线程并收起列表；输入条恢复禁用（回合结束由 _set_idle 统一恢复）"""
+        if not self._clarify_pending:
+            return
+        future, self._clarify_future = self._clarify_future, None
+        self._clarify_pending = False
+        self._clarify_other = False
+        self.query_one("#clarify-list", _ClarifyList).styles.display = "none"
+        self._reset_prompt()
+        self._set_status_text("Working…", spin=True)
+        if future is not None:
+            future.set_result(value)
 
     def _set_welcome(self, show: bool) -> None:
         """切换空聊板欢迎标题：-welcome 类挂在 #left 上，欢迎与聊板互斥显隐（规则见 app.css）"""

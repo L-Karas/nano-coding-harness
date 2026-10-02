@@ -131,6 +131,8 @@ def render_session_history(session: Any) -> None:
             if not _is_injected_message(message.content):
                 render_user_input(message.content)
         elif message.role == "assistant":
+            if message.content:  # 与流式实况一致：先渲染正文，再渲染其后的工具调用
+                render_assistant_response(message.content)
             for tool_call in (message.tool_calls or []):
                 fn = tool_call.get("function", {})
                 try:
@@ -141,8 +143,6 @@ def render_session_history(session: Any) -> None:
                 result = pending.pop(tool_call.get("id", ""), None)
                 if result is not None:
                     _render_tool_message(result)
-            if message.content:
-                render_assistant_response(message.content)
         elif message.role == "tool":
             if not message.tool_call_id:  # 无 id 无法配对，按原位置渲染
                 _render_tool_message(message)
@@ -193,18 +193,33 @@ def render_tool_calling_status(message: str):
     return _status_context(message)
 
 
-def ask_permission(message: str) -> str:
-    """渲染权限确认卡片并阻塞等待回答（只能在非 App 线程调用，如 handle_query 内）；
-    用户从停靠区 yes/no 列表作答，返回 "yes"/"no"（App 退出竞态下可能返回 ""）。"""
+def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: str) -> str:
+    """权限 / 澄清询问共用的桥接骨架：发起线程必须是非 App 线程，阻塞等待用户作答；
+    App 退出竞态下返回 ""。"""
     app = _APP
     if app is None:
         raise RuntimeError("Textual UI is not running: call run() first")
     if threading.get_ident() == app._thread_id:
-        raise RuntimeError("ask_permission must be called from a non-App thread (e.g. inside handle_query)")
+        raise RuntimeError(thread_error)
 
     future: Future[str] = Future()
     try:
-        _exec(lambda app: app._begin_permission(message, future))
+        _exec(lambda a: begin(a, future))
         return future.result()
     except Exception:
         return ""
+
+
+def ask_permission(message: str) -> str:
+    """渲染权限确认卡片并阻塞等待回答（只能在非 App 线程调用，如 handle_query 内）；
+    用户从停靠区 yes/no 列表作答，返回 "yes"/"no"（App 退出竞态下可能返回 ""）。"""
+    return _ask_blocking(lambda app, future: app._begin_permission(message, future),
+                         "ask_permission must be called from a non-App thread (e.g. inside handle_query)")
+
+
+def ask_clarify(questions: list[str], multi_select: bool = False) -> str:
+    """渲染澄清选项列表并阻塞等待回答（只能在非 App 线程调用，如工具执行线程）：
+    用户单选 / 多选（Space 勾选、Enter 确认）/ 选 Other 键入文本后返回答案，Esc 返回
+    "[User cancelled]"（列表为空时只剩 Other；App 退出竞态下可能返回 ""）。"""
+    return _ask_blocking(lambda app, future: app._begin_clarify(questions, multi_select, future),
+                         "ask_clarify must be called from a non-App thread (e.g. inside a tool handler)")

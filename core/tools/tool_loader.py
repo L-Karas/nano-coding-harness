@@ -4,11 +4,11 @@ from typing import Any, Literal
 from core.config import TOOL_ERROR_PREFIXES
 from core.log import get_logger
 from core.mcp import get_client_manager
-from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
-from core.tools.extra_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
+from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类
+from core.tools.extra_tools import *  # noqa: F401  # 导入扩展工具类以注册 BaseTool 子类
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _camel_to_snake
-from core.tools.web_search import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类; noqa: F401  # import extra tools
+from core.tools.web_search import *  # noqa: F401  # 导入 web 工具类以注册 BaseTool 子类
 
 _LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}

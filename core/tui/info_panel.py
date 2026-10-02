@@ -101,6 +101,7 @@ class _InfoPanel(Vertical):
             section = Vertical(VerticalScroll(id=f"{key}-list"), id=f"{key}-section", classes="info-section")
             section.border_title = f"▼ {label}"  # 标题嵌在上边框左端（同弹窗；计数见 _head_text）
             yield section
+        yield Static("Ctrl+←/→ resize panel", id="info-hint", markup=False)  # 调宽组合键提示（dock bottom，随面板折叠隐藏）
 
     def on_mount(self) -> None:
         self._refresh()
@@ -121,7 +122,7 @@ class _InfoPanel(Vertical):
     # ---------- 数据同步 ----------
 
     def _refresh(self) -> None:
-        """同步两个分区：条目行按签名按需重建，标题行更新计数，有进行中项时驱动轮播动画。"""
+        """同步三个分区：条目行按签名按需重建，标题行更新计数，有进行中项时驱动轮播动画。"""
         running = False
         for kind in self.SECTIONS:
             items = self._sync_rows(kind)
