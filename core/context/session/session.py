@@ -30,21 +30,14 @@ def _get_message_id() -> str:
     return f"message-{uuid.uuid4().hex}"
 
 
+def _truncate(text: str) -> str:
+    """按 MESSAGE_PREVIEW_CHARS 截断，超长加省略号。"""
+    return text[:MESSAGE_PREVIEW_CHARS] + ("…" if len(text) > MESSAGE_PREVIEW_CHARS else "")
+
+
 def _fork_title(content: str) -> str:
-    """fork 新会话标题："[Fork] " + 选中消息内容（压平空白，超 MESSAGE_PREVIEW_CHARS 截断加 …）"""
-    text = " ".join(content.split())
-    return "[Fork] " + text[:MESSAGE_PREVIEW_CHARS] + ("..." if len(text) > MESSAGE_PREVIEW_CHARS else "")
-
-
-@dataclass
-class MessageUsage:
-    """
-    Message Usage 类，用于记录消息 token 消耗量
-    """
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    reasoning_tokens: int = 0
-    total_tokens: int = 0
+    """fork 新会话标题："[Fork] " + 选中消息内容（压平空白后截断）。"""
+    return "[Fork] " + _truncate(" ".join(content.split()))
 
 
 @dataclass
@@ -59,7 +52,7 @@ class Message:
     reasoning_content: str = ""
     tool_call_id: str = ""
     tool_calls: list[dict] = field(default_factory=list)
-    usage: MessageUsage = field(default_factory=MessageUsage)
+    usage: dict = field(default_factory=dict)
     payload: Any = ""
 
 
@@ -90,8 +83,7 @@ class SessionManager:
             return
         if user_query.startswith(("<", "[")):
             return
-        self.session_map[self.current_session].title = user_query[:MESSAGE_PREVIEW_CHARS] + (
-            "..." if len(user_query) > MESSAGE_PREVIEW_CHARS else "")
+        self.session_map[self.current_session].title = _truncate(user_query)
 
     def add_message(self, message: dict) -> bool:
         """
@@ -108,40 +100,15 @@ class SessionManager:
         self.update_session(update_type="append")
         return True
 
-    def load_messages(
-            self,
-            exclude_payload: bool = True,
-    ) -> list[dict]:
+    def load_messages(self) -> list[dict]:
         """
-        加载当前会话消息列表，若当前会话不存在，则创建新会话。
-        Args:
-            exclude_payload:
-
-        Returns:
-            LLM 或 TUI 提供可直接使用的消息历史。
+        加载当前会话消息列表（含 id / usage / payload 全部字段），若当前会话不存在，则创建新会话。
+        发给模型前须经 core.context.to_llm_messages() 裁成 API 视图。
         """
         if not self.current_session:
             self.new_session()
 
-        messages = []
-        for message in self.session_map[self.current_session].messages:
-            message_dict = {
-                "role": message.role,
-                "content": message.content,
-            }
-            if message.role == "assistant":
-                message_dict["reasoning_content"] = message.reasoning_content
-
-            if not exclude_payload and message.payload:
-                message_dict["payload"] = message.payload
-
-            if message.tool_calls:
-                message_dict["tool_calls"] = message.tool_calls
-            if message.tool_call_id:
-                message_dict["tool_call_id"] = message.tool_call_id
-            messages.append(message_dict)
-
-        return messages
+        return [asdict(message) for message in self.session_map[self.current_session].messages]
 
     def load_user_messages(self) -> list[Message] | None:
         """
@@ -160,26 +127,11 @@ class SessionManager:
         return messages
 
     def update_messages(self, messages_dict: list[dict]) -> bool:
+        """回写消息列表：入参来自 load_messages()（压缩步骤只改 content，元数据全量带回）。"""
         if not messages_dict:
             return True
 
-        # 入参通常是 load_messages() 的产物（payload 已被剔除，供压缩/回写），但旧会话对象仍持有
-        # payload（diff 记录）。按 tool_call_id 补回，避免 compact / prepare_context 回写后 diff 丢失；
-        # 被压缩丢弃的消息不补，payload 随消息删除属预期。
-        old_tool_messages = {
-            message.tool_call_id: message
-            for message in self.session_map[self.current_session].messages
-            if message.role == "tool" and message.tool_call_id
-        }
-
-        messages = []
-        for message in messages_dict:
-            message = Message(**message)
-            if message.role == "tool" and not message.payload and message.tool_call_id in old_tool_messages:
-                message.payload = old_tool_messages[message.tool_call_id].payload
-            messages.append(message)
-
-        self.session_map[self.current_session].messages = messages
+        self.session_map[self.current_session].messages = [Message(**message) for message in messages_dict]
         self.update_session(update_type="rewrite")
         return True
 

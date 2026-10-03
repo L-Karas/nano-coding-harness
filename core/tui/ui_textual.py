@@ -34,12 +34,12 @@ from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Input, Markdown, OptionList, Static
-from textual.widgets.option_list import Option
 from textual.widgets.markdown import MarkdownStream
+from textual.widgets.option_list import Option
 
 import core.tui.render as _render  # run() 期间把 ChatApp 实例挂到渲染桥接的 _APP 全局（见 run()）
+from core.context.session import SessionManager
 from core.runtime_context import AgentInterrupted  # Esc 中断（另见 asyncio.CancelledError，属 BaseException）
-from core.session.session import SessionManager
 from core.skill import skills as _skills  # /skills 弹窗数据源（模块导入时 scan_skills() 扫描 .harness/skills）
 from core.tui.cards import _CappedCardBody
 from core.tui.info_panel import _InfoPanel
@@ -99,7 +99,7 @@ class ChatApp(App):
                          不传则用真实 agent 回合（见 _default_agent_turn）。
     on_interrupt(): 中断当前回合/压缩的回调（Esc，权限确认优先）；未传时取 runtime.interrupt。
     session_manager: 可选，提供 new_session / delete_session / load_session_list /
-                     load_session / add_message / current_session 的对象（如 core.session 的 SESSION_MANAGER）。
+                     load_session / add_message / current_session 的对象（如 core.context.session 的 SESSION_MANAGER）。
     runtime: 可选，AgentRuntime（start_agent_runtime() 的返回值），供 /compact 压缩当前会话。
     """
 
@@ -830,7 +830,7 @@ def run(handle_query: Optional[Callable[[str], None]] = None,
 
     不传 handle_query 时使用 core.loop_with_interrupt 的真实 agent 回合（需已配置模型；
     离线 UI 演示见 core/tui/demo.py，由 --smoke 使用），其 on_interrupt 默认接 AgentRuntime.interrupt。
-    传入 session_manager（如 core.session 的 SESSION_MANAGER）后 /new /sessions 可用；
+    传入 session_manager（如 core.context.session 的 SESSION_MANAGER）后 /new /sessions 可用；
     传入 runtime（start_agent_runtime() 的返回值）后 /compact 可用。
     Esc：权限确认优先；确认结束后若回合仍在进行，则中断。
     运行期间忽略 SIGINT：Ctrl+C 不关闭应用（退出用 /exit 或 ctrl+q），退出后恢复原处理器。

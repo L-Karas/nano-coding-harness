@@ -6,7 +6,7 @@ Context Compaction
 # still too large or the user explicitly runs /compact.
 """
 import inspect
-from functools import lru_cache, wraps
+from functools import wraps
 from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
@@ -14,17 +14,13 @@ from openai.types.chat import ChatCompletionMessage
 from core.client import shared_model_client
 from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, RESERVE_TOKENS, \
     SUMMARIZE_MAX_TOKENS, CONTEXT_LIMIT
+from core.context import to_llm_messages
+from core.context.token import estimate_size, estimate_token
 from core.log.log import get_logger
 from core.template import SUMMARY_PROMPT_TEMPLATE
 
 REMAIN_TOOL_RESULT_THRESHOLD = 2000
 _LOGGER = get_logger(__name__)
-
-
-@lru_cache(maxsize=1)
-def _encoder():
-    import tiktoken
-    return tiktoken.encoding_for_model("gpt-5")
 
 
 def log_compact_step(func):
@@ -55,25 +51,6 @@ def log_compact_step(func):
         return result
 
     return sync_wrapper
-
-
-def estimate_token(text: str) -> int:
-    """
-    Roughly count tokens
-    """
-    return len(_encoder().encode(text))
-
-
-def estimate_size(messages: list[Union[dict, ChatCompletionMessage]]) -> int:
-    total_tokens = 0
-    for message in messages:
-        if isinstance(message, dict):
-            total_tokens += estimate_token(message.get("content", ""))
-            total_tokens += estimate_token(message.get("reasoning_content", ""))
-        else:
-            total_tokens += estimate_token(message.content) if message.content else 0
-
-    return total_tokens
 
 
 def message_has_tool_call(message: Union[dict, ChatCompletionMessage]) -> bool:
@@ -210,7 +187,7 @@ async def summarize_history(messages: list, ctx=None) -> str:
     Summarize history messages
     """
     summary_text = ""
-    request_messages = messages + [{
+    request_messages = to_llm_messages(messages) + [{
         "role": "user",
         "content": SUMMARY_PROMPT_TEMPLATE,
     }]

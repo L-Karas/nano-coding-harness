@@ -17,11 +17,18 @@ async def streaming_message(
     reasoning = ""
     tool_calls: list[dict] = []
     finish_reason = ""
-    usage = None
+    usage = {}
     try:
         async for chunk in stream:
             if chunk.usage:
-                usage = chunk.usage
+                # completion_tokens_details 部分 provider 不返回（可能为 None）
+                details = chunk.usage.completion_tokens_details
+                usage = {
+                    "prompt_tokens": chunk.usage.prompt_tokens or 0,
+                    "completion_tokens": chunk.usage.completion_tokens or 0,
+                    "reasoning_tokens": (details.reasoning_tokens or 0) if details else 0,
+                    "total_tokens": chunk.usage.total_tokens or 0,
+                }
             if not chunk.choices:
                 continue
 

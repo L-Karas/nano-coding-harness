@@ -14,8 +14,10 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
 from core.client import shared_model_client
-from core.compact.context_compact import tool_result_budget, micro_compact, compact_history
 from core.config import DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
+from core.context import to_llm_messages
+from core.context.compact import tool_result_budget, micro_compact, compact_history
+from core.context.session import SESSION_MANAGER
 from core.cron_scheduler import consume_cron_queue
 from core.experimental.protocol_state import consume_lead_inbox
 from core.hook.hook import trigger_hooks
@@ -23,7 +25,6 @@ from core.log.log import get_logger
 from core.prompt import build_system_prompt
 from core.recovery.error_recovery import RecoveryState, with_retry_async
 from core.runtime_context import AgentRunContext, AgentInterrupted
-from core.session.session import SESSION_MANAGER
 from core.streaming import streaming_message
 from core.template import CONTINUATION_PROMPT, INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX, \
     USER_INTERRUPT_PROMPT
@@ -149,12 +150,13 @@ class AgentRuntime:
                     render_background_notification(error_text, title="⚠️ Agent Error")
                     return
 
-                accumulated_text, reasoning_text, tool_calls, finish_reason, _ = await self.stream(stream)
+                accumulated_text, reasoning_text, tool_calls, finish_reason, usage = await self.stream(stream)
 
                 assistant_message = {
                     "role": "assistant",
                     "content": accumulated_text,
-                    "reasoning_content": reasoning_text
+                    "reasoning_content": reasoning_text,
+                    "usage": usage
                 }
                 if finish_reason == "length":
                     # todo: 半截 tool_calls 情况
@@ -203,7 +205,7 @@ class AgentRuntime:
 
     async def call_llm(self, messages, tools, max_tokens, ctx):
         system = build_system_prompt("main", tools)
-        messages = [{"role": "system", "content": system}] + messages
+        messages = [{"role": "system", "content": system}] + to_llm_messages(messages)
         _LOGGER.debug(f"Session manager loaded {len(messages)} messages")
 
         with render_thinking_status():

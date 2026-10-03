@@ -1,6 +1,6 @@
 """入口：把 core.loop_with_interrupt 的真实 agent 回合接进 Textual UI。"""
+from core.context.session import SESSION_MANAGER
 from core.loop_with_interrupt import make_agent_turn, start_agent_runtime
-from core.session.session import SESSION_MANAGER
 from core.tui.ui_textual import run
 
 

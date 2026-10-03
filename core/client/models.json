@@ -11,7 +11,9 @@
           "medium": "high",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 384000
       },
       "deepseek-v4-pro": {
         "vision": false,
@@ -22,7 +24,9 @@
           "medium": "high",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 384000
       }
     }
   },
@@ -38,7 +42,9 @@
           "medium": false,
           "high": "high",
           "max": "xhigh"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.8-max-0902": {
         "vision": true,
@@ -49,7 +55,9 @@
           "medium": false,
           "high": "high",
           "max": "xhigh"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.8-flash": {
         "vision": true,
@@ -60,7 +68,9 @@
           "medium": false,
           "high": "high",
           "max": "xhigh"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.8-2.4t-a95b": {
         "vision": false,
@@ -71,7 +81,9 @@
           "medium": "medium",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.8-27b": {
         "vision": true,
@@ -82,7 +94,9 @@
           "medium": "medium",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.7-max": {
         "vision": true,
@@ -93,7 +107,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.7-plus": {
         "vision": true,
@@ -104,7 +120,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "qwen3.7-flash": {
         "vision": true,
@@ -115,7 +133,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       }
     }
   },
@@ -131,7 +151,9 @@
           "medium": false,
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1048576,
+        "max_output": null
       },
       "kimi-k2.7-code": {
         "vision": true,
@@ -142,7 +164,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 262144,
+        "max_output": null
       },
       "kimi-k2.7-code-highspeed": {
         "vision": true,
@@ -153,7 +177,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 262144,
+        "max_output": null
       },
       "kimi-k2.6": {
         "vision": true,
@@ -164,7 +190,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 262144,
+        "max_output": null
       }
     }
   },
@@ -180,7 +208,9 @@
           "medium": "high",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "glm-5.3-flash": {
         "vision": true,
@@ -191,7 +221,9 @@
           "medium": "high",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "glm-5.3-flashx": {
         "vision": true,
@@ -202,7 +234,9 @@
           "medium": "high",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "glm-5.2": {
         "vision": false,
@@ -213,7 +247,9 @@
           "medium": "medium",
           "high": "high",
           "max": "max"
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       }
     }
   },
@@ -229,7 +265,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 204800,
+        "max_output": null
       },
       "MiniMax-M2.7": {
         "vision": true,
@@ -240,7 +278,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": null
       },
       "MiniMax-M2.7-highspeed": {
         "vision": true,
@@ -251,7 +291,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": null
       }
     }
   },
@@ -267,7 +309,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": null
       },
       "MiniMax-M2.7": {
         "vision": true,
@@ -278,7 +322,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": null
       },
       "MiniMax-M2.7-highspeed": {
         "vision": true,
@@ -289,7 +335,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": null
       }
     }
   },
@@ -305,7 +353,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "mimo-v2.6-flash": {
         "vision": true,
@@ -316,7 +366,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "mimo-v2.6-pro-ultraspeed": {
         "vision": true,
@@ -328,7 +380,9 @@
           "high": false,
           "max": false
         }
-      }
+      },
+      "context_length": 1000000,
+      "max_output": 128000
     }
   },
   "Xiaomi MiMo Token Plan": {
@@ -343,7 +397,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "mimo-v2.6-flash": {
         "vision": true,
@@ -354,7 +410,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       },
       "mimo-v2.6-pro-ultraspeed": {
         "vision": true,
@@ -365,7 +423,9 @@
           "medium": false,
           "high": false,
           "max": false
-        }
+        },
+        "context_length": 1000000,
+        "max_output": 128000
       }
     }
   }

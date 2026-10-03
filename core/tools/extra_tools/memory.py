@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from core import memory
+from core.context import memory
 from core.tools.tool_base import BaseTool
 
 
