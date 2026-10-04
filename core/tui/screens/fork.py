@@ -12,13 +12,13 @@ from core.tui.screens.base import _ListPickerScreen, _rebuild_options
 
 
 def _preview(content: str) -> str:
-    """单行预览 = 压平空白后的前 MESSAGE_PREVIEW_CHARS 个字符（超长加 …）。"""
+    """压平空白后的前 MESSAGE_PREVIEW_CHARS 个字符（超长加 …）。"""
     text = " ".join(content.split())
     return text[:MESSAGE_PREVIEW_CHARS] + ("…" if len(text) > MESSAGE_PREVIEW_CHARS else "")
 
 
 class ForkScreen(_ListPickerScreen):
-    """用户消息分叉弹窗（/fork）：列出当前会话全部用户消息，Enter 选中分叉点回传消息 id，Esc 关闭。"""
+    """用户消息分叉弹窗（/fork）：Enter 回传选中消息 id，Esc 关闭。"""
 
     TITLE = "Fork from a user message"
     HINT = "  ↑/↓ browse    Enter fork from this message    Esc close"

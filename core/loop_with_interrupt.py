@@ -33,7 +33,7 @@ from core.tools import TOOL_ERROR_PREFIXES, assemble_tool_pool
 from core.tools.base_tools.git import DIFF_TOOLS, preview_edit, preview_write
 from core.tools.tool_loader import execute_tool
 from core.tui.render import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
-    render_tool_result_diff, render_background_notification, render_thinking_status, render_tool_calling_status
+    render_tool_result_diff, render_background_notification, render_thinking_status, render_working_status
 
 AGENT_LOCK = threading.Lock()
 _LOGGER = get_logger(__name__)
@@ -208,7 +208,7 @@ class AgentRuntime:
         messages = [{"role": "system", "content": system}] + to_llm_messages(messages)
         _LOGGER.debug(f"Session manager loaded {len(messages)} messages")
 
-        with render_thinking_status():
+        with render_working_status():
             return await with_retry_async(
                 lambda: shared_model_client().get_model_client(async_client=True)(
                     messages=messages,
@@ -268,7 +268,7 @@ class AgentRuntime:
 
                 handler = handlers.get(tool_name)
                 diff = ""
-                with render_tool_calling_status(f"{tool_name} ({tool_args})"):
+                with render_working_status():
                     if tool_name in DIFF_TOOLS:
                         try:
                             diff = preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file" \

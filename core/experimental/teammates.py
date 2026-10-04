@@ -154,7 +154,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     for tool_name, handler in handlers.items()
                     if tool_name not in excluded}
         # 文件类工具随认领的任务 worktree 切换 cwd
-        for tool_name in ("bash", "edit_file", "glob", "grep", "read_file", "write_file"):
+        for tool_name in ("terminal", "edit_file", "glob", "grep", "read_file", "write_file"):
             handlers[tool_name] = _bind_worktree_cwd(handlers[tool_name])
 
         # 以下 handler 绑定到当前 teammate 身份

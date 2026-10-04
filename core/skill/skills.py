@@ -7,9 +7,6 @@ from core.config import SKILL_DIR
 
 SKILL_REGISTRY: dict[str, dict] = {}
 
-if not SKILL_DIR.exists():
-    SKILL_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     if not text.startswith("---"):
@@ -48,10 +45,8 @@ def scan_skills():
         }
 
 
-def list_skills():
-    if not SKILL_REGISTRY:
-        return "(none)"
-    return "\n".join(f"- {skill['name']}: {skill['description']}" for skill in SKILL_REGISTRY.values())
+def load_skills() -> dict | None:
+    return SKILL_REGISTRY if SKILL_REGISTRY else None
 
 
 def load_skill(name: str) -> str:
@@ -60,6 +55,11 @@ def load_skill(name: str) -> str:
         available_skills = ", ".join(SKILL_REGISTRY.keys()) or "(none)"
         return f"Skill not found: {name}\n\nAvailable skills:\n{available_skills}"
     return skill.get("content")
+
+
+# todo: install skill
+async def install_skill() -> str:
+    pass
 
 
 scan_skills()

@@ -28,7 +28,6 @@ def run_edit_file(path: str, old_text: str, new_text: str, cwd: Optional[Path] =
     return "Edited successfully."
 
 
-# todo: 文件编辑工具异步实现
 async def run_edit_file_async(path: str, old_text: str, new_text: str, cwd: Optional[Path] = None, ctx=None) -> str:
     path = _resolve(path, cwd)
 

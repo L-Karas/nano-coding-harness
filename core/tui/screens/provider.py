@@ -15,13 +15,10 @@ from core.tui.screens.base import _InlineConfirm, _ListPickerScreen, _error_text
 
 
 class ProviderScreen(_InlineConfirm, _ListPickerScreen):
-    """模型提供商配置弹窗（/provider）：OptionList 展示配置状态（↑/↓ 原生首尾循环），
-    Enter/点击行 → ApiKeyScreen 录入该 provider 的 API Key（掩码显示），再次 Enter 经
-    core.client.configure_provider 落盘并重取列表刷新；Delete → 窗内底部红字原地确认后经
-    core.client.unconfigure_provider 删除该 provider 配置；Esc 撤销确认 / 关闭。
+    """模型提供商配置弹窗（/provider）。
 
-    rows = (provider, 是否已配置) 结构化状态，由调用方从 core.client.get_provider_list()
-    取值；本类只负责展示，状态变更后重取真源而非本地维护镜像。
+    rows = (provider, 是否已配置)，来自 core.client.get_provider_list()；Enter/点击 → ApiKeyScreen
+    录入（configure_provider 落盘后重取真源刷新）；Delete → 原地确认后 unconfigure_provider。
     """
 
     TITLE = "Model Providers"
@@ -44,15 +41,14 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
                           for provider, configured in self._rows])
 
     def _row_text(self, provider: str, configured: bool) -> Text:
-        """行 = provider（后端原名，原样展示）+ 状态（未配置灰 / 已配置暗绿）"""
+        """行 = provider（后端原名）+ 状态（未配置灰 / 已配置暗绿）。"""
         status = "[● configured]" if configured else "[○ unconfigured]"
         status_style = self._CONFIGURED_STYLE if configured else self._UNCONFIGURED_STYLE
         return Text.assemble((provider, self._NAME_STYLE),
                              (" " + status, status_style))
 
     def _refresh(self) -> None:
-        """配置落盘后重取 core.client 最新状态重建列表（configure_provider 可能新增整行，
-        本地改镜像会漏；能走到这里说明 configure/unconfigure 已成功导入 core.client）。"""
+        """配置变更后重取 core.client 真源重建列表（可能新增整行，本地改镜像会漏）。"""
         from core.client import get_provider_list
         self._rows = get_provider_list()
         self._reload()
@@ -68,8 +64,7 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
                                  callback=lambda api_key: self._on_key_submitted(provider, api_key))
 
     def _on_key_submitted(self, provider: str, api_key: Optional[str]) -> None:
-        """ApiKeyScreen 关闭回调：None=Esc 取消；有 key 则 configure_provider 落盘，
-        成功后重取列表刷新状态。"""
+        """ApiKeyScreen 回调：None=Esc 取消；有 key 则落盘并刷新状态。"""
         if not api_key:
             return
         try:
@@ -83,8 +78,7 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
         self._list().focus()  # 焦点回列表，可继续配置下一家
 
     def action_remove_selected(self) -> None:
-        """Delete：窗内底部红字原地确认，Enter 后删除选中 provider 的配置并重取列表刷新；
-        已未配置行无可删内容，提示后返回（不进入确认）。"""
+        """Delete：原地确认后删除选中 provider 配置；未配置行无可删内容，提示后返回。"""
         olist = self._list()
         if olist.highlighted is None:
             return
@@ -106,8 +100,7 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
 
 
 class ApiKeyScreen(ModalScreen[Optional[str]]):
-    """API Key 录入弹窗（ProviderScreen 选中行后弹出）：Input(password=True) 掩码显示，
-    Enter 提交返回 key（空 key 不关闭，防误提交），Esc 取消返回 None。"""
+    """API Key 录入弹窗：掩码输入，Enter 返回 key（空 key 不关闭），Esc 取消返回 None。"""
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
@@ -128,7 +121,7 @@ class ApiKeyScreen(ModalScreen[Optional[str]]):
         self.query_one("#api-key-input", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Enter 提交：key 非空才关闭返回（空输入留在窗口内重新录入）"""
+        """Enter：key 非空才关闭（空输入留窗内重录）。"""
         event.stop()
         key = event.value.strip()
         if key:

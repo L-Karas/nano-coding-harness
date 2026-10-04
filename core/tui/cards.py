@@ -1,4 +1,4 @@
-"""消息卡片正文部件：超出上限行数时折叠，点击展开/收回（自 ui_textual.py 拆出）。"""
+"""消息卡片正文部件：超出上限行数时折叠，点击展开/收回。"""
 
 from __future__ import annotations
 
@@ -18,12 +18,10 @@ _HINT_STYLE = "dim yellow"  # 提示行样式，与正文暗灰区分
 
 
 class _CappedCardBody(Static):
-    """工具卡正文：超出 cap 行时折叠（只渲染前 cap 行 + 1 行提示，点击展开/收回）。
+    """工具卡正文：超出 cap 行时折叠（前 cap 行 + 1 行提示，点击展开/收回）。
 
-    行数取自 get_content_height：即 Textual 按当前渲染宽度换行后的视觉行数，一行超长
-    文本折出的每一行都计入上限（修 "\\n" 计数在长行下低估的问题）。reserved 为固定头行
-    数（工具名首行），不参与折叠；-expandable 类（指针 + on_click 路由）随宽度变化在
-    on_resize 中同步。"""
+    行数取自 get_content_height（按渲染宽度换行后的视觉行，长行折出的行同样计入）；
+    reserved 为固定头行数，不参与折叠；-expandable 类随宽度变化在 on_resize 中同步。"""
 
     def __init__(self, content: Any, cap: int, reserved: int = 0, **kwargs: Any) -> None:
         super().__init__(content, **kwargs)

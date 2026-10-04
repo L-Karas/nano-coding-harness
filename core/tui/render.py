@@ -1,8 +1,6 @@
-"""线程安全渲染 API：把任意线程的渲染调用桥接进 ChatApp 事件循环。
+"""线程安全渲染 API：任意线程调用，App 线程内直接执行、其它线程经 call_from_thread 桥接。
 
-模块级函数与 ChatApp 内部方法一一对应：卡片渲染 / 流式回复 / 状态行上下文 /
-会话历史回放 / 权限询问。App 线程内直接执行，其它线程经 app.call_from_thread 桥接；
-run()（core.tui.ui_textual）运行期间持有本模块的 _APP 全局，未启动时调用抛 RuntimeError。
+run()（core.tui.ui_textual）期间把 ChatApp 实例挂到 _APP；未启动时调用抛 RuntimeError。
 """
 
 from __future__ import annotations
@@ -18,19 +16,19 @@ from rich.text import Text
 from core.config import TOOL_ERROR_PREFIXES
 from core.template import INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
 
-if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免与 ui_textual 循环导入
+if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免循环导入
     from core.tui.ui_textual import ChatApp
 
-_APP: Optional[ChatApp] = None  # run() 期间挂载的 ChatApp，渲染桥接目标
+_APP: Optional[ChatApp] = None
 
-DEFAULT_MAX_LINES = 10  # 卡片正文默认上限行数（按渲染宽度换行后的视觉行计）：超出折叠为额外 1 行提示
+DEFAULT_MAX_LINES = 10  # 卡片正文默认行数上限（渲染宽度下换行的视觉行）
 
 _DIM = "dim #e2e8f0"  # 卡片正文（暗灰）
 _DIFF_STYLES = {"+": "#b5bd68", "-": "#f87171"}  # diff 行：+ 绿 / - 淡红，其余 dim
 
 
 def _exec(fn: Callable[[ChatApp], Any]) -> Any:
-    """在 App 线程执行 fn(app)：调用方已在 App 线程时直接执行，否则经事件循环桥接。"""
+    """在 App 线程执行 fn(app)：已在 App 线程则直接执行，否则经事件循环桥接。"""
     app = _APP
     if app is None:
         raise RuntimeError("Textual UI is not running: call run() (or run ChatApp().run() yourself) before rendering")
@@ -43,15 +41,14 @@ def _exec(fn: Callable[[ChatApp], Any]) -> Any:
 
 
 def _dim_body(text: str) -> Text:
-    """暗灰正文。用 Text 而非 Rich 标记：正文里的方括号不会被解析成样式标签。"""
+    """暗灰正文（用 Text 而非 Rich 标记：正文里的方括号不会被解析成样式标签）。"""
     return Text(text, style=_DIM)
 
 
 def _add_capped_card(kind: str, body: Text, max_lines: int = DEFAULT_MAX_LINES,
                      head: Optional[Text] = None) -> None:
-    """追加卡片：正文超过 max_lines 行（渲染宽度下换行后的视觉行，长行折出的行同样计入）
-    时只显示前 max_lines 行 + 折叠提示行，点击卡片在截断与完整正文间切换
-    （head 为固定首行，不计入行数与折叠）"""
+    """追加卡片：正文超 max_lines 折叠为前 max_lines 行 + 提示行，点击切换展开；
+    head 为固定首行，不计入行数与折叠。"""
     head = head if head is not None else Text()
     reserved = head.plain.count("\n")  # head 占用的固定行数
     _exec(lambda app: app._add_card(kind, head + body, cap=max_lines, reserved=reserved))
@@ -63,7 +60,7 @@ def render_user_input(user_text: str) -> None:
 
 
 def _format_args(tool_args: Any) -> str:
-    """工具参数转展示文本：dict / list 缩进 JSON，其它类型按 str（JSON 失败回退 str）。"""
+    """工具参数转展示文本：dict / list 缩进 JSON，其余 str（JSON 失败回退 str）。"""
     if not isinstance(tool_args, (dict, list)):
         return str(tool_args)
     try:
@@ -73,20 +70,20 @@ def _format_args(tool_args: Any) -> str:
 
 
 def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """工具调用卡片：参数缩进 JSON，超出 max_lines 折叠。"""
+    """工具调用卡片：参数缩进 JSON，超出折叠。"""
     head = Text.assemble(("Tool Call: ", "bold #fde68a"), (tool_name, "bold white"), "\n")
     _add_capped_card("tool", _dim_body(_format_args(tool_args)), max_lines, head=head)
 
 
 def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """工具输出卡片：失败输出（TOOL_ERROR_PREFIXES 前缀）渲染为暗红 error 卡，其余为 result 卡。"""
+    """工具输出卡片：失败输出（TOOL_ERROR_PREFIXES 前缀）为 error 卡，其余 result 卡。"""
     output_str = str(output)
     kind = "error" if output_str.startswith(TOOL_ERROR_PREFIXES) else "result"
     _add_capped_card(kind, _dim_body(output_str), max_lines)
 
 
 def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """diff 预览卡片（暗橄榄底）：每行 "标记 行号 │ 内容"，超出 max_lines 折叠。"""
+    """diff 预览卡片：每行 "标记 行号 │ 内容"，超出折叠。"""
     width = max((len(str(n)) for _, n, _ in rows), default=1)
     body = Text("\n").join(Text(f"{kind}{n:>{width}} │ {line}", style=_DIFF_STYLES.get(kind, "dim"))
                            for kind, n, line in rows)
@@ -100,13 +97,12 @@ def render_background_notification(message: str, title: str = "🔔 Background T
 
 
 def render_sessions() -> None:
-    """空会话提示卡片（非空列表的展示与选择在 SessionPickerScreen）"""
+    """空会话提示卡片（非空列表见 SessionPickerScreen）。"""
     _exec(lambda app: app._add_card("sessions", _dim_body("No sessions yet")))
 
 
 def _is_injected_message(content: Any) -> bool:
-    """是否为内部注入消息（后台任务结果 / 定时任务 / 续写提示）：按 <injection_messages>
-    前后缀识别。这类消息只喂给模型作上下文，不是用户输入，回放时应跳过。"""
+    """是否为内部注入消息（按 <injection_messages> 前后缀识别）：只喂模型，回放时跳过。"""
     return (isinstance(content, str)
             and content.startswith(INJECTION_MESSAGES_PREFIX)
             and content.endswith(INJECTION_MESSAGES_SUFFIX))
@@ -120,18 +116,18 @@ def _render_tool_message(message: Any) -> None:
 
 
 def render_session_history(session: Any) -> None:
-    """按消息顺序重放会话历史：用户 / 工具调用 / 工具结果 / 助手回复（跳过内部注入消息）。
-    一条助手消息的多个 tool_call 与其结果按 tool_call_id 配对：call、result、call、result…"""
+    """按消息顺序重放会话历史（跳过内部注入消息）；助手消息的多个 tool_call 与其结果按
+    tool_call_id 配对：call、result、call、result…"""
     messages = session.messages
     pending: dict[str, Any] = {m.tool_call_id: m for m in messages
-                               if m.role == "tool" and m.tool_call_id}  # tool_call_id → 尚未渲染的 tool 消息
+                               if m.role == "tool" and m.tool_call_id}  # 尚未渲染的 tool 消息
 
     for message in messages:
         if message.role == "user":
             if not _is_injected_message(message.content):
                 render_user_input(message.content)
         elif message.role == "assistant":
-            if message.content:  # 与流式实况一致：先渲染正文，再渲染其后的工具调用
+            if message.content:  # 与流式实况一致：先正文，再其后的工具调用
                 render_assistant_response(message.content)
             for tool_call in (message.tool_calls or []):
                 fn = tool_call.get("function", {})
@@ -152,7 +148,7 @@ def render_session_history(session: Any) -> None:
 
 @contextmanager
 def render_scope():
-    """标记一轮流式输出的结束：停掉当前 Markdown 流"""
+    """一轮流式输出的结束标记：停掉当前 Markdown 流。"""
     try:
         yield
     finally:
@@ -160,21 +156,20 @@ def render_scope():
 
 
 def stream_assistant_response(chunk: str = "") -> None:
-    """流式增量更新当前 Assistant 卡片（首次调用自动建卡）：chunk 为本次新增片段，勿传累计全量"""
+    """流式增量：chunk 为本次新增片段（首次调用自动建卡，勿传累计全量）。"""
     if chunk:
         _exec(lambda app: app._stream_update(chunk))
 
 
 def render_assistant_response(content: str) -> None:
-    """渲染一张静态 Assistant Markdown 卡片（链接可点击：系统默认浏览器打开）"""
+    """静态 Assistant Markdown 卡片（链接经系统默认浏览器打开）。"""
     if content:
         _exec(lambda app: app._add_markdown_card(content))
 
 
 @contextmanager
 def _status_context(text: str):
-    """状态行加载动画上下文：进入后 text 前轮播 spinner 帧（由 App 内 interval 驱动），
-    退出后恢复进入前的状态（文本 + 是否动画），busy「处理中…」动画因此无缝续播。"""
+    """状态行 spinner 上下文：退出时恢复进入前的状态（busy「处理中…」动画无缝续播）。"""
     previous = _exec(lambda app: app._status_swap(text, spin=True))
     try:
         yield
@@ -184,18 +179,17 @@ def _status_context(text: str):
 
 
 def render_thinking_status(message: str = "Thinking..."):
-    """返回状态行上下文管理器：spinner 加载动画 · 思考中"""
+    """状态行上下文管理器：spinner · 思考中。"""
     return _status_context(message)
 
 
-def render_tool_calling_status(message: str):
-    """返回状态行上下文管理器：spinner 加载动画 · 工具执行中"""
+def render_working_status(message: str = "Working..."):
+    """状态行上下文管理器：spinner · 工具执行中。"""
     return _status_context(message)
 
 
 def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: str) -> str:
-    """权限 / 澄清询问共用的桥接骨架：发起线程必须是非 App 线程，阻塞等待用户作答；
-    App 退出竞态下返回 ""。"""
+    """权限 / 澄清询问共用的桥接骨架：须非 App 线程调用，阻塞等待作答；App 退出竞态返回 ""。"""
     app = _APP
     if app is None:
         raise RuntimeError("Textual UI is not running: call run() first")
@@ -211,15 +205,13 @@ def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: s
 
 
 def ask_permission(message: str) -> str:
-    """渲染权限确认卡片并阻塞等待回答（只能在非 App 线程调用，如 handle_query 内）；
-    用户从停靠区 yes/no 列表作答，返回 "yes"/"no"（App 退出竞态下可能返回 ""）。"""
+    """渲染权限确认并阻塞等待回答（仅非 App 线程，如 handle_query 内）：返回 "yes"/"no"。"""
     return _ask_blocking(lambda app, future: app._begin_permission(message, future),
                          "ask_permission must be called from a non-App thread (e.g. inside handle_query)")
 
 
 def ask_clarify(questions: list[str], multi_select: bool = False) -> str:
-    """渲染澄清选项列表并阻塞等待回答（只能在非 App 线程调用，如工具执行线程）：
-    用户单选 / 多选（Space 勾选、Enter 确认）/ 选 Other 键入文本后返回答案，Esc 返回
-    "[User cancelled]"（列表为空时只剩 Other；App 退出竞态下可能返回 ""）。"""
+    """渲染澄清选项并阻塞等待回答（仅非 App 线程，如工具执行线程）：单选 / 多选（Space 勾选、
+    Enter 确认）/ Other 输入；Esc 返回 "[User cancelled]"，App 退出竞态可能返回 ""。"""
     return _ask_blocking(lambda app, future: app._begin_clarify(questions, multi_select, future),
                          "ask_clarify must be called from a non-App thread (e.g. inside a tool handler)")

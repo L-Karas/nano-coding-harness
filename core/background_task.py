@@ -41,8 +41,8 @@ _SLOW_SUBCMDS = {  # 这些命令只有跟了慢子命令才算慢：npm test �
 
 
 def is_slow_operation(tool_name: str, tool_args: dict) -> bool:
-    """粗判 bash 命令会不会跑很久：只看命令词，宁可漏判也不误判。"""
-    if tool_name != "bash":
+    """粗判 terminal 命令会不会跑很久：只看命令词，宁可漏判也不误判。"""
+    if tool_name != "terminal":
         return False
 
     for segment in _CMD_SEP.split(tool_args.get("command") or ""):

@@ -6,8 +6,8 @@
      OptionList / TextArea 的 $surface、Toast 的 $panel 时才声明背景；
    - Vertical / Horizontal 默认 1fr × 1fr，Static 默认填宽 + 高自适应，
      OptionList 默认 height:auto —— 这些值一律省略；
-   - 类 / 伪类选择器（-collapsed、-effort-*）由 info_panel.py、ui_textual.py、
-     screens/ 维护，改类名需同步此处。
+   - 类 / 伪类选择器（-collapsed、-effort-*）由 info_panel.py、surface.py、
+     interactions.py、screens/ 维护，改类名需同步此处。
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── 终端底色 ──
@@ -92,7 +92,7 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* ── 空聊板欢迎标题 ──
    聊板为空（首次启动 / 新建会话）时居中显示：大字标题 + 下方小字副标题；
-   #left 的 -welcome 类（ui_textual._set_welcome 切换）控制欢迎与聊板互斥显隐 */
+   #left 的 -welcome 类（surface._set_welcome 切换）控制欢迎与聊板互斥显隐 */
 #welcome { height: 1fr; content-align: center middle; padding: 1 2; display: none; }
 #left.-welcome #welcome { display: block; }
 #left.-welcome #chat { display: none; }
@@ -129,8 +129,12 @@ Toast, Toast:ansi { background: #1e293b; }
     text-style: underline;
 }
 
-/* 页脚：左 cwd (git 分支) + 右模型状态，同行暗灰，间隙由 _refresh_footer 按宽度填充 */
+/* 页脚（footer._FooterBar，两行）：cwd 行 + 占用条行 */
+#footer-bar { width: 1fr; height: auto; }
 #footer { height: 1; color: #64748b; padding: 0 2; }
+
+/* 占用条行：左 [####----] 40.0% / 200.0K，右模型状态（右下角）；阈值 40%/80% 绿→黄→红 */
+#token-bar { height: 1; padding: 0 2; }
 
 /* ── 补全与权限列表 ── */
 /* / 指令与 @ 文件候选：默认隐藏，键入时由 _CommandInput 显示（同刻至多一组） */
@@ -153,7 +157,7 @@ Toast, Toast:ansi { background: #1e293b; }
 }
 
 /* clarify 选项列表（含末尾 Other）：青色描边，默认隐藏，工具请求时显示并聚焦；
-   多选勾选标记 ◉/◯ 由 ui_textual 换行实现，行数 = 选项数 + Other */
+   多选勾选标记 ◉/◯ 由 interactions.py 换行实现，行数 = 选项数 + Other */
 #clarify-list {
     display: none;
     margin: 0 2;
@@ -178,7 +182,8 @@ Toast, Toast:ansi { background: #1e293b; }
 #mcp-tools-list > .option-list--option-highlighted,
 #login-list > .option-list--option-highlighted,
 #unreg-provider-list > .option-list--option-highlighted,
-#unreg-model-list > .option-list--option-highlighted {
+#unreg-model-list > .option-list--option-highlighted,
+#reg-model-provider > SelectOverlay > .option-list--option-highlighted {
     background: #334155;
     color: #f8fafc;
 }
@@ -296,14 +301,34 @@ ModalScreen {
 #mcp-config-input .text-area--cursor-line,
 #mcp-config-input .text-area--cursor-gutter { background: transparent; }
 
-/* ── /login 弹窗：菜单 / 注销列表随内容收缩高度（同 #effort-picker 思路）；注册表单逐行字段 ── */
-#login-picker, #reg-provider-picker, #reg-model-picker, #unreg-provider-picker, #unreg-model-picker { width: 60%; height: auto; max-height: 100%; }
+/* ── /login 弹窗：菜单 / 注销列表随内容收缩高度（同 #effort-picker 思路）；注册表单逐行字段 ──
+   定宽 = 最宽行（提示行）cell 数 + padding 4 + border 2，文案写死在 screens/login.py，
+   改动时同步此常量：#login-picker 41→47；注册表单 48→54；注销列表 46→52 */
+#login-picker { width: 47; height: auto; max-height: 100%; }
+#reg-provider-picker, #reg-model-picker { width: 54; height: auto; max-height: 100%; }
+#unreg-provider-picker, #unreg-model-picker { width: 52; height: auto; max-height: 100%; }
 #login-list, #unreg-provider-list, #unreg-model-list { border: none; background: transparent; margin-top: 1; }
 #reg-provider-name, #reg-provider-url, #reg-provider-key,
-#reg-model-provider, #reg-model-name { margin-top: 1; }
+#reg-model-provider, #reg-model-name,
+#reg-model-context, #reg-model-max-output { margin-top: 1; }
+/* 注册表单字段圆角边框：常态同面板线条色，聚焦同弹窗边框蓝；非法保留红框
+   （id 选择器优先级高于 Textual 默认的 tall 边框规则）。模型表单的提供方下拉可见
+   边框画在子部件 SelectCurrent 上，故选择器带 > SelectCurrent。 */
+#reg-provider-name, #reg-provider-url, #reg-provider-key,
+#reg-model-name, #reg-model-context, #reg-model-max-output,
+#reg-model-provider > SelectCurrent { border: round #475569; }
+#reg-provider-name:focus, #reg-provider-url:focus, #reg-provider-key:focus,
+#reg-model-name:focus, #reg-model-context:focus, #reg-model-max-output:focus,
+#reg-model-provider:focus > SelectCurrent { border: round #7287fd; }
+#reg-provider-name.-invalid, #reg-provider-url.-invalid, #reg-provider-key.-invalid,
+#reg-model-name.-invalid, #reg-model-context.-invalid, #reg-model-max-output.-invalid {
+    border: round #ef4444;
+}
+/* thinking / vision 开关：去边框 + 透明底（Switch 默认 tall 边框 + surface 底） */
+#reg-model-thinking, #reg-model-vision { border: none; background: transparent; }
 /* Switch 行：左侧标签吃满剩余宽、垂直居中，右侧开关内容自适应（Switch 默认 height/width auto） */
 .switch-row { height: auto; margin-top: 1; }
-.switch-row .switch-label { width: 1fr; padding-top: 1; }  /* 标签对齐 Switch（3 行高）中线 */
+.switch-row .switch-label { width: 1fr; }  /* 开关去边框后同为 1 行，无需上边距对齐 */
 
 /* ── /effort 弹窗：仅标题 + 标签排 + 提示行，故比通用 .picker 小一圈 ──
    定宽 46 = 最宽行（提示行）40 + padding 4 + border 2；文案写死在 screens/model.py

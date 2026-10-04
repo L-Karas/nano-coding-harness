@@ -43,7 +43,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 30 轮，只回传最终文本 |
 | `core/experimental/` | `teammates.py`（自治队友线程）、`message_bus.py`（JSONL 邮箱）、`protocol_state.py`（请求状态） |
 | `core/worktree/worktree.py` | git worktree 创建/移除/保留 |
-| `core/tui/` | Textual 界面：`ui_textual.py`（App）、`render.py`（线程安全渲染）、`widgets.py`（输入框与补全）、`screens/`（会话 / 模型 / MCP / 登录等弹窗）、`panels.py`（左栏分区）、`cards.py`（折叠卡片）、`info_panel.py`（右栏信息面板）、`smoke/`（冒烟自检）、`theme.py`/`app.css`、`demo.py` |
+| `core/tui/` | Textual 界面：`ui_textual.py`（App 装配 + 入口）、`surface.py`（卡片/流式/状态行）、`footer.py`（页脚）、`commands.py`（弹窗指令/回合/压缩）、`interactions.py`（权限/clarify）、`render.py`（线程安全渲染）、`widgets.py`（输入框与补全）、`screens/`（会话 / 模型 / MCP / 登录等弹窗）、`panels.py`（左栏分区）、`cards.py`（折叠卡片）、`info_panel.py`（右栏信息面板）、`smoke/`（冒烟自检）、`theme.py`/`app.css`、`demo.py` |
 | `docs/` | 补充笔记：cron 表达式、harness 配置文件、asyncio |
 | `examples/` | s01–s18 教学脚本（从 agent loop 到 worktree 隔离的演进示例） |
 
@@ -83,7 +83,8 @@ teammate 走同一份配置，不存在第二处模型来源。
 
 ## TUI 交互
 
-左右分栏（约 4:1）：左侧标题栏 + 卡片式聊天记录 + 状态行 + 输入条 + 页脚（cwd / git 分支 / 当前模型）；
+左右分栏（约 4:1）：左侧标题栏 + 卡片式聊天记录 + 状态行 + 输入条 + 页脚（cwd / git 分支）
++ 底行（左：上下文占用条（当前会话 token 占上下文长度的进度条与百分比），右：当前模型）；
 右侧 Information 面板实时展示 Todos（`in_progress` 转圈）与后台任务（`running` 转圈），分区与条目均可点击折叠/展开。
 
 | 操作 | 说明 |
@@ -148,7 +149,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
-| `bash` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），输出截断 5 万字符；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
+| `terminal` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），输出截断 5 万字符；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
 | `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本，超限时返回续读 offset 提示 |
 | `write_file` | `path`, `content` | 写文件，执行前渲染 diff 预览 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
@@ -184,7 +185,7 @@ MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main 
 
 ## 后台任务
 
-`should_run_background()` 据此判定：`bash` 显式传 `should_run_in_background=true`，
+`should_run_background()` 据此判定：`terminal` 显式传 `should_run_in_background=true`，
 或命令命中慢命令启发式（`make` / `pytest` / `sleep` / `pip install` / `npm test` / `cargo build` 等，
 只看每条子命令的命令词，宁可漏判不误判）。
 

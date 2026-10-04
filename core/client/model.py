@@ -197,7 +197,9 @@ def login_model(
         provider: str,
         model: str,
         thinking: bool = True,
-        vision: bool = True
+        vision: bool = True,
+        context_length: int = 0,
+        max_output: Optional[int] = None
 ) -> bool:
     """Login a custom model"""
     if provider not in _PROVIDER_AUTH:
@@ -212,7 +214,9 @@ def login_model(
             "medium": "medium",
             "high": "high",
             "max": "max",
-        }
+        },
+        "context_length": context_length,
+        "max_output": max_output,
     }
     try:
         with open(CUSTOM_MODEL_FILE, "w", encoding="utf-8") as f:
@@ -290,6 +294,12 @@ class ModelClient:
         self.current_client: Optional[OpenAI] = None
         self.current_client_async: Optional[AsyncOpenAI] = None
         self._init_client()
+
+    def load_context_length(self) -> int:
+        """加载当前模型上下文长度，未选择模型时返回 0。"""
+        if not self.current_model:
+            return 0
+        return _MODEL_LIST[self.current_provider]["model_list"][self.current_model]["context_length"]
 
     def _init_client(self):
         global _HARNESS_SETTING

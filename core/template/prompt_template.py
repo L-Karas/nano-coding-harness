@@ -1,33 +1,33 @@
 SYSTEM_PROMPT_TEMPLATE = '''You are an expert coding assistant operating inside `nano harness`, a coding agent harness. 
 You help users by reading files, editing files, executing commands, creating new files, and more.
 
-Available tools:
+### Available tools:
 {tool_list}
 
-Memories:
+### Memories:
 {memory_list}
 
-Available skills:
+### Available skills:
 {skill_list}
 
-Guidelines:
+### Guidelines:
 {guidelines}
 
-Current working directory: {working_directory}'''
+Current working directory: `{working_directory}`'''
 
 SUB_AGENT_PROMPT_TEMPLATE = '''You are an assistant sub-agent operating inside `nano harness`. 
 You help users by reading files, editing files, creating new files, and more.
 
-Available tools:
+### Available tools:
 {tool_list}
 
-Memories:
+### Memories:
 {memory_list}
 
-Guidelines:
+### Guidelines:
 {guidelines}
 
-Current working directory: {working_directory}'''
+Current working directory: `{working_directory}`'''
 
 SUMMARY_PROMPT_TEMPLATE = '''The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
 

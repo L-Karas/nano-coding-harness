@@ -79,7 +79,7 @@ def permission_hook(tool_call: ChatCompletionMessageToolCallUnion):
     # ask the user, or allow execution to continue.
     tool_args = json.loads(tool_call.function.arguments)
 
-    if tool_call.function.name == "bash":
+    if tool_call.function.name == "terminal":
         command = tool_args.get("command", "")
         for regex, pattern in DENY_PATTERNS:
             if regex.search(command):

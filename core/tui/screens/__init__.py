@@ -1,9 +1,6 @@
-"""TUI 弹窗集合（自 widgets.py 按功能拆出）。
+"""TUI 弹窗集合：base（基础设施）+ session / provider / model / skills / mcp / login / fork。
 
-- base：弹窗基础设施——原地确认 / OptionList 弹窗骨架 / 会话行 / 通用小工具；
-- session / provider / model / skills / mcp / login：各功能弹窗。
-
-导入面保持稳定：core.tui.widgets 仍转出常用弹窗名（历史导入不破）。
+core.tui.widgets 仍转出常用弹窗名，兼容历史导入。
 """
 
 from core.tui.screens.base import (

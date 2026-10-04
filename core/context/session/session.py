@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Literal, Any
 
 from core.config import SESSION_DIR, SESSION_INDEX_FILE, MESSAGE_PREVIEW_CHARS
+from core.context.token import estimate_size
 from core.log.log import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -77,6 +78,14 @@ class SessionManager:
         self.session_map: dict[str, Session] = {}
         # current session file name
         self.current_session: str = ""
+
+    def load_session_tokens(self) -> int:
+        """
+        加载当前会话消息 token 总数
+        Returns:
+
+        """
+        return estimate_size(self.load_messages()) if self.current_session else 0
 
     def _update_session_title(self, user_query: str):
         if not self.current_session:
@@ -259,7 +268,7 @@ class SessionManager:
 
     def load_session_list(self) -> list[Session]:
         """
-        加载所有会话，更新会话影射表
+        加载会话索引中的全部会话（仅元数据），更新会话映射表
         """
 
         try:
@@ -279,14 +288,13 @@ class SessionManager:
 
     def load_session(self, session_id: str = "") -> Session | None:
         """
-        加载会话，若提供会话 id，则加载对应会话，否则加载当前会话
+        加载会话消息：提供会话 id 时加载对应会话，否则加载当前会话。
+        始终从会话文件重读：load_session_list 只保留索引元数据，内存中的 messages
+        可能已被重置，不能据此短路返回。
         """
         if session_id:
-            # 若加载会话为当前会话，直接返回消息历史
-            if self.current_session == session_id:
-                return self.session_map[self.current_session]
-            # 清空上一会话消息历史，待需要时重新从文件读取
-            if self.current_session:
+            # 切换会话：清空上一会话内存消息，待需要时重新从文件读取
+            if self.current_session and self.current_session != session_id:
                 self.session_map[self.current_session].messages = []
             self.current_session = session_id
 
