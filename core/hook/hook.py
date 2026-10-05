@@ -92,7 +92,7 @@ def permission_hook(tool_call: ChatCompletionMessageToolCallUnion):
     if tool_call.function.name in ("read_file", "write_file", "edit_file"):
         path = tool_args.get("path", "")
         if not (WORKDIR / path).resolve().is_relative_to(WORKDIR):
-            if not _confirm(f"Access outside workspace:\n\n{tool_call.function.name}: {path}"):
+            if not _confirm(f"Access outside working directory:\n\n{tool_call.function.name}: {path}"):
                 return "Permission denied by user"
 
     # todo: mcp tool 权限策略（mcp_* 工具当前直接放行）

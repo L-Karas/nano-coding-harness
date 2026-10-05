@@ -10,10 +10,16 @@ from core.config import WORKDIR
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _to_text
 
+DESCRIPTION = (
+    "Find files by glob pattern. Use it to locate files by name or extension; use `grep` to search "
+    "file contents. Patterns are relative to the working directory and `**/` recurses into subdirectories."
+)
+
 
 class Glob(BaseTool):
-    """Find files matching a glob pattern."""
-    pattern: str = Field(description="The glob pattern to match files against (e.g. '**/*.py').")
+    __doc__ = DESCRIPTION
+    pattern: str = Field(description="Glob pattern relative to the working directory, e.g. '**/*.py', "
+                                     "'src/**/*.ts'. Use `**/` to recurse.")
 
     agent_type: set = {"main", "sub-agent", "teammate"}
 
@@ -25,14 +31,15 @@ def has_ripgrep() -> bool:
 def run_glob(pattern: str, cwd: Optional[Path] = None) -> str:
     root = cwd or WORKDIR
     results = ["[Matches]\n"]
-    for match in g.glob(pattern, root_dir=root):
+    for match in g.glob(pattern, root_dir=root, recursive=True):  # `**` 需 recursive=True 才跨多层目录
         if (root / match).resolve().is_relative_to(root):
             results.append(match)
 
-    return "\n".join(results) if results else "(No matches)"
+    return "\n".join(results) if len(results) > 1 else "(No matches)"
 
 
 async def run_glob_async(pattern: str, cwd: Optional[Path] = None, ctx=None, use_ignore: bool = True) -> str:
+    """use_ignore=False includes .gitignore's files; ripgrep path only, not exposed in the tool schema."""
     if ctx:
         ctx.raise_if_cancelled()
 
@@ -74,4 +81,4 @@ async def run_glob_async(pattern: str, cwd: Optional[Path] = None, ctx=None, use
             process.kill()
             await process.wait()
 
-    return "\n".join(outputs) if outputs else "(No matches)"
+    return "\n".join(outputs) if len(outputs) > 1 else "(No matches)"

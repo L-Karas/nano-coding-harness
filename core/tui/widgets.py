@@ -29,9 +29,10 @@ _CMD_DESC_STYLE = "#94a3b8"
 
 
 def _cmd_candidates(value: str) -> list[str]:
-    """/ 指令候选：整行以 / 开头且未含空白时按前缀过滤（含别名）；指令完整输入后不再提示。"""
+    """/ 指令候选：整行以 / 开头且未含空白时按前缀过滤（含别名，忽略大小写）；指令完整输入后不再提示。"""
     if not (value.startswith("/") and " " not in value):
         return []
+    value = value.lower()
     candidates = []
     for cmd in SLASH_COMMANDS:
         names = (cmd, *SLASH_COMMAND_ALIASES.get(cmd, ()))

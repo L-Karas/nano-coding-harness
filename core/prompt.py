@@ -1,11 +1,14 @@
 """
 Prompt Assemble
 """
+import platform
+from functools import cache
 from typing import Literal
 
 from core.config import WORKDIR
 from core.context.memory import MEMORY_MANAGER
 from core.log import get_logger
+from core.shell import find_shell, shell_kind
 from core.skill import load_skills
 from core.template import SYSTEM_PROMPT_TEMPLATE
 from core.template.prompt_template import SUB_AGENT_PROMPT_TEMPLATE
@@ -13,7 +16,6 @@ from core.template.prompt_template import SUB_AGENT_PROMPT_TEMPLATE
 _LOGGER = get_logger(__name__)
 
 
-# todo: 缓存，避免每次重建
 def build_tools_table(tools: list[dict] | None = None) -> str:
     if not tools:
         return "(none)"
@@ -46,6 +48,25 @@ def build_skills_table() -> str:
     return "\n".join(sections)
 
 
+@cache
+def build_guidelines() -> str:
+    """shell / 平台指南：运行期不变量，进程内只构建一次。"""
+    sections = ["- Be concise in your responses", "- Show file paths clearly when working with files"]
+
+    # shell_kind 为 None 时 terminal 走系统默认 shell（cmd/sh），不声称具体方言
+    kind = shell_kind(find_shell())
+    if kind == "bash":
+        sections.append("- The `terminal` tool executes commands with bash: use bash syntax")
+    elif kind == "pwsh":
+        sections.append("- The `terminal` tool executes commands with PowerShell 7 `pwsh`: use PowerShell syntax")
+    elif kind == "powershell":
+        sections.append("- The `terminal` tool executes commands with Windows PowerShell: use PowerShell syntax")
+
+    sections.append(f"- Current platform: `{platform.platform(terse=True)}`")
+
+    return "\n".join(sections)
+
+
 def build_system_prompt(agent_type: Literal["main", "sub-agent", "teammate"] = "main",
                         tools: list[dict] | None = None) -> str:
     tools = tools or []
@@ -53,10 +74,7 @@ def build_system_prompt(agent_type: Literal["main", "sub-agent", "teammate"] = "
     tools_table = build_tools_table(tools)
     memories_table = build_memories_table()
     skills_table = build_skills_table()
-    guidelines = "\n".join(f"- {guide}" for guide in [
-        "Be concise in your responses",
-        "Show file paths clearly when working with files"
-    ])
+    guidelines = build_guidelines()
 
     if agent_type == "main":
         return SYSTEM_PROMPT_TEMPLATE.format(
