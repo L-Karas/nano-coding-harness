@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
 from core.tui.screens.base import _InlineConfirm, _ListPickerScreen, _SessionRow, _rebuild_options
@@ -60,9 +59,7 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
         else:
             self.dismiss((None, True))  # 删空后退出，主界面显示空列表卡片
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        event.stop()
-        if self._run_confirm():  # 原地确认中：Enter = 确认删除，而非切换会话
-            return
-        if event.option_id:
-            self.dismiss((event.option_id, False))
+    def _selected(self, option_id: Optional[str]) -> None:
+        """Enter/点击选中行：切到该会话；原地确认中由 _InlineConfirm 先行拦截。"""
+        if option_id:
+            self.dismiss((option_id, False))

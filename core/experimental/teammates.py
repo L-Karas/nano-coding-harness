@@ -200,7 +200,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                         })
 
                 try:
-                    # 模型统一走 shared_model_client（.harness/.setting.json），
+                    # 模型统一走 shared_model_client（.harness/.settings.json），
                     # thinking 参数由模型配置决定（get_model_client 已按配置带 extra_body），不再单独指定
                     response = shared_model_client().get_model_client()(
                         messages=messages,

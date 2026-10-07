@@ -27,11 +27,17 @@ _DIM = "dim #e2e8f0"  # 卡片正文（暗灰）
 _DIFF_STYLES = {"+": "#b5bd68", "-": "#f87171"}  # diff 行：+ 绿 / - 淡红，其余 dim
 
 
-def _exec(fn: Callable[[ChatApp], Any]) -> Any:
-    """在 App 线程执行 fn(app)：已在 App 线程则直接执行，否则经事件循环桥接。"""
+def _require_app() -> ChatApp:
+    """取当前已挂载的 App；未启动（_APP 未设置）抛 RuntimeError。"""
     app = _APP
     if app is None:
         raise RuntimeError("Textual UI is not running: call run() (or run ChatApp().run() yourself) before rendering")
+    return app
+
+
+def _exec(fn: Callable[[ChatApp], Any]) -> Any:
+    """在 App 线程执行 fn(app)：已在 App 线程则直接执行，否则经事件循环桥接。"""
+    app = _require_app()
     if threading.get_ident() == app._thread_id:
         return fn(app)
     try:
@@ -91,9 +97,9 @@ def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = D
 
 
 def render_background_notification(message: str, title: str = "🔔 Background Task") -> None:
-    """后台任务通知卡片：加粗标题行 + 暗灰正文。"""
-    body = Text.assemble((title, "bold #f8fafc"), "\n") + _dim_body(message)
-    _exec(lambda app: app._add_card("notice", body))
+    """后台任务通知卡片：加粗标题行固定常驻 + 暗灰正文，正文超出折叠。"""
+    head = Text.assemble((title, "bold #f8fafc"), "\n")
+    _add_capped_card("notice", _dim_body(message), head=head)
 
 
 def render_sessions() -> None:
@@ -190,9 +196,7 @@ def render_working_status(message: str = "Working..."):
 
 def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: str) -> str:
     """权限 / 澄清询问共用的桥接骨架：须非 App 线程调用，阻塞等待作答；App 退出竞态返回 ""。"""
-    app = _APP
-    if app is None:
-        raise RuntimeError("Textual UI is not running: call run() first")
+    app = _require_app()
     if threading.get_ident() == app._thread_id:
         raise RuntimeError(thread_error)
 

@@ -14,6 +14,7 @@ _SLASH_COMMAND_META: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("/provider", (), "Configure API providers"),
     ("/model", (), "Switch the active model"),
     ("/effort", (), "Set the thinking effort"),
+    ("/settings", (), "Edit agent settings"),
     ("/login", ("/logout",), "Register/unregister custom provider or model"),
     ("/exit", ("/quit",), "Quit the app"),
 )

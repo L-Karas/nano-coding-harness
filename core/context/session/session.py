@@ -55,6 +55,7 @@ class Message:
     tool_calls: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=dict)
     payload: Any = ""
+    timestamp: str = field(default_factory=_get_timestamp)
 
 
 @dataclass

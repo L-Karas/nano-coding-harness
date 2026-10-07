@@ -4,8 +4,11 @@ import os
 import httpx
 from pydantic import Field
 
+from core.log import get_logger
 from core.tools.tool_base import BaseTool
 from core.tools.web_search.utils import update_provider_state, format_search_result, PROVIDER_STATE
+
+_LOGGER = get_logger(__name__)
 
 
 class WebSearch(BaseTool):
@@ -43,6 +46,7 @@ async def firecrawl_search(query: str) -> tuple[bool, str]:
             formated_results = format_search_result(response_json["data"]["web"], provider="firecrawl")
             return True, formated_results
     except Exception as e:
+        _LOGGER.exception(e)
         return False, str(e)
 
 
@@ -72,6 +76,7 @@ async def tavily_search(query: str) -> tuple[bool, str]:
         else:
             return True, format_search_result(response_json.get("results", []))
     except Exception as e:
+        _LOGGER.exception(e)
         return False, str(e)
 
 
@@ -104,6 +109,7 @@ async def exa_search(query: str) -> tuple[bool, str]:
                 update_provider_state("exa", enable=False)
             return False, response_json.get("error", "")
     except Exception as e:
+        _LOGGER.exception(e)
         return False, str(e)
 
 
@@ -112,12 +118,14 @@ async def ddgs_search(query: str) -> tuple[bool, str]:
 
     try:
         with ddgs.DDGS() as client:
-            response = await asyncio.to_thread(client.text, query=query, backend="google,bing,brave,duckduckgo")
+            # 不指定 backend：ddgs 默认 auto，按当前版本选择可用引擎
+            response = await asyncio.to_thread(client.text, query=query)
         if not response:
             return False, "(No search results)"
         return True, format_search_result(response, "ddgs")
-    except Exception:
-        raise
+    except Exception as e:
+        _LOGGER.exception(e)
+        return False, str(e)
 
 
 async def run_web_search_async(query: str, ctx=None) -> str:

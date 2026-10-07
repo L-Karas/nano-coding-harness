@@ -6,12 +6,19 @@ from typing import Optional
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Input, OptionList, Static
+from textual.widgets import Input, Static
 from textual.widgets.option_list import Option
 
-from core.tui.screens.base import _InlineConfirm, _ListPickerScreen, _error_text, _rebuild_options
+from core.tui.screens.base import (
+    _InlineConfirm,
+    _ListPickerScreen,
+    _error_text,
+    _field,
+    _rebuild_options,
+)
 
 
 class ProviderScreen(_InlineConfirm, _ListPickerScreen):
@@ -24,8 +31,10 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
     TITLE = "Model Providers"
     HINT = "  ↑/↓ browse    Enter set API Key    Delete remove config    Esc close"
     LIST_ID = "provider-list"
+    SEARCH_PLACEHOLDER = "Search providers…"
     CONFIRM = True
-    BINDINGS = [("delete", "remove_selected", "Delete")]
+    # priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
+    BINDINGS = [Binding("delete", "remove_selected", "Delete", priority=True)]
 
     _NAME_STYLE = "#f8fafc"
     _UNCONFIGURED_STYLE = "#94a3b8"  # 灰：未配置
@@ -38,7 +47,8 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
     def _reload(self) -> None:
         _rebuild_options(self._list(),
                          [Option(self._row_text(provider, configured), id=provider)
-                          for provider, configured in self._rows])
+                          for provider, configured in self._rows
+                          if self._match(provider)])
 
     def _row_text(self, provider: str, configured: bool) -> Text:
         """行 = provider（后端原名）+ 状态（未配置灰 / 已配置暗绿）。"""
@@ -53,15 +63,11 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
         self._rows = get_provider_list()
         self._reload()
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Enter/点击选中行：弹出 ApiKeyScreen 录入该 provider 的 API Key（原地确认中 = 确认删除）"""
-        event.stop()
-        if self._run_confirm():
-            return
-        provider = event.option_id
-        if provider:
-            self.app.push_screen(ApiKeyScreen(provider),
-                                 callback=lambda api_key: self._on_key_submitted(provider, api_key))
+    def _selected(self, option_id: Optional[str]) -> None:
+        """Enter/点击选中行：弹出 ApiKeyScreen 录入该 provider 的 API Key。"""
+        if option_id:
+            self.app.push_screen(ApiKeyScreen(option_id),
+                                 callback=lambda api_key: self._on_key_submitted(option_id, api_key))
 
     def _on_key_submitted(self, provider: str, api_key: Optional[str]) -> None:
         """ApiKeyScreen 回调：None=Esc 取消；有 key 则落盘并刷新状态。"""
@@ -82,7 +88,9 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
         olist = self._list()
         if olist.highlighted is None:
             return
-        provider, configured = self._rows[olist.highlighted]
+        # 过滤后高亮位置不再对应 self._rows，按选项 id 回查
+        provider = str(olist.get_option_at_index(olist.highlighted).id)
+        configured = dict(self._rows).get(provider, False)
         if not configured:
             self.app.notify(f"{provider} is not configured — nothing to delete", title="ℹ️ Provider")
             return
@@ -110,7 +118,7 @@ class ApiKeyScreen(ModalScreen[Optional[str]]):
 
     def compose(self) -> ComposeResult:
         picker = Vertical(
-            Input(placeholder="API Key (masked)", password=True, id="api-key-input"),
+            _field(Input(placeholder="API Key (masked)", password=True, id="api-key-input")),
             Static("  Enter save    Esc cancel", classes="picker-hint"),
             classes="picker",
         )

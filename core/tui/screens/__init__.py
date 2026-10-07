@@ -1,18 +1,8 @@
-"""TUI 弹窗集合：base（基础设施）+ session / provider / model / skills / mcp / login / fork。
+"""TUI 弹窗集合：session / provider / model / skills / mcp / login / fork / settings。
 
-core.tui.widgets 仍转出常用弹窗名，兼容历史导入。
+公共入口只有各屏类；base 的骨架 / 混入 / 行渲染按需从 core.tui.screens.base 直接导入。
 """
 
-from core.tui.screens.base import (
-    _InlineConfirm,
-    _InstantTabs,
-    _ListPickerScreen,
-    _SessionRow,
-    _entry_row,
-    _error_text,
-    _model_row_text,
-    _rebuild_options,
-)
 from core.tui.screens.fork import ForkScreen
 from core.tui.screens.login import (
     LoginScreen,
@@ -25,13 +15,12 @@ from core.tui.screens.mcp import MCPConfigScreen, MCPServersScreen, MCPToolsScre
 from core.tui.screens.model import EffortScreen, ModelPickerScreen
 from core.tui.screens.provider import ApiKeyScreen, ProviderScreen
 from core.tui.screens.session import SessionPickerScreen
+from core.tui.screens.settings import SettingsScreen
 from core.tui.screens.skills import SkillsScreen
 
 __all__ = [
     "ApiKeyScreen", "EffortScreen", "ForkScreen", "LoginScreen", "MCPConfigScreen", "MCPServersScreen",
     "MCPToolsScreen", "ModelPickerScreen", "ProviderScreen", "RegisterModelScreen",
-    "RegisterProviderScreen", "SessionPickerScreen", "SkillsScreen", "UnregisterModelScreen",
-    "UnregisterProviderScreen",
-    "_InlineConfirm", "_InstantTabs", "_ListPickerScreen", "_SessionRow", "_entry_row",
-    "_error_text", "_model_row_text", "_rebuild_options",
+    "RegisterProviderScreen", "SessionPickerScreen", "SettingsScreen", "SkillsScreen",
+    "UnregisterModelScreen", "UnregisterProviderScreen",
 ]

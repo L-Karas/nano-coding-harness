@@ -8,7 +8,7 @@ from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
 from core.config import MESSAGE_PREVIEW_CHARS
-from core.tui.screens.base import _ListPickerScreen, _rebuild_options
+from core.tui.screens.base import _ListPickerScreen, _SessionRow, _rebuild_options
 
 
 def _preview(content: str) -> str:
@@ -28,8 +28,12 @@ class ForkScreen(_ListPickerScreen):
         super().__init__()
         self._messages = messages
 
+    def _row(self, message: Any) -> _SessionRow:
+        """选项行：消息预览靠左、时间戳（到秒）顶到行最右（复用 /sessions 行排版）。"""
+        return _SessionRow(_preview(message.content), current=False, timestamp=message.timestamp)
+
     def _reload(self) -> None:
-        _rebuild_options(self._list(), [Option(_preview(m.content), id=m.id) for m in self._messages])
+        _rebuild_options(self._list(), [Option(self._row(m), id=m.id) for m in self._messages])
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()

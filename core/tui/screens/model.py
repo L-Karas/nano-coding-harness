@@ -29,6 +29,7 @@ class ModelPickerScreen(_ListPickerScreen):
     TITLE = "Select a model"
     HINT = "  ↑/↓ browse    Enter switch model    Esc close"
     LIST_ID = "model-list"
+    SEARCH_PLACEHOLDER = "Search models…"
 
     def __init__(self, rows: list[tuple[str, str]]) -> None:
         super().__init__()
@@ -37,20 +38,23 @@ class ModelPickerScreen(_ListPickerScreen):
 
     def _reload(self) -> None:
         self._current = current_model_state()[:2]
-        _rebuild_options(self._list(), [Option(self._row_text(model, tag), id=str(i))
-                                        for i, (model, tag) in enumerate(self._rows)])
+        _rebuild_options(self._list(),
+                         [Option(self._row_text(model, provider), id=str(i))
+                          for i, (model, provider) in enumerate(self._rows)
+                          if self._match(model)])
 
-    def _row_text(self, model: str, provider_tag: str) -> Text:
-        return _model_row_text(model, provider_tag,
-                               self._current == (provider_tag.strip("[]"), model))
+    def _row_text(self, model: str, provider: str) -> Text:
+        return _model_row_text(model, provider, self._current == (provider, model))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
-        index = event.option_index
+        option_id = event.option_id or ""
+        if not option_id.isdigit():  # 选项 id = 原始行下标（过滤后列表位置不再对应数据源）
+            return
+        index = int(option_id)
         if not 0 <= index < len(self._rows):
             return
-        model, provider_tag = self._rows[index]
-        provider = provider_tag.strip("[]")  # 行内为 "[Provider]"（展示用），后端名原样
+        model, provider = self._rows[index]
         try:
             from core.client import shared_model_client
             shared_model_client().set_model_client(provider, model)
@@ -58,7 +62,7 @@ class ModelPickerScreen(_ListPickerScreen):
             self.app.notify(f"Failed to switch to {model}: {_error_text(exc)}",
                             title="⚠️ Model", severity="error")
             return
-        self.app.notify(f"Switched to {model} {provider_tag}", title="✅ Model")
+        self.app.notify(f"Switched to {model} [{provider}]", title="✅ Model")
         self.dismiss(None)
 
 

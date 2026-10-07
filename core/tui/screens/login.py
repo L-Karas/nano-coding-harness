@@ -11,7 +11,15 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Select, Static, Switch
 from textual.widgets.option_list import Option
 
-from core.tui.screens.base import _InlineConfirm, _ListPickerScreen, _error_text, _model_row_text, _rebuild_options
+from core.tui.screens.base import (
+    _ArrowNav,
+    _InlineConfirm,
+    _ListPickerScreen,
+    _error_text,
+    _field,
+    _model_row_text,
+    _rebuild_options,
+)
 
 
 def _custom_provider_names(screen: ModalScreen) -> list[str]:
@@ -71,17 +79,19 @@ class LoginScreen(_ListPickerScreen):
             self.app.push_screen(screen_cls())
 
 
-class RegisterProviderScreen(ModalScreen[None]):
-    """提供方注册表单：名称 / Base URL / API Key（掩码），Enter 经 login_provider 落盘；
-    名称或 Base URL 为空、重名（含内置）留在窗内提示；Esc 取消。"""
+class RegisterProviderScreen(_ArrowNav, ModalScreen[None]):
+    """提供方注册表单：名称 / Base URL / API Key（掩码），Tab / ↑/↓ 切字段，Enter 经
+    login_provider 落盘；名称或 Base URL 为空、重名（含内置）留在窗内提示；Esc 取消。"""
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
         picker = Vertical(
-            Input(placeholder="Provider name", id="reg-provider-name"),
-            Input(placeholder="Base URL (e.g. https://api.example.com/v1)", id="reg-provider-url"),
-            Input(placeholder="API Key (optional, masked)", password=True, id="reg-provider-key"),
+            _field(Input(placeholder="Provider name", id="reg-provider-name")),
+            _field(Input(placeholder="Base URL (e.g. https://api.example.com/v1)",
+                         id="reg-provider-url")),
+            _field(Input(placeholder="API Key (optional, masked)", password=True,
+                         id="reg-provider-key")),
             Static("  Tab next field    Enter register    Esc cancel", classes="picker-hint"),
             classes="picker",
             id="reg-provider-picker",
@@ -117,9 +127,10 @@ class RegisterProviderScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
-class RegisterModelScreen(ModalScreen[None]):
-    """模型注册表单：提供方下拉（仅自定义提供方，默认未选）+ 模型名 + 上下文长度 +
-    最大输出（可留空 = 未知）+ 思考/视觉开关（默认开，同 login_model 默认值）。
+class RegisterModelScreen(_ArrowNav, ModalScreen[None]):
+    """模型注册表单：提供方下拉（仅自定义提供方，占位提示“Select a custom provider”）+
+    模型名 + 上下文长度 + 最大输出（可留空 = 未知）+ 思考/视觉开关（默认开，同 login_model
+    默认值）。↑/↓ 切字段、Enter 打开下拉后 ↑/↓ 选项（见 _ArrowNav）。
 
     Enter 经 login_model 落盘；未选提供方 / 模型名为空 / 长度非正整数留在窗内提示；Esc 取消。"""
 
@@ -127,10 +138,12 @@ class RegisterModelScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         picker = Vertical(
-            Select([], prompt="Select a custom provider", id="reg-model-provider"),
-            Input(placeholder="Model name", id="reg-model-name"),
-            Input(placeholder="Context length (e.g. 128000)", type="integer", id="reg-model-context"),
-            Input(placeholder="Max output tokens (e.g. 32000, optional)", type="integer", id="reg-model-max-output"),
+            _field(Select([], prompt="Select a custom provider", id="reg-model-provider")),
+            _field(Input(placeholder="Model name", id="reg-model-name")),
+            _field(Input(placeholder="Context length (e.g. 128000)", type="integer",
+                         id="reg-model-context")),
+            _field(Input(placeholder="Max output tokens (e.g. 32000, optional)", type="integer",
+                         id="reg-model-max-output")),
             Horizontal(Static("Supports thinking mode", classes="switch-label"),
                        Switch(value=True, id="reg-model-thinking"), classes="switch-row"),
             Horizontal(Static("Supports vision", classes="switch-label"),
@@ -256,8 +269,8 @@ class UnregisterModelScreen(_InlineConfirm, _ListPickerScreen):
             self._rows = []
             self.app.notify(f"Cannot load custom models: {_error_text(exc)}",
                             title="⚠️ Login", severity="error")
-        _rebuild_options(self._list(), [Option(_model_row_text(model, tag), id=str(i))
-                                        for i, (model, tag) in enumerate(self._rows)])
+        _rebuild_options(self._list(), [Option(_model_row_text(model, provider), id=str(i))
+                                        for i, (model, provider) in enumerate(self._rows)])
         if not self._rows:
             self.app.notify("No custom models to unregister", title="ℹ️ Login")
 
@@ -266,8 +279,7 @@ class UnregisterModelScreen(_InlineConfirm, _ListPickerScreen):
         olist = self._list()
         if olist.highlighted is None or not 0 <= olist.highlighted < len(self._rows):
             return
-        model, provider_tag = self._rows[olist.highlighted]
-        provider = provider_tag.strip("[]")  # 行内为 "[Provider]"，后端名原样
+        model, provider = self._rows[olist.highlighted]
         self._ask_confirm(f'Unregister "{model}" from {provider}?',
                           lambda: self._unregister(provider, model))
 

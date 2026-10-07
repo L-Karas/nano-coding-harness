@@ -8,7 +8,6 @@ from typing import Literal
 from core.config import WORKDIR
 from core.context.memory import MEMORY_MANAGER
 from core.log import get_logger
-from core.shell import find_shell, shell_kind
 from core.skill import load_skills
 from core.template import SYSTEM_PROMPT_TEMPLATE
 from core.template.prompt_template import SUB_AGENT_PROMPT_TEMPLATE
@@ -51,6 +50,9 @@ def build_skills_table() -> str:
 @cache
 def build_guidelines() -> str:
     """shell / 平台指南：运行期不变量，进程内只构建一次。"""
+    # 函数级导入打破循环：core.tools 包初始化会经 subagent → core.sub_agent 回头导入本模块
+    from core.tools.shell import find_shell, shell_kind
+
     sections = ["- Be concise in your responses", "- Show file paths clearly when working with files"]
 
     # shell_kind 为 None 时 terminal 走系统默认 shell（cmd/sh），不声称具体方言

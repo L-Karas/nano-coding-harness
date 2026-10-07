@@ -75,12 +75,13 @@ Toast, Toast:ansi { background: #1e293b; }
     color: #64748b;
 }
 
-/* ── 滚动条：所有滚动区共用 ──
+/* ── 滚动条：所有滚动区共用（含 /settings 与注册模型窗的 Select 下拉浮层）──
    宽度收窄为 1 列（Textual 默认 2 列），轨道透明，滑块色同卡片描边，hover / 拖动高亮 */
 #todos-list, #bg-list, #subagents-list,
 #chat,
 #cmd-suggest, #file-suggest, #perm-list, #clarify-list,
-#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list {
+#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list,
+#settings-picker Select > SelectOverlay, #reg-model-provider > SelectOverlay {
     scrollbar-size-vertical: 1;
     scrollbar-background: transparent;
     scrollbar-background-hover: transparent;
@@ -183,6 +184,7 @@ Toast, Toast:ansi { background: #1e293b; }
 #login-list > .option-list--option-highlighted,
 #unreg-provider-list > .option-list--option-highlighted,
 #unreg-model-list > .option-list--option-highlighted,
+#settings-picker Select > SelectOverlay > .option-list--option-highlighted,
 #reg-model-provider > SelectOverlay > .option-list--option-highlighted {
     background: #334155;
     color: #f8fafc;
@@ -281,6 +283,39 @@ ModalScreen {
 
 .picker-hint  { color: #64748b; padding-top: 1; }
 
+/* 弹窗搜索栏与表单字段行（/provider API Key、/login 注册表单、自定义模型下拉）共用
+   同一套「❯ + 输入」行：整行仅保留下边框（聚焦 :focus-within 换亮蓝），标记暗灰，
+   内容行 1 + 下边框 1 = 高 2 */
+#search-row, .field-row {
+    height: 2;
+    border: none;
+    border-bottom: solid #475569;
+    padding: 0 1;
+}
+#search-row:focus-within, .field-row:focus-within { border-bottom: solid #7287fd; }
+#search-prompt, .field-mark { width: auto; height: 1; padding-right: 1; color: #64748b; }
+
+/* 行内输入控件去掉 Input 默认外观（tall 边框 + $surface 底 + height 3）。id 选择器
+   压过 Textual 的 ansi 聚焦分支；下拉字段的可见部分（边框/底色）画在子部件 SelectCurrent 上。 */
+#search-input,
+#api-key-input,
+#reg-provider-name, #reg-provider-url, #reg-provider-key,
+#reg-model-name, #reg-model-context, #reg-model-max-output {
+    border: none;
+    background: transparent;
+    background-tint: transparent;
+    height: 1;
+    padding: 0;
+    width: 1fr;
+}
+#reg-model-provider { width: 1fr; height: 1; }
+#reg-model-provider > SelectCurrent {
+    border: none;
+    padding: 0;
+    background: transparent;
+    background-tint: transparent;
+}
+
 /* 弹窗内列表：去掉 OptionList 默认边框与底色，撑满弹窗剩余高度 */
 #sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list {
     border: none;
@@ -289,7 +324,6 @@ ModalScreen {
     margin-top: 1;
 }
 #mcp-list { height: auto; }  /* server 列表窗随内容收缩（尺寸见 #mcp-picker） */
-#api-key-input { margin-top: 1; }
 
 /* ── /mcp 配置弹窗：JSON TextArea（预置示例）；底色透出弹窗底，光标行不铺高亮 ── */
 #mcp-config-picker { width: 60%; max-width: 56; height: 50%; min-height: 14; }  /* 比通用 .picker 小一圈；min-height 保住小终端下的编辑区 */
@@ -308,27 +342,83 @@ ModalScreen {
 #reg-provider-picker, #reg-model-picker { width: 54; height: auto; max-height: 100%; }
 #unreg-provider-picker, #unreg-model-picker { width: 52; height: auto; max-height: 100%; }
 #login-list, #unreg-provider-list, #unreg-model-list { border: none; background: transparent; margin-top: 1; }
-#reg-provider-name, #reg-provider-url, #reg-provider-key,
-#reg-model-provider, #reg-model-name,
-#reg-model-context, #reg-model-max-output { margin-top: 1; }
-/* 注册表单字段圆角边框：常态同面板线条色，聚焦同弹窗边框蓝；非法保留红框
-   （id 选择器优先级高于 Textual 默认的 tall 边框规则）。模型表单的提供方下拉可见
-   边框画在子部件 SelectCurrent 上，故选择器带 > SelectCurrent。 */
-#reg-provider-name, #reg-provider-url, #reg-provider-key,
-#reg-model-name, #reg-model-context, #reg-model-max-output,
-#reg-model-provider > SelectCurrent { border: round #475569; }
-#reg-provider-name:focus, #reg-provider-url:focus, #reg-provider-key:focus,
-#reg-model-name:focus, #reg-model-context:focus, #reg-model-max-output:focus,
-#reg-model-provider:focus > SelectCurrent { border: round #7287fd; }
+.field-row { margin-top: 1; }
+/* 下拉浮层：圆角边框 + 背景同弹窗底色（视觉透明又不透出下层字段文字）；
+   字段行样式（❯ 标记 + 下边框）见顶部「搜索栏与表单字段行」 */
+#reg-model-provider > SelectOverlay {
+    border: round #475569;
+    background: ansi_default;
+    background-tint: transparent;
+    offset: -3 0;  /* 左移 3 列（标记 2 + 边框 1）使选项文字与字段文字对齐 */
+    margin-right: -4;  /* 右缘补回（偏移 3 + 行右 padding 1）：下拉右缘对齐字段行右缘 */
+}
+/* 非法输入：下边框画在行容器上，故以红字标记 */
 #reg-provider-name.-invalid, #reg-provider-url.-invalid, #reg-provider-key.-invalid,
 #reg-model-name.-invalid, #reg-model-context.-invalid, #reg-model-max-output.-invalid {
-    border: round #ef4444;
+    color: #ef4444;
 }
 /* thinking / vision 开关：去边框 + 透明底（Switch 默认 tall 边框 + surface 底） */
 #reg-model-thinking, #reg-model-vision { border: none; background: transparent; }
 /* Switch 行：左侧标签吃满剩余宽、垂直居中，右侧开关内容自适应（Switch 默认 height/width auto） */
 .switch-row { height: auto; margin-top: 1; }
 .switch-row .switch-label { width: 1fr; }  /* 开关去边框后同为 1 行，无需上边距对齐 */
+/* 聚焦开关：边框已去掉，用标签文字变色提示光标位置（开/关仍看滑块颜色）。
+   Textual 仅当 :focus-within 规则挂在行自身时才重算该行子树，故行上保留一条
+   无视觉变化的规则，子树里的标签才能真正随焦点变色 */
+.switch-row:focus-within { background: transparent; }
+.switch-row:focus-within .switch-label { color: #7287fd; }
+
+/* ── /settings 弹窗：字段行 = 左侧参数名 + 无边框输入（无下划线，靠光标与标签变色指示焦点）；
+   开关样式同注册模型窗的 Supports thinking mode（去边框 → 滑块变薄）；字段多，封顶后可滚 ── */
+#settings-picker { width: 60%; height: auto; max-height: 80%; overflow-y: auto; }
+#settings-picker .field-row { border: none; height: 1; }  /* id 选择器压过 .field-row 的 2 行下边框 */
+.field-row .field-label { width: 33; height: 1; padding-right: 1; color: #94a3b8; }
+.field-row:focus-within .field-label { color: #7287fd; }
+#settings-picker Switch { border: none; background: transparent; }
+#settings-picker Input,
+#settings-picker Select {
+    border: none;
+    background: transparent;
+    background-tint: transparent;
+    padding: 0;
+    width: 1fr;
+    height: 1;
+}
+#settings-picker Input:focus,  /* id 压过 Input:focus / Input.-invalid 的 tall 边框 */
+#settings-picker Input.-invalid,
+#settings-picker Input.-invalid:focus {
+    border: none;
+    background: transparent;
+    background-tint: transparent;
+}
+/* 锁定 / 编辑态区分：锁定值暗且光标不可见（聚焦只靠标签变色）；Enter 后整行高亮 + 亮字 + 光标 */
+#settings-picker Input { color: #64748b; }
+#settings-picker .input--cursor { background: transparent; color: #64748b; text-style: none; }
+#settings-picker .input--selection { background: #475569; color: #f8fafc; }
+#settings-picker Input.-editing,
+#settings-picker Input.-editing:focus {
+    background: #334155;
+    color: #f8fafc;
+}
+#settings-picker Input.-editing .input--cursor {
+    background: #f8fafc;
+    color: #334155;
+    text-style: none;
+}
+#settings-picker Select > SelectCurrent,
+#settings-picker Select:focus > SelectCurrent {
+    border: none;
+    padding: 0;
+    background: transparent;
+    background-tint: transparent;
+}
+/* 下拉浮层（thinking level / 模型）：圆弧边框 + ansi_default 底，同注册模型窗提供方下拉
+   （#reg-model-provider > SelectOverlay）；该处 offset/margin 是给 ❯ 标记对齐用的，本窗无需 */
+#settings-picker Select > SelectOverlay {
+    border: round #475569;
+    background: ansi_default;
+    background-tint: transparent;
+}
 
 /* ── /effort 弹窗：仅标题 + 标签排 + 提示行，故比通用 .picker 小一圈 ──
    定宽 46 = 最宽行（提示行）40 + padding 4 + border 2；文案写死在 screens/model.py

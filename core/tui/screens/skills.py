@@ -12,6 +12,7 @@ class SkillsScreen(_NamedListScreen):
     TITLE = "Available Skills"
     HINT = "  ↑/↓ browse    Enter invoke    Esc close"
     LIST_ID = "skills-list"
+    SEARCH_PLACEHOLDER = "Search skills…"
 
     def __init__(self, skills: list[dict]) -> None:
         super().__init__([(skill["name"], skill.get("description", "")) for skill in skills])

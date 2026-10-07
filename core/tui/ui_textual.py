@@ -67,12 +67,6 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
                 ("space", "toggle_clarify", "Toggle clarify selection"),
                 ("ctrl+c", "copy_or_ignore", "Ignore")]
 
-    _OPENERS = {  # / 指令 → 打开方法名（方法见 commands._CommandFlow）
-        "/sessions": "_open_sessions", "/fork": "_open_fork", "/skills": "_open_skills",
-        "/mcp": "_open_mcp", "/provider": "_open_providers", "/model": "_open_models",
-        "/effort": "_open_effort", "/login": "_open_login", "/logout": "_open_login",
-    }
-
     def __init__(self, handle_query: Optional[Callable[[str], None]] = None,
                  session_manager: Optional[SessionManager] = None,
                  banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
@@ -212,23 +206,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         if not query:
             return
         self._chat().anchor()  # 新回合开始：滚回底部并重新钉底
-        cmd = query.lower()
-        if cmd in ("/exit", "/quit"):
-            self.exit()
-        elif opener := self._OPENERS.get(cmd):
-            getattr(self, opener)()
-        elif self._busy:
-            # 回合进行中拒绝 /compact /new 与普通消息：/new 清空会话指针后，本轮后续 add_message
-            # 会把回话写进新建会话（见 session.py：current_session 为空时自动 new_session）
-            self._reject_busy()
-        elif cmd == "/compact":
-            self._run_compact()
-        elif cmd == "/new":
-            if self._manager is not None:
-                self._manager.current_session = ""  # 延迟建会话：下条消息到达时自动创建
-            self._clear_cards()
-        else:
-            self._send_user_query(query)
+        self._dispatch_query(query)
 
 
 def _default_agent_turn() -> tuple[Callable[[str], None], Callable[[], None], Any]:

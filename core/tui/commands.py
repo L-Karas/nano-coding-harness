@@ -1,14 +1,13 @@
 """弹窗指令 / 会话历史 / 用户回合 / 压缩——ChatApp 的指令流 mixin。
 
-/ 指令到方法的映射在 ui_textual.ChatApp._OPENERS；本模块负责执行与回调。
+/ 指令的打开方法表（_OPENERS）与分派（_dispatch_query）都在本模块；ui_textual.on_input_submitted
+只做输入清理后转调。
 """
 
 from __future__ import annotations
 
 import threading
 from typing import Any, Callable, Optional
-
-from textual.widgets import OptionList
 
 from core.runtime_context import AgentInterrupted
 from core.skill import skills as _skills
@@ -26,14 +25,21 @@ from core.tui.screens import (
     ModelPickerScreen,
     ProviderScreen,
     SessionPickerScreen,
+    SettingsScreen,
     SkillsScreen,
 )
 from core.tui.theme import _PLACEHOLDER
-from core.tui.widgets import _ClarifyList
 
 
 class _CommandFlow:
     """ChatApp 指令与回合 mixin。"""
+
+    _OPENERS = {  # / 指令 → 打开方法名（方法见下）
+        "/sessions": "_open_sessions", "/fork": "_open_fork", "/skills": "_open_skills",
+        "/mcp": "_open_mcp", "/provider": "_open_providers", "/model": "_open_models",
+        "/effort": "_open_effort", "/login": "_open_login", "/logout": "_open_login",
+        "/settings": "_open_settings",
+    }
 
     # ---------- / 弹窗指令 ----------
 
@@ -151,6 +157,10 @@ class _CommandFlow:
         """/login（别名 /logout）：自定义提供方 / 模型注册（注销）菜单。"""
         self.push_screen(LoginScreen(), callback=lambda _: self._refresh_footer())
 
+    def _open_settings(self) -> None:
+        """/settings：AgentConfig 参数表单；Enter 两段式（先编辑后保存，开关直接切换保存），Esc 关闭。"""
+        self.push_screen(SettingsScreen())
+
     # ---------- 会话历史 ----------
 
     def _reload_history(self, session_id: str = "") -> None:
@@ -171,6 +181,26 @@ class _CommandFlow:
         self._reload_history(session_id)
 
     # ---------- 用户回合 ----------
+
+    def _dispatch_query(self, query: str) -> None:
+        """/ 指令与普通消息分派：exit → opener → 忙时拒绝 → compact → new → 发送。"""
+        cmd = query.lower()
+        if cmd in ("/exit", "/quit"):
+            self.exit()
+        elif opener := self._OPENERS.get(cmd):
+            getattr(self, opener)()
+        elif self._busy:
+            # 回合进行中拒绝 /compact /new 与普通消息：/new 清空会话指针后，本轮后续 add_message
+            # 会把回话写进新建会话（见 session.py：current_session 为空时自动 new_session）
+            self._reject_busy()
+        elif cmd == "/compact":
+            self._run_compact()
+        elif cmd == "/new":
+            if self._manager is not None:
+                self._manager.current_session = ""  # 延迟建会话：下条消息到达时自动创建
+            self._clear_cards()
+        else:
+            self._send_user_query(query)
 
     def _reject_busy(self) -> None:
         render_background_notification("Previous turn is still running, please wait…", title="⏳ Busy")
@@ -213,13 +243,7 @@ class _CommandFlow:
     def _set_idle(self) -> None:
         """回合 / 压缩结束：复位忙碌态、收起权限与 clarify 列表、恢复输入条并收回焦点。"""
         self._busy = False
-        self._perm_pending = False
-        self._perm_future = None
-        self._clarify_pending = False
-        self._clarify_other = False
-        self._clarify_future = None
-        self.query_one("#perm-list", OptionList).styles.display = "none"
-        self.query_one("#clarify-list", _ClarifyList).styles.display = "none"
+        self._reset_interactions()
         self._set_status_text("")
         prompt = self._prompt()
         prompt.placeholder = _PLACEHOLDER

@@ -7,10 +7,11 @@ import time
 from enum import Enum
 from typing import Callable
 
-from core.config import BASE_DELAY_MS, MAX_RETRIES
+from core.client import shared_model_client
+from core.config import CONFIGMANAGER
 from core.log.log import get_logger
 
-_LOGER = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 
 
 class ErrorType(Enum):
@@ -31,16 +32,14 @@ class RecoveryState:
 
 
 def retry_delay(attempt: int) -> float:
-    base = min(BASE_DELAY_MS * (2 ** attempt), 32000) / 1000
+    base = min(CONFIGMANAGER.config.base_retry_delay_ms * (2 ** attempt), 32000) / 1000
     return base + random.randint(0, int(base * 0.25))
 
 
-def get_error_type(error: Exception) -> ErrorType:
-    """Return error type based on exception message and current model provider"""
-    from core.client import shared_model_client
-
+def get_error_type(error: Exception, provider: str = "") -> ErrorType:
+    """按异常文本与 provider 分类错误；provider 空时取主 client 的当前 provider。"""
     error_msg = str(error).lower().strip()
-    current_provider = shared_model_client().current_provider
+    current_provider = provider or shared_model_client().current_provider
 
     if current_provider == "deepseek":
         if "40" in error_msg or "422" in error_msg:
@@ -77,41 +76,42 @@ def get_error_type(error: Exception) -> ErrorType:
     return ErrorType.UnRecoverable
 
 
-def with_retry(fn: Callable):
-    for attempt in range(MAX_RETRIES):
+def _rate_limit_delay(attempt: int, error: Exception, provider: str) -> float | None:
+    """限流类错误返回退避秒数；其余错误返回 None（调用方直接抛出）。"""
+    if get_error_type(error, provider) != ErrorType.RateLimit:
+        return None
+    delay = retry_delay(attempt)
+    _LOGGER.info(
+        f"[Access rate limit] retry {attempt + 1}/{CONFIGMANAGER.config.max_retries} after {delay:.1f}s")
+    return delay
+
+
+def with_retry(fn: Callable, provider: str = ""):
+    max_retries = CONFIGMANAGER.config.max_retries
+    for attempt in range(max_retries):
         try:
-            result = fn()
-            return result
+            return fn()
         except Exception as e:
-            error_type = get_error_type(e)
-            if error_type == ErrorType.RateLimit:
-                delay = retry_delay(attempt)
-                _LOGER.info(f"[Access rate limit] retry {attempt + 1}/{MAX_RETRIES} after {delay:.1f}s")
-                time.sleep(delay)
-                continue
+            delay = _rate_limit_delay(attempt, e, provider)
+            if delay is None:
+                raise
+            time.sleep(delay)
 
-            raise e
-
-    raise RuntimeError(f"Max retries ({MAX_RETRIES}) exceeded")
+    raise RuntimeError(f"Max retries ({max_retries}) exceeded")
 
 
-async def with_retry_async(fn: Callable):
-    for attempt in range(MAX_RETRIES):
+async def with_retry_async(fn: Callable, provider: str = ""):
+    max_retries = CONFIGMANAGER.config.max_retries
+    for attempt in range(max_retries):
         try:
-            result = await fn()
-            return result
+            return await fn()
         except Exception as e:
-            error_type = get_error_type(e)
-            if error_type == ErrorType.RateLimit:
-                delay = retry_delay(attempt)
-                _LOGER.info(f"[Access rate limit] retry {attempt + 1}/{MAX_RETRIES} "
-                            f"after {delay:.1f}s")
-                await asyncio.sleep(delay)
-                continue
+            delay = _rate_limit_delay(attempt, e, provider)
+            if delay is None:
+                raise
+            await asyncio.sleep(delay)
 
-            raise e
-
-    raise RuntimeError(f"Max retries ({MAX_RETRIES}) exceeded")
+    raise RuntimeError(f"Max retries ({max_retries}) exceeded")
 
 
 def is_prompt_too_long_error(e: Exception) -> bool:

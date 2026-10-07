@@ -6,7 +6,7 @@ from typing import Optional
 import aiofiles
 from pydantic import Field
 
-from core.tools.base_tools.git import _resolve, _read_old
+from core.tools.base_tools.diff import _resolve, _read_old
 from core.tools.tool_base import BaseTool
 
 

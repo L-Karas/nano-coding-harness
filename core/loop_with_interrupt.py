@@ -14,15 +14,15 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
 from core.client import shared_model_client
-from core.config import DEFAULT_MAX_TOKENS, ESCALATED_MAX_TOKENS, MAX_RECOVERY_RETRIES
+from core.config import CONFIGMANAGER
 from core.context import to_llm_messages
-from core.context.compact import tool_result_budget, micro_compact, compact_history
+from core.context.compact import compact_history, prepare_messages
+from core.context.prompt import build_system_prompt
 from core.context.session import SESSION_MANAGER
 from core.cron_scheduler import consume_cron_queue
 from core.experimental.protocol_state import consume_lead_inbox
 from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
-from core.prompt import build_system_prompt
 from core.recovery.error_recovery import RecoveryState, with_retry_async
 from core.runtime_context import AgentRunContext, AgentInterrupted
 from core.streaming import streaming_message
@@ -30,7 +30,7 @@ from core.template import CONTINUATION_PROMPT, INJECTION_MESSAGES_PREFIX, INJECT
     USER_INTERRUPT_PROMPT
 from core.template.prompt_template import INJECTION_MESSAGES_TEMPLATE
 from core.tools import TOOL_ERROR_PREFIXES, assemble_tool_pool
-from core.tools.base_tools.git import DIFF_TOOLS, preview_edit, preview_write
+from core.tools.base_tools.diff import DIFF_TOOLS, preview_edit, preview_write
 from core.tools.tool_loader import execute_tool
 from core.tui.render import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
     render_tool_result_diff, render_background_notification, render_thinking_status, render_working_status
@@ -114,7 +114,7 @@ class AgentRuntime:
 
         state = RecoveryState()
         ctx = AgentRunContext()
-        max_tokens = DEFAULT_MAX_TOKENS
+        max_tokens = CONFIGMANAGER.config.default_max_tokens
         self._current_ctx = ctx
         self._run_task = asyncio.current_task()
 
@@ -161,14 +161,14 @@ class AgentRuntime:
                 if finish_reason == "length":
                     # todo: 半截 tool_calls 情况
                     if not state.has_escalated:
-                        max_tokens = ESCALATED_MAX_TOKENS
+                        max_tokens = CONFIGMANAGER.config.escalated_max_tokens
                         state.has_escalated = True
                         _LOGGER.info(f"[Max tokens] retry with {max_tokens}")
                         continue
 
                     SESSION_MANAGER.add_message(assistant_message)
 
-                    if state.recovery_count < MAX_RECOVERY_RETRIES:
+                    if state.recovery_count < CONFIGMANAGER.config.max_recovery_retries:
                         SESSION_MANAGER.add_message({
                             "role": "user",
                             "content": CONTINUATION_PROMPT
@@ -178,7 +178,7 @@ class AgentRuntime:
                     render_background_notification("Agent exceeded maximum retry limits", title="⚠️ Agent Error")
                     return
 
-                max_tokens = DEFAULT_MAX_TOKENS
+                max_tokens = CONFIGMANAGER.config.default_max_tokens
                 state.has_escalated = False
 
                 if not tool_calls:
@@ -314,17 +314,6 @@ class AgentRuntime:
                 SESSION_MANAGER.add_message(tool_result)
 
         ctx.raise_if_cancelled()
-
-
-async def prepare_messages(messages: list, ctx) -> list:
-    """
-    Every LLM turn enters through the same context budget pipeline.
-    """
-    messages[:] = tool_result_budget(messages)
-    messages[:] = micro_compact(messages)
-    messages[:] = await compact_history(messages, ctx)
-
-    return messages
 
 
 def inject_background_notifications() -> list[str]:

@@ -5,6 +5,7 @@ import shutil
 import httpx
 from pydantic import Field
 
+from core.tools.shell import build_argv_invocation, start_process
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _to_text
 from core.tools.web_search.utils import update_provider_state, NO_CONTENT, PROVIDER_STATE
@@ -22,12 +23,10 @@ async def defuddle_extract(url: str) -> tuple[bool, str]:
         npx = shutil.which("npx")
         if not npx:
             raise RuntimeError("[Web Extraction] npx not found; use another method to extract the URL content")
-        # 参数分离（非 shell 拼接）：URL 里的 shell 元字符不再有注入/截断风险
-        process = await asyncio.create_subprocess_exec(
-            npx, "defuddle", "parse", url, "--md",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        # 与 terminal 工具同源的优先 shell（git-bash > wsl-bash > pwsh > powershell）：
+        # URL 按方言安全引用后再拼接，shell 元字符无注入/截断风险；无优先 shell 时保持 argv 分离直接执行
+        process = await start_process(build_argv_invocation(
+            ["npx", "defuddle", "parse", url, "--md"], executable_path=npx))
         stdout, stderr = await process.communicate()
         if process.returncode != 0:
             raise RuntimeError(_to_text(stderr))

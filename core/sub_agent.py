@@ -9,11 +9,12 @@ import json
 
 from openai.types.chat import ChatCompletionMessageToolCall
 
-from core.client import shared_model_client
-from core.config import DEFAULT_MAX_TOKENS
+from core.client import shared_sub_model_client
+from core.config import CONFIGMANAGER
+from core.context.compact import prepare_messages
+from core.context.prompt import build_system_prompt
 from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
-from core.prompt import build_system_prompt
 from core.recovery.error_recovery import with_retry_async
 from core.streaming import streaming_message
 
@@ -36,7 +37,8 @@ async def spawn_subagent(description: str, ctx=None) -> str:
     """在调用方 loop 上跑完一个子代理，返回它的最终文本结论。
 
     ctx 为父回合的 AgentRunContext：每轮模型调用前协作式检查取消（Esc），
-    并透传给工具执行，使中断能到达子进程。
+    并透传给工具执行，使中断能到达子进程；每轮调用前走与主代理相同的
+    上下文预算管线（prepare_messages）。
     """
     global _SUBAGENT_COUNTER
 
@@ -59,13 +61,16 @@ async def spawn_subagent(description: str, ctx=None) -> str:
                 ctx.raise_if_cancelled()
 
             _set_phase(agent_id, "thinking")
+            sub_client = shared_sub_model_client()
+            messages = await prepare_messages(messages, ctx, sub_model=True)
             stream = await with_retry_async(
-                lambda: shared_model_client().get_model_client(async_client=True)(
+                lambda: sub_client.get_model_client(async_client=True)(
                     messages=messages,
                     tools=tools,
-                    max_tokens=DEFAULT_MAX_TOKENS,
+                    max_tokens=CONFIGMANAGER.config.default_max_tokens,
                     stream=True
-                )
+                ),
+                provider=sub_client.current_provider,
             )
             content, reasoning_content, tool_calls, _, _ = await streaming_message(stream)
 

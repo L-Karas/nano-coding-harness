@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import OptionList, Static, TextArea
+from textual.widgets import Static, TextArea
 from textual.widgets.option_list import Option
 
 from core.tui.screens.base import (
@@ -53,9 +53,11 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
     HINT = "  ↑/↓ browse    Enter tools    Insert configure    Delete remove    Esc close"
     LIST_ID = "mcp-list"
     PICKER_ID = "mcp-picker"
+    SEARCH_PLACEHOLDER = "Search servers…"
     CONFIRM = True
+    # delete 加 priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
     BINDINGS = [("insert", "configure", "Configure"),
-                ("delete", "remove_selected", "Delete")]
+                Binding("delete", "remove_selected", "Delete", priority=True)]
 
     def __init__(self, servers: dict[str, dict]) -> None:
         super().__init__()
@@ -86,9 +88,10 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
 
     def _reload(self) -> None:
         rows = [Option(_server_row(server, info, self._cursor), id=server)
-                for server, info in self._servers.items()]
+                for server, info in self._servers.items()
+                if self._match(server)]
         _rebuild_options(self._list(), rows)
-        if not rows:  # 空列表无行可看：Toast 提示去 Insert 配 server
+        if not self._servers:  # 无 server（而非搜索无匹配）：Toast 提示去 Insert 配
             self.app.notify("No MCP servers configured: press Insert to add one", title="⚠️ MCP Servers")
         self._sync_anim()
 
@@ -103,21 +106,20 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
             self._cursor = 0
 
     def _tick(self) -> None:
-        """轮播一帧：只就地替换 connecting 行 prompt（不重建列表，高亮 / 原地确认不受影响）。"""
+        """轮播一帧：只就地替换 connecting 行 prompt（不重建列表，高亮 / 原地确认不受影响）；
+        被搜索过滤掉的行不在列表里，跳过以免 replace_option_prompt 抛 OptionDoesNotExist。"""
         self._cursor += 1
         olist = self._list()
+        visible = {str(option.id) for option in olist.options}
         for server, info in self._servers.items():
-            if info.get("status") == "connecting":
+            if info.get("status") == "connecting" and server in visible:
                 olist.replace_option_prompt(server, _server_row(server, info, self._cursor))
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Enter/点击 server：打开其工具列表（原地确认中 = 确认删除）。"""
-        event.stop()
-        if self._run_confirm():
-            return
-        if event.option_id:
-            tools = self._servers.get(event.option_id, {}).get("tools", [])
-            self.app.push_screen(MCPToolsScreen(event.option_id, tools))
+    def _selected(self, option_id: str | None) -> None:
+        """Enter/点击 server：打开其工具列表；原地确认中由 _InlineConfirm 先行拦截。"""
+        if option_id:
+            tools = self._servers.get(option_id, {}).get("tools", [])
+            self.app.push_screen(MCPToolsScreen(option_id, tools))
 
     def action_remove_selected(self) -> None:
         """Delete：窗内红字原地确认；Enter 才真删（确认目标 = 按下 Delete 时高亮的 server）。"""
@@ -159,6 +161,7 @@ class MCPToolsScreen(_NamedListScreen):
 
     HINT = "  ↑/↓ browse    Enter/Esc close"
     LIST_ID = "mcp-tools-list"
+    SEARCH_PLACEHOLDER = "Search tools…"
 
     def __init__(self, server: str, tools: list[dict]) -> None:
         super().__init__([(tool["tool_name"], tool.get("tool_description", "")) for tool in tools])

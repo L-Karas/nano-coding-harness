@@ -167,3 +167,15 @@ class _DockInteractions:
         self._set_status_text("Working…", spin=True)
         if future is not None:
             future.set_result(value)
+
+    # ---------- 回合结束复位 ----------
+
+    def _reset_interactions(self) -> None:
+        """回合结束兜底：清挂起请求、收起两个列表；输入条复位由 _set_idle 负责。"""
+        self._perm_pending = False
+        self._perm_future = None
+        self._clarify_pending = False
+        self._clarify_future = None
+        self._clarify_other = False
+        self.query_one("#perm-list", OptionList).styles.display = "none"
+        self.query_one("#clarify-list", _ClarifyList).styles.display = "none"

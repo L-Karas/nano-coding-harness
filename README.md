@@ -25,9 +25,9 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | --- | --- |
 | `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
 | `core/loop_with_interrupt.py` | Agent 主循环 `AgentRuntime`：LLM 流式调用、工具分发、中断、`/compact` |
-| `core/config.py` | 路径常量与上下文预算参数；导入时创建 `.harness/` 目录树 |
+| `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑）；导入时创建 `.harness/` 目录树 |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `AgentInterrupted` |
-| `core/prompt.py` + `core/template/` | 系统提示词模板（主代理 / 子代理）、压缩摘要模板、注入消息包装 |
+| `core/context/prompt.py` + `core/template/` | 系统提示词模板（主代理 / 子代理）、压缩摘要模板、注入消息包装 |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
 | `core/session/session.py` | `SessionManager`：会话索引、消息落盘、payload 回写 |
 | `core/tools/` | 工具基类、注册表与执行器；`base_tools/`（基础工具）、`extra_tools/`（扩展工具） |
@@ -53,7 +53,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 
 | 路径 | 内容 |
 | --- | --- |
-| `.harness/.setting.json` | 默认 `provider` / `model` / `thinking_level`（`/provider`、`/model`、`/effort` 写入） |
+| `.harness/.settings.json` | `AgentConfig` 参数：默认 `provider` / `model` / `thinking_level` 由 `/provider`、`/model`、`/effort` 写入，其余运行参数由 `/settings` 写入 |
 | `.harness/.auth.json` | 各 provider 的 `api_key` |
 | `.harness/.mcp/.mcp.json` | MCP Server 配置（`mcpServers`） |
 | `.harness/skills/<name>/SKILL.md` | 技能清单（YAML frontmatter + 正文） |
@@ -73,7 +73,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 `thinking_level_map` 中值为 `false` 表示该模型不支持此档位（此时不发送 `reasoning_effort`）。
 
 - `/provider`：填/删 API Key（写入 `.auth.json`）
-- `/model`：从已配置 provider 的模型列表中切换（写入 `.setting.json`）
+- `/model`：从已配置 provider 的模型列表中切换（写入 `.settings.json`）
 - `/effort`：切换思考档位（`minimal` / `low` / `medium` / `high` / `max`）
 - `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型（写入 `.harness/.custom_providers.json` /
   `.harness/.custom_models.json`）
@@ -100,7 +100,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 `/fork`（列出当前会话的用户消息，选中后从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改）、
 `/skills`（技能列表，选中即作为一轮对话发出）、`/mcp`（MCP server 名列表，Enter 查看该 server
 的工具列表，`Insert` 弹出 JSON 配置窗、`Ctrl+S` 落盘，`Delete` 删除 server）、
-`/provider`、`/model`、`/effort`、
+`/provider`、`/model`、`/effort`、`/settings`（编辑 AgentConfig 运行参数）、
 `/login`（别名 `/logout`，注册/注销自定义提供方与模型）、`/exit`（别名 `/quit`）。
 
 ## Agent 主循环
@@ -119,10 +119,10 @@ teammate 走同一份配置，不存在第二处模型来源。
 - **中断**：`Esc → AgentRuntime.interrupt()` 同时置位 `AgentRunContext.cancelled` 并取消任务，
   取消统一收敛为 `AgentInterrupted`；回合收尾会给未回答的 tool call 补一条中断占位结果，保证消息历史合法。
 - **串行**：`AGENT_LOCK` 保证用户回合、cron 自动回合、`/compact` 三者互斥。
-- **截断恢复**：`finish_reason == "length"` 先把 `max_tokens` 从 8k 升到 16k 重试一次，
-  仍截断则追加续写提示（最多 2 次）。
+- **截断恢复**：`finish_reason == "length"` 先把 `max_tokens` 升到 `escalated_max_tokens`
+  重试一次，仍截断则追加续写提示（最多 `max_recovery_retries` 次）。
 - **错误重试**：`core/recovery` 按 provider 把异常分类（限流 / 模型过载 / 上下文过长 / 不可恢复），
-  限流类指数退避重试（最多 3 次）。
+  限流类指数退避重试（最多 `max_retries` 次）。
 - **会话持久化**：每条消息即时落盘 `.harness/.session/`，工具结果携带的 diff 以 `payload` 保存在会话里，
   回放历史与 `/compact` 回写时都能还原。
 
@@ -131,10 +131,13 @@ teammate 走同一份配置，不存在第二处模型来源。
 `prepare_messages()` 每轮按顺序执行，只有最后一层会调用模型：
 
 1. `tool_result_budget`：单轮工具结果总量超 2MB 时，从最大的开始把全文落盘到
-   `.harness/.task_outputs/tool_results/`，正文替换为前 3000 字符预览；
-2. `micro_compact`：工具结果超过最近 30 条时，把更早且估算超过 2000 token 的结果清为占位文本；
-3. `compact_history`：估算 token > 20 万时，按 user 消息切分轮次，从后往前保留 ≤ 2 万 token 的历史，
-   其余交给模型总结成 `<compacted_messages>` 摘要。
+   `.harness/.task_outputs/tool_results/`，正文替换为前 `persist_tool_tokens` 字符预览；
+2. `micro_compact`：工具结果超过最近 `keep_recent_tool_results` 条时，把更早且估算超过
+   `persist_tool_tokens` 的结果清为占位文本；
+3. `compact_history`：估算 token > `compact_threshold`（默认 0.5 × 上下文长度）时，按 user 消息
+   切分轮次，从后往前保留 ≤ `reserve_threshold` 的历史，其余交给模型总结成 `<compacted_messages>` 摘要。
+
+以上阈值与上限来自 `AgentConfig`（默认值见 `core/config.py`），可在 `/settings` 中调整。
 
 `/compact` 走 `AgentRuntime.compact()`：对整个会话做一次全量摘要后替换（中断则不落盘）。
 

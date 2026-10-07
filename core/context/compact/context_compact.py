@@ -11,15 +11,13 @@ from typing import Union
 
 from openai.types.chat import ChatCompletionMessage
 
-from core.client import shared_model_client
-from core.config import PERSIST_THRESHOLD, TOOL_RESULTS_DIR, KEEP_RECENT_TOOL_RESULTS, RESERVE_TOKENS, \
-    SUMMARIZE_MAX_TOKENS, CONTEXT_LIMIT
+from core.client import shared_model_client, shared_sub_model_client
+from core.config import TOOL_RESULTS_DIR, CONFIGMANAGER
 from core.context import to_llm_messages
 from core.context.token import estimate_size, estimate_token
 from core.log.log import get_logger
 from core.template import SUMMARY_PROMPT_TEMPLATE
 
-REMAIN_TOOL_RESULT_THRESHOLD = 2000
 _LOGGER = get_logger(__name__)
 
 
@@ -89,7 +87,7 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
     """
     When tool result too large, persist large output to file and remain truncated content.
     """
-    if len(output) <= PERSIST_THRESHOLD:
+    if len(output) <= CONFIGMANAGER.config.persist_tool_tokens:
         return output
 
     path = TOOL_RESULTS_DIR / f"{tool_use_id}.text"
@@ -98,7 +96,7 @@ def persist_large_output(tool_use_id: str, output: str) -> str:
 
     return (f"<persisted-output>\n"
             f"<saved-path>Full output saved in: {path}</saved-path>\n"
-            f"<preview>Preview content:\n{output[:PERSIST_THRESHOLD]}</preview>\n"
+            f"<preview>Preview content:\n{output[:CONFIGMANAGER.config.persist_tool_tokens]}</preview>\n"
             f"</persisted-output>")
 
 
@@ -139,10 +137,10 @@ def micro_compact(messages: list) -> list:
     Compact earlier tool call result messages.
     """
     tool_results = collect_tool_results(messages)
-    if len(tool_results) <= KEEP_RECENT_TOOL_RESULTS:
+    if len(tool_results) <= CONFIGMANAGER.config.keep_recent_tool_results:
         return messages
-    for _, index, message in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
-        if estimate_token(message.get("content", "")) > REMAIN_TOOL_RESULT_THRESHOLD:
+    for _, index, message in tool_results[:-CONFIGMANAGER.config.keep_recent_tool_results]:
+        if estimate_token(message.get("content", "")) > CONFIGMANAGER.config.persist_tool_tokens:
             message["content"] = "[Old tool result content cleared. Re-run if needed.]"
 
             _LOGGER.info(f"Cleared old tool result, index: {index}, result: {message['content'][:100]}")
@@ -151,7 +149,7 @@ def micro_compact(messages: list) -> list:
 
 
 def find_index_to_split(messages: list) -> int:
-    # 1. 优先按 turn（user 消息分界）切：从最早的 user 开始，保留部分不超过 RESERVE_TOKENS
+    # 1. 优先按 turn（user 消息分界）切：从最早的 user 开始，保留部分不超过 reserve_threshold
     # 2. 单个 turn 就超预算时，退化为按 assistant 消息切：尽量多地保留 assistant - tool 组
     #    （tool_calls 与其对应的 tool 结果不得被拆开）
     n = len(messages)
@@ -167,13 +165,13 @@ def find_index_to_split(messages: list) -> int:
     user_index.reverse()
 
     for index in user_index:
-        if suffix_tokens[index] <= RESERVE_TOKENS:
+        if suffix_tokens[index] <= CONFIGMANAGER.config.reserve_threshold:
             return index
 
-    # 任意单个 turn 均大于 RESERVE_TOKENS：从最后一个 turn 开始找可切分的 assistant 下标
+    # 任意单个 turn 均大于 reserve_threshold：从最后一个 turn 开始找可切分的 assistant 下标
     end = user_index[-1] if user_index else 0
     while end < n:
-        if suffix_tokens[end] <= RESERVE_TOKENS and messages[end]["role"] == "assistant":
+        if suffix_tokens[end] <= CONFIGMANAGER.config.reserve_threshold and messages[end]["role"] == "assistant":
             return end
         end += 1
 
@@ -182,18 +180,22 @@ def find_index_to_split(messages: list) -> int:
 
 
 @log_compact_step
-async def summarize_history(messages: list, ctx=None) -> str:
+async def summarize_history(messages: list, ctx=None, sub_model: bool = False) -> str:
     """
     Summarize history messages
+
+    sub_model=True 用子代理 client 总结（与子代理对话同模型，缓存命中）；
+    默认用主 client（主流程 / 手动 /compact）。
     """
     summary_text = ""
     request_messages = to_llm_messages(messages) + [{
         "role": "user",
         "content": SUMMARY_PROMPT_TEMPLATE,
     }]
-    stream = await shared_model_client().get_model_client(async_client=True)(
+    client = shared_sub_model_client() if sub_model else shared_model_client()
+    stream = await client.get_model_client(async_client=True)(
         messages=request_messages,
-        max_tokens=SUMMARIZE_MAX_TOKENS,
+        max_tokens=CONFIGMANAGER.config.summary_max_tokens,
         stream=True
     )
     try:
@@ -212,20 +214,35 @@ async def summarize_history(messages: list, ctx=None) -> str:
 
 
 @log_compact_step
-async def compact_history(messages: list, ctx=None, auto_compact: bool = True) -> list:
+async def compact_history(messages: list, ctx=None, auto_compact: bool = True, sub_model: bool = False) -> list:
     """
     Summarize history messages
     """
     if not messages:
         return []
-    if estimate_size(messages) < CONTEXT_LIMIT:
+    if estimate_size(messages) < CONFIGMANAGER.config.compact_threshold:
         return messages
 
     split_index = -1
     if auto_compact:
         split_index = find_index_to_split(messages)
-        summary = await summarize_history(messages[:split_index], ctx)
+        summary = await summarize_history(messages[:split_index], ctx, sub_model)
     else:
-        summary = await summarize_history(messages, ctx)
+        summary = await summarize_history(messages, ctx, sub_model)
     return [{"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}] + \
         (messages[split_index:] if auto_compact else [])
+
+
+async def prepare_messages(messages: list, ctx=None, sub_model: bool = False) -> list:
+    """
+    Every LLM turn enters through the same context budget pipeline.
+
+    sub_model=True 时压缩总结用子代理 client（与对话同模型，缓存命中）；
+    auto_compact 关闭时只裁剪工具结果，不做模型总结。
+    """
+    messages[:] = tool_result_budget(messages)
+    messages[:] = micro_compact(messages)
+    if CONFIGMANAGER.config.auto_compact:
+        messages[:] = await compact_history(messages, ctx, sub_model=sub_model)
+
+    return messages

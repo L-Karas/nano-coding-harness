@@ -1,7 +1,4 @@
-"""输入框与补全：_CommandInput（/ 指令 + @ 文件两组候选）+ 候选匹配纯函数 + clarify 选项列表。
-
-SessionPickerScreen / _InlineConfirm 仍从本模块转出，兼容历史导入路径（tests 等）。
-"""
+"""输入框与补全：_CommandInput（/ 指令 + @ 文件两组候选）+ 候选匹配纯函数 + clarify 选项列表。"""
 
 from __future__ import annotations
 
@@ -14,8 +11,6 @@ from textual.message import Message
 from textual.widgets import Input, OptionList, TextArea
 from textual.widgets.option_list import Option
 
-from core.tui.screens.base import _InlineConfirm  # noqa: F401  兼容旧导入
-from core.tui.screens.session import SessionPickerScreen  # noqa: F401  兼容旧导入
 from core.tui.utils import (
     SLASH_COMMAND_ALIASES,
     SLASH_COMMANDS,
