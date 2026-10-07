@@ -53,7 +53,7 @@ def _load_custom_registry() -> tuple[dict, dict]:
 
     Returns:
         (models, auth)：与内置注册表同形状的两份数据（provider -> 配置 / 凭证），
-        供 _load_registry 合并。
+        供 load_model_registry 合并。
     """
     global _CUSTOM_PROVIDER_AUTH
 
@@ -76,8 +76,8 @@ def _load_custom_registry() -> tuple[dict, dict]:
     return models, auth
 
 
-def _load_registry() -> None:
-    """加载内置 + 自定义注册表（导入时执行一次；测试重调以模拟重启）。"""
+def load_model_registry() -> None:
+    """加载内置 + 自定义注册表；由 core.bootstrap 在启动时调用（测试重调以模拟重启）。"""
     global _MODEL_LIST, _PROVIDER_AUTH
 
     if not _MODEL_LIST_PATH.exists():
@@ -93,9 +93,6 @@ def _load_registry() -> None:
     except Exception as e:
         _LOGGER.error(f"[Loading Model Error] {e}")
         raise
-
-
-_load_registry()
 
 
 def _update_default_models(provider: str, model: str = "") -> bool:
@@ -215,9 +212,12 @@ def login_model(
         context_length: int = 0,
         max_output: Optional[int] = None,
 ) -> bool:
-    """在已注册的自定义 provider 下注册模型并落盘。"""
+    """在已注册的自定义 provider 下注册模型并落盘。context_length 必须为正（压缩/预算的真源）。"""
     if provider not in _CUSTOM_PROVIDER_AUTH:
         _LOGGER.error(f"[Login Model Error] {provider} is not a custom provider")
+        return False
+    if context_length <= 0:
+        _LOGGER.error(f"[Login Model Error] {model} context_length must be positive")
         return False
     try:
         _MODEL_LIST[provider]["model_list"][model] = {
@@ -308,10 +308,30 @@ class ModelClient:
             raise RuntimeError(message)
 
     def load_context_length(self) -> int:
-        """加载当前模型上下文长度，未选择模型时返回 0。"""
-        if not self.current_model:
+        """加载当前模型注册表中的上下文长度，未选择模型时返回 0。"""
+        if not (self.current_provider and self.current_model):
             return 0
         return self._model_config()["context_length"]
+
+    def load_max_output(self) -> Optional[int]:
+        """当前模型注册表声明的最大输出；未选择 / 为空（无固定上限）时返回 None。"""
+        if not (self.current_provider and self.current_model):
+            return None
+        return self._model_config().get("max_output") or None
+
+    def compact_threshold(self) -> int:
+        """当前模型的上下文压缩触发阈值（随模型切换自动变化）。"""
+        return CONFIGMANAGER.config.resolve_compact_threshold(
+            self.load_context_length(), self.load_max_output())
+
+    def reserve_threshold(self) -> int:
+        """压缩后保留的最近消息 token 预算（按当前上下文长度解析，封顶压缩阈值）。"""
+        return CONFIGMANAGER.config.resolve_reserve_threshold(
+            self.load_context_length(), self.compact_threshold())
+
+    def clamp_max_tokens(self, requested: int) -> int:
+        """把单次调用的 max_tokens 钳制到当前模型固定最大输出；无固定上限时不钳制。"""
+        return CONFIGMANAGER.config.clamp_max_tokens(requested, self.load_max_output())
 
     def init_client(self) -> None:
         """按默认配置（sub client 优先 default_sub_model，未配置则回退默认模型与档位）重建 client。

@@ -14,7 +14,7 @@ import threading
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from core.log import get_logger
-from core.template import USER_INTERRUPT_PROMPT
+from core.template import TOOL_ERROR_PREFIX, USER_INTERRUPT_PROMPT
 from core.tools import call_tool_handler
 from core.tools.tool_loader import execute_tool
 
@@ -101,7 +101,7 @@ def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handler
                 result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else "[Background task cancelled]"
             else:
                 error = t.exception()
-                result = f"[Tool Error] {type(error).__name__}: {error}" if error else t.result()
+                result = f"{TOOL_ERROR_PREFIX} {type(error).__name__}: {error}" if error else t.result()
             _complete_background(bg_id, result)
 
         task.add_done_callback(done)
@@ -116,7 +116,7 @@ def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handler
             else:
                 result = call_tool_handler(handler, tool_args, tool_call.function.name)
         except BaseException as e:
-            result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else f"[Tool Error] {type(e).__name__}: {e}"
+            result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else f"{TOOL_ERROR_PREFIX} {type(e).__name__}: {e}"
         _complete_background(bg_id, result)
 
     threading.Thread(target=worker, daemon=True).start()

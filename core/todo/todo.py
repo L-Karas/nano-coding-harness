@@ -5,7 +5,7 @@ from typing import Literal
 
 from core.log import get_logger
 
-_LOGER = get_logger(__name__)
+_LOGGER = get_logger(__name__)
 CURRENT_TODOS: list["Todo"] = []
 
 
@@ -50,5 +50,5 @@ def todo_write(todos: list) -> str:
     if error:
         raise Exception(f"run todo write error: {error}")
     CURRENT_TODOS = todos
-    _LOGER.info(f"[Todo Update] updated {len(CURRENT_TODOS)} item(s)")
+    _LOGGER.info(f"[Todo Update] updated {len(CURRENT_TODOS)} item(s)")
     return f"Updated todos. Current todos:\n {CURRENT_TODOS}"

@@ -60,6 +60,3 @@ def load_skill(name: str) -> str:
 # todo: install skill
 async def install_skill() -> str:
     pass
-
-
-scan_skills()

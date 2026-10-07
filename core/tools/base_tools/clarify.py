@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from core.interaction import ask_clarify
 from core.tools.tool_base import BaseTool
 
 MAX_OPTIONS = 4
@@ -31,8 +32,7 @@ class Clarify(BaseTool):
 
 
 def run_clarify(options: list[str], multi_select: bool = False) -> str:
-    """弹出 TUI 澄清列表并阻塞等待作答；无 UI / 取消时返回 "[User cancelled]"。"""
-    from core.tui.render import ask_clarify  # 延迟导入：子代理 / 测试等无 TUI 场景不加载渲染桥
+    """经交互端口弹出澄清列表并阻塞等待作答；无 UI / 取消时返回 "[User cancelled]"。"""
     return ask_clarify(options, multi_select) or "[User cancelled]"
 
 

@@ -225,5 +225,7 @@ def run_cancel_cron(job_id: str) -> str:
     return cancel_job(job_id)
 
 
-load_durable_jobs()
-threading.Thread(target=cron_scheduler_loop, daemon=True).start()
+def start_cron_scheduler() -> None:
+    """加载持久化任务并启动调度线程；由 core.bootstrap 在启动时调用。"""
+    load_durable_jobs()
+    threading.Thread(target=cron_scheduler_loop, daemon=True).start()

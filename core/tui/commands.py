@@ -269,14 +269,19 @@ class _CommandFlow:
 
     def _compact_worker(self, runtime: Any) -> None:
         """压缩线程主体：AGENT_LOCK 在协程外取（协程内取会阻塞事件循环，与持锁等待该循环的
-        cron 线程死等）；submit 阻塞至完成。Esc 可中断：中断则不落会话，历史保持原样。"""
+        cron 线程死等）；submit 阻塞至完成。Esc 可中断：中断则不落会话，历史保持原样。
+        compact 返回 False（低于阈值 / 未选模型）时只提示未压缩，不重放历史。"""
         from core.loop_with_interrupt import AGENT_LOCK  # 延迟导入：离线/冒烟环境未装 openai
         with AGENT_LOCK:
             try:
-                runtime.submit(runtime.compact())
+                compacted = runtime.submit(runtime.compact())
             except AgentInterrupted:  # submit 把 ctx/task 两路取消统一成 AgentInterrupted
                 render_background_notification("Compaction interrupted — history unchanged.",
                                                title="⏹ Compact")
                 return
+        if not compacted:
+            render_background_notification("Nothing to compact — session is below the compaction "
+                                           "threshold (or no model is selected).", title="🗜 Compact")
+            return
         self.call_from_thread(self._reload_history)
         render_background_notification("Context compacted — history re-rendered.", title="🗜 Compact")

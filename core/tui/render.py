@@ -13,8 +13,13 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from rich.text import Text
 
-from core.config import TOOL_ERROR_PREFIXES
-from core.template import INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
+from core.interaction import register_interaction
+from core.template import (
+    INJECTION_MESSAGES_PREFIX,
+    INJECTION_MESSAGES_SUFFIX,
+    TOOL_ERROR_PREFIX,
+    UNKNOWN_TOOL_PREFIX,
+)
 
 if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免循环导入
     from core.tui.ui_textual import ChatApp
@@ -82,9 +87,9 @@ def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MA
 
 
 def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """工具输出卡片：失败输出（TOOL_ERROR_PREFIXES 前缀）为 error 卡，其余 result 卡。"""
+    """工具输出卡片：失败输出（TOOL_ERROR_PREFIX / UNKNOWN_TOOL_PREFIX 前缀）为 error 卡，其余 result 卡。"""
     output_str = str(output)
-    kind = "error" if output_str.startswith(TOOL_ERROR_PREFIXES) else "result"
+    kind = "error" if output_str.startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX)) else "result"
     _add_capped_card(kind, _dim_body(output_str), max_lines)
 
 
@@ -219,3 +224,8 @@ def ask_clarify(questions: list[str], multi_select: bool = False) -> str:
     Enter 确认）/ Other 输入；Esc 返回 "[User cancelled]"，App 退出竞态可能返回 ""。"""
     return _ask_blocking(lambda app, future: app._begin_clarify(questions, multi_select, future),
                          "ask_clarify must be called from a non-App thread (e.g. inside a tool handler)")
+
+
+# 渲染桥接入域层交互端口：工具（clarify）/ hook（permission）经 core.interaction 提问，
+# 不再反向 import TUI；未导入本模块的场景（子代理 / 测试）走端口默认（拒绝 / 取消）。
+register_interaction(ask_permission=ask_permission, ask_clarify=ask_clarify)

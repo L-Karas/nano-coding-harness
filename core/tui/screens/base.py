@@ -13,7 +13,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Input, OptionList, Select, Static, Tabs
+from textual.widgets import Input, OptionList, Select, Static, Tabs, TextArea
 from textual.widgets.option_list import Option
 
 _MODEL_NAME_STYLE = "#f8fafc"
@@ -54,11 +54,14 @@ def _field(widget: Widget) -> Horizontal:
 
 class _ArrowNav:
     """表单窗键盘导航 mixin：↑/↓ 切换字段（等效 Tab）；下拉浮层展开时（Enter 打开）不拦截，
-    让浮层用 ↑/↓ 选选项、Enter 确认——即未打开下拉时 ↑/↓ 不会展开下拉。"""
+    让浮层用 ↑/↓ 选选项、Enter 确认——即未打开下拉时 ↑/↓ 不会展开下拉。文本区聚焦时
+    ↑/↓ 留给 TextArea 移光标（表单里的 args / headers 多行输入区）。"""
 
     def on_key(self, event: events.Key) -> None:
         if event.key not in ("up", "down"):
             return
+        if isinstance(self.focused, TextArea):
+            return  # 文本区内 ↑/↓ 归光标，交给 TextArea 绑定
         if any(select.expanded for select in self.query(Select)):
             return  # 浮层已展开：交给 SelectOverlay 的 OptionList
         event.prevent_default()  # 不拦则 Select 的 ↑/↓ 绑定会展开浮层

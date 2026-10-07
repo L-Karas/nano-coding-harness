@@ -25,3 +25,7 @@ dependencies = [
     "textual[syntax]>=8.2.8",
     "tiktoken>=0.14.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]  # 让 `uv run pytest tests/` 也能 import core / smoke

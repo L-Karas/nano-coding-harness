@@ -33,7 +33,6 @@ _THINKING_FIELDS = ("default_thinking_level", "default_sub_model_thinking_level"
 _NUMBER_FIELDS: dict[str, type] = {
     "default_max_tokens": int,
     "escalated_max_tokens": int,
-    "persist_tool_tokens": int,
     "summary_max_tokens": int,
     "compact_threshold": float,
     "reserve_threshold": float,
@@ -99,7 +98,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
     开关例外，Enter 直接切换并落盘。
     焦点移到别的字段即退出编辑态，未保存的输入回退到编辑前值（下次 Enter 重新进入编辑态）。
     值非法 / 写盘失败 notify 留在窗内；Esc 关窗（未保存的改动丢弃）。
-    未在表单中的参数（如 model_max_output）保存时原样保留。"""
+    未在表单中的参数（如 compact_type）保存时原样保留。"""
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 

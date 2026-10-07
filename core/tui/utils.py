@@ -87,7 +87,7 @@ def current_model_state() -> tuple[str, str, str]:
 
 
 def current_context_length() -> int:
-    """当前模型上下文长度；不可用 / 模型不在注册表时返回 0。"""
+    """当前模型注册表中的上下文长度；client 不可用 / 未选择模型时返回 0。"""
     try:
         from core.client import shared_model_client
         return int(shared_model_client().load_context_length())

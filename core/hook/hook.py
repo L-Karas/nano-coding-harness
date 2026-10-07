@@ -10,8 +10,8 @@ import re
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from core.config import WORKDIR
+from core.interaction import ask_permission
 from core.log.log import get_logger
-from core.tui.render import ask_permission
 
 _LOGGER = get_logger(__name__)
 
@@ -113,6 +113,15 @@ def large_tool_output_hook(tool_call: ChatCompletionMessageToolCallUnion, tool_o
     return None
 
 
-register_hook("pre_tool_call", permission_hook)
-register_hook("pre_tool_call", tool_call_log_hook)
-register_hook("post_tool_call", large_tool_output_hook)
+DEFAULT_HOOKS = (
+    ("pre_tool_call", permission_hook),
+    ("pre_tool_call", tool_call_log_hook),
+    ("post_tool_call", large_tool_output_hook),
+)
+
+
+def install_default_hooks() -> None:
+    """注册出厂 hook（幂等）；由 core.bootstrap 在启动时调用。"""
+    for event, callback in DEFAULT_HOOKS:
+        if callback not in HOOKS[event]:
+            HOOKS[event].append(callback)

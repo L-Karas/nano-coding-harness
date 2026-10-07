@@ -225,9 +225,12 @@ def run(handle_query: Optional[Callable[[str], None]] = None,
         runtime: Any = None) -> None:
     """启动 Textual 对话界面（阻塞直到退出）。
 
-    不传 handle_query 时用真实 agent 回合（需已配置模型；离线演示见 core.tui.demo）。
+    不传 handle_query 时用真实 agent 回合（需已配置模型；离线演示见 smoke.demo）。
     session_manager 接入后 /new /sessions 可用；runtime 接入后 /compact 可用。
     运行期忽略 SIGINT（Ctrl+C 不关闭应用，退出用 /exit 或 ctrl+q），退出后恢复原处理器。"""
+    from core.bootstrap import bootstrap
+    bootstrap()
+
     app = ChatApp(handle_query=handle_query, session_manager=session_manager, banner=banner,
                   on_interrupt=on_interrupt, runtime=runtime)
     _render._APP = app  # run 期间渲染 API（core.tui.render）经此全局桥接进事件循环
@@ -248,8 +251,10 @@ if __name__ == "__main__":
     import sys
 
     if "--smoke" in sys.argv:
-        from core.tui import smoke
+        from core.bootstrap import bootstrap
+        from smoke import main as smoke_main
 
-        smoke.main()
+        bootstrap()
+        smoke_main()
     else:
         run()

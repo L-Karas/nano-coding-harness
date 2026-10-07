@@ -26,8 +26,6 @@ class MemoryManager:
 
     def __init__(self):
         self.memories: dict[str, Memory] = {}
-        if not MEMORY_DIR.exists():
-            MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _get_id():

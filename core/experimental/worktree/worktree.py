@@ -10,12 +10,10 @@ import subprocess
 import time
 from pathlib import Path
 
-from core.config import WORKDIR, HARNESS_CONFIG_DIR
+from core.config import WORKDIR, WORKTREES_DIR
 from core.experimental.task import load_task, save_task
 from core.log import get_logger
 
-WORKTREES_DIR = HARNESS_CONFIG_DIR / ".worktrees"
-WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
 _LOGGER = get_logger(__name__)
 
 VALID_WT_NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")

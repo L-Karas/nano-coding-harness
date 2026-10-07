@@ -75,13 +75,14 @@ Toast, Toast:ansi { background: #1e293b; }
     color: #64748b;
 }
 
-/* ── 滚动条：所有滚动区共用（含 /settings 与注册模型窗的 Select 下拉浮层）──
+/* ── 滚动条：所有滚动区共用（含 /settings、注册模型窗与 /mcp 配置窗的 Select 下拉浮层）──
    宽度收窄为 1 列（Textual 默认 2 列），轨道透明，滑块色同卡片描边，hover / 拖动高亮 */
 #todos-list, #bg-list, #subagents-list,
 #chat,
 #cmd-suggest, #file-suggest, #perm-list, #clarify-list,
 #sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list,
-#settings-picker Select > SelectOverlay, #reg-model-provider > SelectOverlay {
+#mcp-stdio-args, #mcp-http-headers,
+#settings-picker Select > SelectOverlay, #reg-model-provider > SelectOverlay, #mcp-server-type > SelectOverlay {
     scrollbar-size-vertical: 1;
     scrollbar-background: transparent;
     scrollbar-background-hover: transparent;
@@ -300,7 +301,8 @@ ModalScreen {
 #search-input,
 #api-key-input,
 #reg-provider-name, #reg-provider-url, #reg-provider-key,
-#reg-model-name, #reg-model-context, #reg-model-max-output {
+#reg-model-name, #reg-model-context, #reg-model-max-output,
+#mcp-server-name, #mcp-stdio-command, #mcp-http-url {
     border: none;
     background: transparent;
     background-tint: transparent;
@@ -308,8 +310,9 @@ ModalScreen {
     padding: 0;
     width: 1fr;
 }
-#reg-model-provider { width: 1fr; height: 1; }
-#reg-model-provider > SelectCurrent {
+#reg-model-provider, #mcp-server-type { width: 1fr; height: 1; }
+#reg-model-provider > SelectCurrent,
+#mcp-server-type > SelectCurrent {
     border: none;
     padding: 0;
     background: transparent;
@@ -325,15 +328,20 @@ ModalScreen {
 }
 #mcp-list { height: auto; }  /* server 列表窗随内容收缩（尺寸见 #mcp-picker） */
 
-/* ── /mcp 配置弹窗：JSON TextArea（预置示例）；底色透出弹窗底，光标行不铺高亮 ── */
-#mcp-config-picker { width: 60%; max-width: 56; height: 50%; min-height: 14; }  /* 比通用 .picker 小一圈；min-height 保住小终端下的编辑区 */
-#mcp-config-input {
+/* ── /mcp 配置弹窗：逐行字段表单（字段行样式同 /login 注册模型窗）；args / headers 为
+   多行 TextArea（圆角边框）；条件字段组随 type 显隐，高度随内容收缩 ── */
+#mcp-config-picker { width: 54; height: auto; max-height: 100%; }
+#mcp-stdio-fields, #mcp-http-fields { height: auto; }  /* Vertical 默认 1fr，会撑破 auto 高窗 */
+#mcp-stdio-args, #mcp-http-headers {
     border: round #475569;
     background: transparent;
+    height: 5;
     margin-top: 1;
 }
-#mcp-config-input .text-area--cursor-line,
-#mcp-config-input .text-area--cursor-gutter { background: transparent; }
+#mcp-stdio-args .text-area--cursor-line,
+#mcp-stdio-args .text-area--cursor-gutter,
+#mcp-http-headers .text-area--cursor-line,
+#mcp-http-headers .text-area--cursor-gutter { background: transparent; }
 
 /* ── /login 弹窗：菜单 / 注销列表随内容收缩高度（同 #effort-picker 思路）；注册表单逐行字段 ──
    定宽 = 最宽行（提示行）cell 数 + padding 4 + border 2，文案写死在 screens/login.py，
@@ -345,7 +353,8 @@ ModalScreen {
 .field-row { margin-top: 1; }
 /* 下拉浮层：圆角边框 + 背景同弹窗底色（视觉透明又不透出下层字段文字）；
    字段行样式（❯ 标记 + 下边框）见顶部「搜索栏与表单字段行」 */
-#reg-model-provider > SelectOverlay {
+#reg-model-provider > SelectOverlay,
+#mcp-server-type > SelectOverlay {
     border: round #475569;
     background: ansi_default;
     background-tint: transparent;

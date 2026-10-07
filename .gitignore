@@ -10,22 +10,16 @@ wheels/
 .*
 !.mcp/
 
-# docs
-/docs
-
 # Temp
-/examples/*
-/test
 /skills/*
 /log
-/tests
+/docs
+/temp
 
 # Track only .py files under src
 /core/**
 !/core/**/
 !/core/**/*.py
-/core/tui/demo.py
 !/core/tui/app.css
 !/core/client/models.json
 !.gitattributes
-/core/tui/smoke/

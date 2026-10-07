@@ -13,6 +13,7 @@ from openai import AsyncStream
 from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageToolCall
 
 from core.background_task import collect_background_results, should_run_background, start_background_task
+from core.bootstrap import bootstrap
 from core.client import shared_model_client
 from core.config import CONFIGMANAGER
 from core.context import to_llm_messages
@@ -26,10 +27,16 @@ from core.log.log import get_logger
 from core.recovery.error_recovery import RecoveryState, with_retry_async
 from core.runtime_context import AgentRunContext, AgentInterrupted
 from core.streaming import streaming_message
-from core.template import CONTINUATION_PROMPT, INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX, \
-    USER_INTERRUPT_PROMPT
-from core.template.prompt_template import INJECTION_MESSAGES_TEMPLATE
-from core.tools import TOOL_ERROR_PREFIXES, assemble_tool_pool
+from core.template import (
+    CONTINUATION_PROMPT,
+    INJECTION_MESSAGES_PREFIX,
+    INJECTION_MESSAGES_SUFFIX,
+    INJECTION_MESSAGES_TEMPLATE,
+    TOOL_ERROR_PREFIX,
+    UNKNOWN_TOOL_PREFIX,
+    USER_INTERRUPT_PROMPT,
+)
+from core.tools import assemble_tool_pool
 from core.tools.base_tools.diff import DIFF_TOOLS, preview_edit, preview_write
 from core.tools.tool_loader import execute_tool
 from core.tui.render import render_scope, stream_assistant_response, render_tool_call, render_tool_result, \
@@ -90,17 +97,20 @@ class AgentRuntime:
         except concurrent.futures.CancelledError:
             raise AgentInterrupted("User interrupted") from None
 
-    async def compact(self) -> None:
+    async def compact(self) -> bool:
         """手动压缩当前会话上下文（UI 的 /compact）：须经 submit() 在 self.loop 上执行——
         模型客户端绑定该事件循环。AGENT_LOCK 由调用线程（UI 的 _compact_worker）持有：
         在协程内取锁会阻塞事件循环，与持锁等待该循环的 cron 线程死等。
-        注册 _current_ctx / _run_task，压缩期间 Esc（runtime.interrupt）可中断；中断不落会话，取消归一与 run() 一致。"""
+        注册 _current_ctx / _run_task，压缩期间 Esc（runtime.interrupt）可中断；中断不落会话，取消归一与 run() 一致。
+        返回是否实际压缩；未触发（低于阈值 / 未选模型）时不回写会话。"""
         ctx = AgentRunContext()
         self._current_ctx = ctx
         self._run_task = asyncio.current_task()
         try:
-            messages = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
-            SESSION_MANAGER.update_messages(messages)
+            messages, compacted = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
+            if compacted:
+                SESSION_MANAGER.update_messages(messages)
+            return compacted
         except asyncio.CancelledError:
             ctx.raise_if_cancelled()
             raise
@@ -208,12 +218,13 @@ class AgentRuntime:
         messages = [{"role": "system", "content": system}] + to_llm_messages(messages)
         _LOGGER.debug(f"Session manager loaded {len(messages)} messages")
 
+        client = shared_model_client()
         with render_working_status():
             return await with_retry_async(
-                lambda: shared_model_client().get_model_client(async_client=True)(
+                lambda: client.get_model_client(async_client=True)(
                     messages=messages,
                     tools=tools,
-                    max_tokens=max_tokens,
+                    max_tokens=client.clamp_max_tokens(max_tokens),
                     stream=True
                 )
             )
@@ -288,7 +299,7 @@ class AgentRuntime:
                         tool_call_results.append(_get_interrupt_message(tool_call_id))
                         continue
 
-                    tool_failed = str(result).startswith(TOOL_ERROR_PREFIXES)
+                    tool_failed = str(result).startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX))
                     if diff and not tool_failed:
                         render_tool_result_diff(diff)
 
@@ -379,7 +390,8 @@ def absorb_lead_inbox() -> None:
 
 
 def start_agent_runtime() -> AgentRuntime:
-    """建 runtime 并起 MCP 预热 / 自动回合轮询线程（各一次）；调用方拿它做中断收口。"""
+    """先 bootstrap 初始化，再建 runtime 并起 MCP 预热 / 自动回合轮询线程（各一次）；调用方拿它做中断收口。"""
+    bootstrap()
     runtime = AgentRuntime()
 
     def _warmup() -> None:

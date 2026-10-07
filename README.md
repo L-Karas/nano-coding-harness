@@ -25,31 +25,34 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | --- | --- |
 | `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
 | `core/loop_with_interrupt.py` | Agent 主循环 `AgentRuntime`：LLM 流式调用、工具分发、中断、`/compact` |
-| `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑）；导入时创建 `.harness/` 目录树 |
+| `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑） |
+| `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、hook、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
+| `core/interaction.py` | 域层 → UI 交互端口（permission / clarify）：TUI 导入渲染桥时注册，headless 默认拒绝/取消 |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `AgentInterrupted` |
-| `core/context/prompt.py` + `core/template/` | 系统提示词模板（主代理 / 子代理）、压缩摘要模板、注入消息包装 |
+| `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹） |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
-| `core/session/session.py` | `SessionManager`：会话索引、消息落盘、payload 回写 |
+| `core/context/session/session.py` | `SessionManager`：会话索引、消息落盘、payload 回写 |
 | `core/tools/` | 工具基类、注册表与执行器；`base_tools/`（基础工具）、`extra_tools/`（扩展工具） |
-| `core/compact/context_compact.py` | 三层上下文压缩与 token 估算 |
+| `core/context/compact/context_compact.py` | 两层上下文压缩（工具结果截断 / 历史摘要）与 token 估算 |
+| `core/context/truncate.py` | 工具输出截断（2000 行 / 50KB 双上限），read 工具与上下文压缩共用 |
 | `core/background_task.py` | 慢工具转后台执行，结果回流注入 |
 | `core/cron_scheduler.py` | 5 段式 cron 解析、队列、持久化 |
 | `core/hook/hook.py` | `pre_tool_call` / `post_tool_call` hook 与权限策略 |
 | `core/recovery/error_recovery.py` | 按 provider 分类错误、指数退避重试、恢复状态 |
 | `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环） |
 | `core/skill/skills.py` | 扫描 `.harness/skills/` 下的 `SKILL.md` |
-| `core/memory/memory.py` | 长期记忆的增删查，注入系统提示词 |
-| `core/task.py` | 任务板：任务 JSON、`blockedBy` 依赖、认领/完成 |
+| `core/context/memory/memory.py` | 长期记忆的增删查，注入系统提示词 |
 | `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 30 轮，只回传最终文本 |
-| `core/experimental/` | `teammates.py`（自治队友线程）、`message_bus.py`（JSONL 邮箱）、`protocol_state.py`（请求状态） |
-| `core/worktree/worktree.py` | git worktree 创建/移除/保留 |
-| `core/tui/` | Textual 界面：`ui_textual.py`（App 装配 + 入口）、`surface.py`（卡片/流式/状态行）、`footer.py`（页脚）、`commands.py`（弹窗指令/回合/压缩）、`interactions.py`（权限/clarify）、`render.py`（线程安全渲染）、`widgets.py`（输入框与补全）、`screens/`（会话 / 模型 / MCP / 登录等弹窗）、`panels.py`（左栏分区）、`cards.py`（折叠卡片）、`info_panel.py`（右栏信息面板）、`smoke/`（冒烟自检）、`theme.py`/`app.css`、`demo.py` |
+| `core/experimental/` | `teammates.py`（自治队友线程）、`message_bus.py`（JSONL 邮箱）、`protocol_state.py`（请求状态）、`task.py`（任务板：任务 JSON、`blockedBy` 依赖、认领/完成）、`worktree/worktree.py`（git worktree 创建/移除/保留） |
+| `core/tui/` | Textual 界面：`ui_textual.py`（App 装配 + 入口）、`surface.py`（卡片/流式/状态行）、`footer.py`（页脚）、`commands.py`（弹窗指令/回合/压缩）、`interactions.py`（权限/clarify）、`render.py`（线程安全渲染）、`widgets.py`（输入框与补全）、`screens/`（会话 / 模型 / MCP / 登录等弹窗）、`panels.py`（左栏分区）、`cards.py`（折叠卡片）、`info_panel.py`（右栏信息面板）、`theme.py`/`app.css` |
+| `smoke/` | TUI 无头冒烟自检（`python -m core.tui.ui_textual --smoke`）与离线演示 agent；不随 `core/` 发布 |
 | `docs/` | 补充笔记：cron 表达式、harness 配置文件、asyncio |
 | `examples/` | s01–s18 教学脚本（从 agent loop 到 worktree 隔离的演进示例） |
 
 ## 配置与数据目录 `.harness/`
 
-首次导入 `core.config` 时自动创建：
+启动时由 `core.bootstrap.bootstrap()` 自动创建
+（`main.py` / TUI `run()` / `start_agent_runtime()` 均会调用；单独 import `core.*` 不再产生文件副作用）：
 
 | 路径 | 内容 |
 | --- | --- |
@@ -108,7 +111,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 `AgentRuntime.run()` 每轮：
 
 1. 取出 cron 队列并作为注入消息入会话，收集后台任务结果注入；
-2. `prepare_messages()` 走上下文预算流水线（三层压缩）；
+2. `prepare_messages()` 走上下文预算流水线（先截断工具结果，再按需摘要历史）；
 3. 重建工具池（内置 + MCP）并流式请求模型，实时渲染思考/正文/工具调用增量和 usage；
 4. 逐个执行工具调用（`PreToolUse` hook → 慢工具转后台 → 异步执行 → 渲染 diff/结果），
    结果写回会话后进入下一轮；
@@ -126,20 +129,28 @@ teammate 走同一份配置，不存在第二处模型来源。
 - **会话持久化**：每条消息即时落盘 `.harness/.session/`，工具结果携带的 diff 以 `payload` 保存在会话里，
   回放历史与 `/compact` 回写时都能还原。
 
-## 上下文压缩（三层）
+## 上下文压缩（两层）
 
 `prepare_messages()` 每轮按顺序执行，只有最后一层会调用模型：
 
-1. `tool_result_budget`：单轮工具结果总量超 2MB 时，从最大的开始把全文落盘到
-   `.harness/.task_outputs/tool_results/`，正文替换为前 `persist_tool_tokens` 字符预览；
-2. `micro_compact`：工具结果超过最近 `keep_recent_tool_results` 条时，把更早且估算超过
-   `persist_tool_tokens` 的结果清为占位文本；
-3. `compact_history`：估算 token > `compact_threshold`（默认 0.5 × 上下文长度）时，按 user 消息
-   切分轮次，从后往前保留 ≤ `reserve_threshold` 的历史，其余交给模型总结成 `<compacted_messages>` 摘要。
+1. `truncate_large_tool_outputs`：所有工具消息统一按 read 的行数 / 字节上限
+   （2000 行 / 50KB，`core/context/truncate.py`）截断。`read_file` 输出已在工具侧截断并自带
+   offset 续读提示，不落盘也不二次截断；其余工具超限时全文落盘到
+   `.harness/.task_outputs/tool_results/`，正文替换为「截断内容 + `<saved-path>`」的
+   `<persisted-output>` 包裹，提示中的 `offset=N` 与落盘全文行号对齐，可用
+   `read_file <saved-path> offset=N` 续读，避免重新调用工具重新获取结果；
+2. `compact_history`：估算 token > `compact_threshold`（默认 0.5 × 当前模型上下文长度，且不超过
+   `上下文 − 最大输出`）时，按 user 消息切分轮次，从后往前保留 ≤ `reserve_threshold`
+   （≤1 时为当前模型上下文长度的比例）的历史，其余交给模型总结成 `<compacted_messages>` 摘要。
 
-以上阈值与上限来自 `AgentConfig`（默认值见 `core/config.py`），可在 `/settings` 中调整。
+`compact_threshold` / `reserve_threshold` / `summary_max_tokens` 等来自 `AgentConfig`（默认值见
+`core/config.py`），可在 `/settings` 中调整；上下文长度与最大输出
+直接取自当前模型的注册表配置（`core/client/models.json` / `.harness/.custom_models.json`），两个阈值
+在运行中按当前模型动态解析，切换模型（`/model`）后立即生效。模型未声明最大输出时不做输出钳制，
+压缩阈值改为给 `escalated_max_tokens` 留出余量（保证 输入 + 输出 < 上下文长度）。
 
-`/compact` 走 `AgentRuntime.compact()`：对整个会话做一次全量摘要后替换（中断则不落盘）。
+`/compact` 走 `AgentRuntime.compact()`：对整个会话做一次全量摘要后替换（中断则不落盘；
+低于压缩阈值 / 未选择模型时不压缩，UI 提示 Nothing to compact）。
 
 ## 工具系统
 
@@ -153,7 +164,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
 | `terminal` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），输出截断 5 万字符；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
-| `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本，超限时返回续读 offset 提示 |
+| `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示 |
 | `write_file` | `path`, `content` | 写文件，执行前渲染 diff 预览 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
 | `glob` | `pattern` | 按 glob 模式查找文件（异步路径优先 ripgrep 并尊重 .gitignore，缺失时回退 Python glob） |

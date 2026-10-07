@@ -14,6 +14,7 @@ def get_logger(module_name: str = ".log") -> logging.Logger:
     name = module_name.split(".")[-1]
     logger = logging.getLogger(f"{name}_log")
     if not logger.handlers:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)  # 目录由 bootstrap 创建；防御直接使用本模块的场景
         file_handler = logging.FileHandler(LOG_DIR / f"{name}.log", encoding="utf-8")
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)

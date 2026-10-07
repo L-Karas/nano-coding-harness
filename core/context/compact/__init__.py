@@ -1,8 +1,7 @@
-from .context_compact import tool_result_budget, micro_compact, compact_history, prepare_messages
+from .context_compact import truncate_large_tool_outputs, compact_history, prepare_messages
 
 __all__ = [
-    "tool_result_budget",
-    "micro_compact",
+    "truncate_large_tool_outputs",
     "compact_history",
     "prepare_messages",
 ]

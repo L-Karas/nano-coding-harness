@@ -67,7 +67,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
                 lambda: sub_client.get_model_client(async_client=True)(
                     messages=messages,
                     tools=tools,
-                    max_tokens=CONFIGMANAGER.config.default_max_tokens,
+                    max_tokens=sub_client.clamp_max_tokens(CONFIGMANAGER.config.default_max_tokens),
                     stream=True
                 ),
                 provider=sub_client.current_provider,

@@ -1,8 +1,8 @@
 import sys
 from typing import Any, Literal
 
-from core.config import TOOL_ERROR_PREFIXES
 from core.log import get_logger
+from core.template import TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
 from core.mcp import get_client_manager
 from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类
 from core.tools.extra_tools import *  # noqa: F401  # 导入扩展工具类以注册 BaseTool 子类
@@ -90,7 +90,7 @@ def assemble_tool_pool(
 
 def call_tool_handler(handler, args: dict, name: str) -> str:
     if not handler:
-        return f"{TOOL_ERROR_PREFIXES[1]} {name}"
+        return f"{UNKNOWN_TOOL_PREFIX} {name}"
 
     tool_cls = _TOOLS.get(name)
     try:
@@ -98,12 +98,12 @@ def call_tool_handler(handler, args: dict, name: str) -> str:
             tool_cls.model_validate(args)
         return handler(**args)
     except Exception as e:
-        return f"{TOOL_ERROR_PREFIXES[0]} {e}"
+        return f"{TOOL_ERROR_PREFIX} {e}"
 
 
 async def execute_tool(handler, args: dict, name: str, ctx=None) -> str:
     if not handler:
-        return f"{TOOL_ERROR_PREFIXES[1]} {name}"
+        return f"{UNKNOWN_TOOL_PREFIX} {name}"
 
     tool_cls = _TOOLS.get(name)
     try:
@@ -112,7 +112,7 @@ async def execute_tool(handler, args: dict, name: str, ctx=None) -> str:
         _LOGGER.info(f"Executing tool: {name}, args: {args}")
         return await handler(**args, ctx=ctx)
     except Exception as e:  # AgentInterrupted 是 CancelledError（BaseException），不会被这里吃掉
-        return f"{TOOL_ERROR_PREFIXES[0]} {e}"
+        return f"{TOOL_ERROR_PREFIX} {e}"
 
 
 if __name__ == '__main__':

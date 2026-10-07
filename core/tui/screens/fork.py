@@ -7,7 +7,7 @@ from typing import Any
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
-from core.config import MESSAGE_PREVIEW_CHARS
+from core.context.session import MESSAGE_PREVIEW_CHARS
 from core.tui.screens.base import _ListPickerScreen, _SessionRow, _rebuild_options
 
 

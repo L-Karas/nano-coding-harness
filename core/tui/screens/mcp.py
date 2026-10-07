@@ -1,37 +1,33 @@
-"""MCP 弹窗：server 列表（/mcp）/ 某 server 的工具列表 / JSON 配置窗。"""
+"""MCP 弹窗：server 列表（/mcp）/ 某 server 的工具列表 / 表单配置窗。"""
 
 from __future__ import annotations
+
+import json
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Static, TextArea
+from textual.widgets import Input, Select, Static, TextArea
 from textual.widgets.option_list import Option
 
 from core.tui.screens.base import (
+    _ArrowNav,
     _InlineConfirm,
     _ListPickerScreen,
     _NamedListScreen,
     _error_text,
+    _field,
     _rebuild_options,
 )
 from core.tui.theme import _SPINNER_FRAMES
 
-# 配置窗占位提示（空值时显示，非真实输入）：stdio 传输示例
-_MCP_CONFIG_EXAMPLE = """{
-    "mcpServers": {
-        "filesystem": {
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
-        }
-    }
-}"""
-
 # server 行按连接状态着色：connected 绿 ●；connecting 橙色 spinner（_cursor 轮播）；failed 红 ○
 _SERVER_STYLE = {"connected": "bold #4ade80", "connecting": "#fb923c", "failed": "#f87171"}
 _SERVER_GLYPH = {"connected": "●", "failed": "○"}
+
+_HTTP_TRANSPORTS = ("sse", "streamable_http")  # 走 url + headers 的传输类型
 
 
 def _server_row(name: str, info: dict, cursor: int = 0) -> Text:
@@ -46,8 +42,9 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
     """MCP 服务器列表弹窗（/mcp）。
 
     数据由调用方从 get_mcp_server_list() 取值：{name: {"status": connecting|connected|failed,
-    "tools": [...]}}；Enter/点击 → 推入工具列表，Insert → JSON 配置窗（保存后本窗就地刷新），
-    Delete → 原地确认后 unconfigure（删空关窗），行按连接状态着色、connecting 轮播。"""
+    "tools": [...]}}；Enter/点击 → 推入工具列表，Insert → 表单配置窗（保存后本窗就地刷新），
+    Delete → 原地确认后 unconfigure（删空也不关窗，空列表可继续 Insert），行按连接状态着色、
+    connecting 轮播。"""
 
     TITLE = "MCP Servers"
     HINT = "  ↑/↓ browse    Enter tools    Insert configure    Delete remove    Esc close"
@@ -130,7 +127,7 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         self._ask_confirm(f'Remove "{server}"?', lambda: self._remove_server(server))
 
     def _remove_server(self, server: str) -> None:
-        """unconfigure 立即返回（连接后台收敛），本地删行重建；删空则关窗。"""
+        """unconfigure 立即返回（连接后台收敛），本地删行重建；删空也不关窗（空态可继续 Insert）。"""
         try:
             from core.mcp.mcp_client import unconfigure_mcp_server
             ok, message = unconfigure_mcp_server(server)
@@ -142,13 +139,10 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
             return
         self.app.notify(message, title="✅ MCP")
         self._servers.pop(server, None)
-        if self._servers:
-            self._reload()
-        else:
-            self.dismiss(None)
+        self._reload()  # 删空也不关窗：空列表保留 Insert 入口（空态提示由 _reload 给出）
 
     def action_configure(self) -> None:
-        """Insert：弹 JSON 配置窗；保存成功后本窗保持打开并就地刷新。"""
+        """Insert：弹表单配置窗；保存成功后本窗保持打开并就地刷新。"""
         self.app.push_screen(MCPConfigScreen(), callback=self._on_config_saved)
 
     def _on_config_saved(self, saved: bool) -> None:
@@ -168,36 +162,117 @@ class MCPToolsScreen(_NamedListScreen):
         self.TITLE = f"{server} tools"
 
 
-class MCPConfigScreen(ModalScreen[bool]):
-    """JSON 配置窗（MCPServersScreen 内 Insert）：Ctrl+S 交 configure_mcp_server 校验并落盘，
-    成功关窗返回 True，失败留在窗内可继续改；Esc 取消返回 False。"""
+def _parse_headers(text: str) -> dict[str, str]:
+    """headers 输入区解析：每行 KEY=VALUE（按首个 = 切分，值可含 =）；空行跳过，非法行抛
+    ValueError（带行号，消息直接用于窗内提示）。"""
+    headers: dict[str, str] = {}
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        key, sep, value = line.partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"Header line {lineno} must be KEY=VALUE")
+        headers[key.strip()] = value.strip()
+    return headers
+
+
+def _build_mcp_config(name: str, transport: str | None, command: str, args_text: str,
+                      url: str, headers_text: str) -> dict:
+    """把配置表单值组装成 configure_mcp_server 接受的 {"mcpServers": {name: config}}。
+
+    表单单行值已由调用方 strip；args / headers 多行文本在此解析。必填缺失或 headers
+    非法时抛 ValueError。
+    """
+    if not name:
+        raise ValueError("Server name is required")
+    config: dict
+    if transport == "stdio":
+        if not command:
+            raise ValueError("Command is required for stdio")
+        config = {"command": command}
+        args = [line.strip() for line in args_text.splitlines() if line.strip()]
+        if args:
+            config["args"] = args
+    elif transport in _HTTP_TRANSPORTS:
+        if not url:
+            raise ValueError("URL is required")
+        config = {"type": transport, "url": url}
+        headers = _parse_headers(headers_text)
+        if headers:
+            config["headers"] = headers
+    else:
+        raise ValueError("Transport type is required")
+    return {"mcpServers": {name: config}}
+
+
+class MCPConfigScreen(_ArrowNav, ModalScreen[bool]):
+    """表单配置窗（MCPServersScreen 内 Insert）：server name + type 下拉；条件字段随 type 切换
+    —— stdio 显示 command + args（每行一个 arg），sse / streamable_http 显示 url + headers
+    （每行 KEY=VALUE）。Ctrl+S 把组装负载交 configure_mcp_server 校验并落盘，成功关窗返回
+    True，失败留在窗内可继续改；Esc 取消返回 False。"""
 
     BINDINGS = [
-        # priority：TextArea(tab_behavior="indent") 会吞 Esc 改焦点，须在焦点部件拿到键前拦截
-        Binding("escape", "cancel", "Cancel", priority=True),
+        # 不加 priority：type 下拉浮层展开时 Esc 先关浮层（同注册模型窗），再按 Esc 才关窗
+        Binding("escape", "cancel", "Cancel"),
         ("ctrl+s", "submit", "Save"),
     ]
 
     def compose(self) -> ComposeResult:
         picker = Vertical(
-            TextArea(language="json", placeholder=_MCP_CONFIG_EXAMPLE, tab_behavior="indent",
-                     id="mcp-config-input"),
-            Static("  Ctrl+S save    Esc cancel", classes="picker-hint"),
+            _field(Input(placeholder="Server name", id="mcp-server-name")),
+            _field(Select((("stdio", "stdio"),
+                           ("streamable http", "streamable_http"),
+                           ("sse", "sse")),
+                          prompt="Select a transport type", id="mcp-server-type")),
+            Vertical(
+                _field(Input(placeholder="Command (e.g. npx)", id="mcp-stdio-command")),
+                TextArea(placeholder="Args (one per line)", id="mcp-stdio-args"),
+                id="mcp-stdio-fields",
+            ),
+            Vertical(
+                _field(Input(placeholder="URL (e.g. https://example.com/mcp)", id="mcp-http-url")),
+                TextArea(placeholder="Headers (one KEY=VALUE per line)", id="mcp-http-headers"),
+                id="mcp-http-fields",
+            ),
+            Static("  Tab next field    Ctrl+S save    Esc cancel", classes="picker-hint"),
             classes="picker",
             id="mcp-config-picker",
         )
-        picker.border_title = "Configure MCP Servers"
+        picker.border_title = "Configure MCP server"
         yield picker
 
     def on_mount(self) -> None:
-        self.query_one("#mcp-config-input", TextArea).focus()
+        self.query_one("#mcp-server-name", Input).focus()
+        self._sync_transport_fields()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """type 变化：只显示对应的条件字段组（未选时两组都隐藏）。"""
+        event.stop()
+        self._sync_transport_fields()
+
+    def _sync_transport_fields(self) -> None:
+        transport = self.query_one("#mcp-server-type", Select).selection
+        self.query_one("#mcp-stdio-fields").display = transport == "stdio"
+        self.query_one("#mcp-http-fields").display = transport in _HTTP_TRANSPORTS
 
     def action_submit(self) -> None:
-        """Ctrl+S：成功关窗、失败留在窗内可继续改。"""
-        text = self.query_one("#mcp-config-input", TextArea).text
+        """Ctrl+S：组装表单为配置负载交 configure_mcp_server；成功关窗、失败留在窗内。"""
+        try:
+            payload = _build_mcp_config(
+                self.query_one("#mcp-server-name", Input).value.strip(),
+                self.query_one("#mcp-server-type", Select).selection,
+                self.query_one("#mcp-stdio-command", Input).value.strip(),
+                self.query_one("#mcp-stdio-args", TextArea).text,
+                self.query_one("#mcp-http-url", Input).value.strip(),
+                self.query_one("#mcp-http-headers", TextArea).text,
+            )
+        except ValueError as exc:
+            self.app.notify(str(exc), title="⚠️ MCP", severity="error")
+            return
         try:
             from core.mcp.mcp_client import configure_mcp_server
-            ok, message = configure_mcp_server(text)
+            ok, message = configure_mcp_server(json.dumps(payload, ensure_ascii=False))
         except Exception as exc:
             self.app.notify(f"Failed to configure: {_error_text(exc)}", title="⚠️ MCP", severity="error")
             return

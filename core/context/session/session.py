@@ -12,11 +12,13 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Literal, Any
 
-from core.config import SESSION_DIR, SESSION_INDEX_FILE, MESSAGE_PREVIEW_CHARS
+from core.config import SESSION_DIR, SESSION_INDEX_FILE
 from core.context.token import estimate_size
 from core.log.log import get_logger
 
 _LOGGER = get_logger(__name__)
+
+MESSAGE_PREVIEW_CHARS = 30  # 用户消息截断展示长度（/fork 列表预览与 fork 会话标题 [Fork] 共用）
 
 
 def _get_timestamp() -> str:
