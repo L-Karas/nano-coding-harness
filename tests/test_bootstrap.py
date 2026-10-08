@@ -5,7 +5,9 @@ import time
 
 import core.bootstrap as bootstrap_mod
 import core.client.model as model_mod
+import core.config as config
 import core.cron_scheduler as cron_mod
+import core.extension.loader as extension_loader
 import core.hook.hook as hook_mod
 import core.skill.skills as skills_mod
 from core.bootstrap import init_harness
@@ -37,6 +39,10 @@ def test_init_harness_creates_files(tmp_path, monkeypatch):
     assert files["SESSION_INDEX_FILE"].exists() and files["CRON_TASK_FILE"].exists()
 
 
+def test_extension_dir_is_bootstrapped():
+    assert config.EXTENSION_DIR in bootstrap_mod._CONFIG_DIRS
+
+
 def test_bootstrap_initializes_once_across_threads(monkeypatch):
     """并发首次调用 bootstrap 只初始化一次（避免重复启动 cron 线程）。"""
     calls, gate = [], threading.Barrier(8)
@@ -51,6 +57,7 @@ def test_bootstrap_initializes_once_across_threads(monkeypatch):
     monkeypatch.setattr(bootstrap_mod, "init_harness", _record("harness"))
     monkeypatch.setattr(model_mod, "load_model_registry", _record("registry"))
     monkeypatch.setattr(cron_mod, "start_cron_scheduler", _record("cron"))
+    monkeypatch.setattr(extension_loader, "load_extensions", _record("extensions"))
     monkeypatch.setattr(hook_mod, "install_default_hooks", _record("hooks"))
     monkeypatch.setattr(skills_mod, "scan_skills", _record("skills"))
 
@@ -64,4 +71,4 @@ def test_bootstrap_initializes_once_across_threads(monkeypatch):
     for thread in threads:
         thread.join(5)
 
-    assert sorted(calls) == ["cron", "harness", "hooks", "registry", "skills"], calls
+    assert sorted(calls) == ["cron", "extensions", "harness", "hooks", "registry", "skills"], calls

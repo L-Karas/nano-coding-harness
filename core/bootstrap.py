@@ -12,6 +12,7 @@ from core.config import (
     CRON_TASK_FILE,
     CUSTOM_MODEL_FILE,
     CUSTOM_PROVIDER_FILE,
+    EXTENSION_DIR,
     HARNESS_CONFIG_DIR,
     HARNESS_SETTING_FILE,
     LOG_DIR,
@@ -28,8 +29,9 @@ from core.config import (
     WORKTREES_DIR,
 )
 
-_CONFIG_DIRS = (HARNESS_CONFIG_DIR, LOG_DIR, SKILL_DIR, MEMORY_DIR, SESSION_DIR,
-                TOOL_RESULTS_DIR, TASK_DIR, MCP_DIR, MAILBOX_DIR, WORKTREES_DIR)
+_CONFIG_DIRS = (HARNESS_CONFIG_DIR, LOG_DIR, SKILL_DIR, EXTENSION_DIR, MEMORY_DIR,
+                SESSION_DIR, TOOL_RESULTS_DIR, TASK_DIR, MCP_DIR, MAILBOX_DIR,
+                WORKTREES_DIR)
 _JSON_FILES = {
     HARNESS_SETTING_FILE: {},  # 默认值由 AgentConfig 提供，load_config 读取时补齐
     PROVIDER_AUTH_FILE: {},
@@ -66,10 +68,12 @@ def bootstrap() -> None:
         # 函数内导入：bootstrap 被导入时不拉起模型注册表 / 工具池等重依赖
         from core.client.model import load_model_registry
         from core.cron_scheduler import start_cron_scheduler
+        from core.extension.loader import load_extensions
         from core.hook.hook import install_default_hooks
         from core.skill.skills import scan_skills
 
         install_default_hooks()
+        load_extensions()
         scan_skills()
         load_model_registry()
         start_cron_scheduler()
