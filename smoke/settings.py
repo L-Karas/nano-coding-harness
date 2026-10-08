@@ -81,6 +81,17 @@ async def run(app, pilot) -> None:
             assert ov.styles.scrollbar_size_vertical == 1, ov.styles.scrollbar_size_vertical
             assert ov.styles.scrollbar_color.hex.lower() == "#475569", ov.styles.scrollbar_color
             assert ov.styles.scrollbar_background.is_transparent, ov.styles.scrollbar_background
+            # 窄终端下参数名吃掉整行，Select 仅剩几列；浮层须保底可用宽
+            # （回归：宽度缩到内容宽 0 时 OptionList 在 rich divide_line 崩溃）
+            assert ov.region.width >= 24, f"浮层过窄: {ov.region}"
+            # 设置窗本体（表单超长时滚动）滑块同 /sessions 列表：共用同一组滑块规则
+            picker = form.query_one("#settings-picker")
+            assert picker.show_vertical_scrollbar, "设置表单超长时应有纵向滑块"
+            assert picker.styles.scrollbar_size_vertical == 1, picker.styles.scrollbar_size_vertical
+            assert picker.styles.scrollbar_color.hex.lower() == "#475569", picker.styles.scrollbar_color
+            assert picker.styles.scrollbar_background.is_transparent, picker.styles.scrollbar_background
+            assert picker.styles.scrollbar_color_hover.hex.lower() == "#94a3b8"
+            assert picker.styles.scrollbar_color_active.hex.lower() == "#38bdf8"
             await pilot.press("escape")
             await settle(pilot)
             assert not msel.expanded and isinstance(app.screen_stack[-1], SettingsScreen), \

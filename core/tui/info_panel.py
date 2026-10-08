@@ -84,7 +84,7 @@ class _InfoPanel(Vertical):
     """右栏分区卡片：标题（▼/▶ + 计数）随边框点击折叠，条目行按数据签名 1s 轮询重建。"""
 
     SECTIONS = {"todos": "Todos", "bg": "Background Tasks", "subagents": "Subagents"}  # 顺序即上下顺序
-    EMPTY = {"todos": "No todos", "bg": "No background tasks", "subagents": "No subagents"}
+    EMPTY = "(Empty)"  # 空分区占位行（各分区同一文案）
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -158,7 +158,7 @@ class _InfoPanel(Vertical):
         holder = self.query_one(f"#{kind}-list", VerticalScroll)
         holder.remove_children()
         if not items:
-            holder.mount(Static(self.EMPTY[kind], markup=False, classes="info-row"))
+            holder.mount(Static(self.EMPTY, markup=False, classes="info-row"))
         else:
             holder.mount(*(_InfoRow(kind, it, self._cursor) for it in items))
         return items

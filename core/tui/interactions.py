@@ -31,6 +31,7 @@ class _DockInteractions:
         perm.highlighted = 1  # 默认 No（同旧版 [y/N]）
         perm.focus()
         self._set_status_text("Confirm permission: ↑/↓ Yes/No, Enter confirm, Esc reject.", spin=True)
+        self._progress_waiting()
 
     def _answer_permission(self, value: str) -> None:
         """落地回答：写回等待线程、收起列表；输入条由回合结束的 _set_idle 统一恢复。"""
@@ -40,6 +41,7 @@ class _DockInteractions:
         self._perm_pending = False
         self.query_one("#perm-list", OptionList).styles.display = "none"
         self._set_status_text("Working…", spin=True)
+        self._progress_resume()
         if future is not None:
             future.set_result(value)
 
@@ -71,6 +73,7 @@ class _DockInteractions:
         ol.focus()
         self._prompt().disabled = True
         self._set_status_text(self._clarify_hint(), spin=True)
+        self._progress_waiting()
 
     def _clarify_rows(self):
         """选项行：多选带 ◉/◯；末尾 Other（id=other，其余 id=下标）。prompt 用 Text：
@@ -165,6 +168,7 @@ class _DockInteractions:
         self.query_one("#clarify-list", _ClarifyList).styles.display = "none"
         self._reset_prompt()
         self._set_status_text("Working…", spin=True)
+        self._progress_resume()
         if future is not None:
             future.set_result(value)
 

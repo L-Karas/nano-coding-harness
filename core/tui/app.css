@@ -75,14 +75,16 @@ Toast, Toast:ansi { background: #1e293b; }
     color: #64748b;
 }
 
-/* ── 滚动条：所有滚动区共用（含 /settings、注册模型窗与 /mcp 配置窗的 Select 下拉浮层）──
+/* ── 滚动条：所有滚动区共用（含 /settings 弹窗本体与其 Select 下拉浮层、
+   注册模型窗与 /mcp 配置窗的 Select 下拉浮层）──
    宽度收窄为 1 列（Textual 默认 2 列），轨道透明，滑块色同卡片描边，hover / 拖动高亮 */
 #todos-list, #bg-list, #subagents-list,
 #chat,
 #cmd-suggest, #file-suggest, #perm-list, #clarify-list,
 #sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list,
 #mcp-stdio-args, #mcp-http-headers,
-#settings-picker Select > SelectOverlay, #reg-model-provider > SelectOverlay, #mcp-server-type > SelectOverlay {
+#settings-picker, #settings-picker Select > SelectOverlay,
+#reg-model-provider > SelectOverlay, #mcp-server-type > SelectOverlay {
     scrollbar-size-vertical: 1;
     scrollbar-background: transparent;
     scrollbar-background-hover: transparent;
@@ -422,11 +424,14 @@ ModalScreen {
     background-tint: transparent;
 }
 /* 下拉浮层（thinking level / 模型）：圆弧边框 + ansi_default 底，同注册模型窗提供方下拉
-   （#reg-model-provider > SelectOverlay）；该处 offset/margin 是给 ❯ 标记对齐用的，本窗无需 */
+   （#reg-model-provider > SelectOverlay）；该处 offset/margin 是给 ❯ 标记对齐用的，本窗无需。
+   min-width：窄终端下参数名吃掉整行，Select 仅剩几列，浮层宽度跟着 Select 算（width: 1fr）
+   会缩到内容宽 0（rich divide_line 除零崩溃）；给浮层留一个可用下限，选项才看得清 */
 #settings-picker Select > SelectOverlay {
     border: round #475569;
     background: ansi_default;
     background-tint: transparent;
+    min-width: 24;
 }
 
 /* ── /effort 弹窗：仅标题 + 标签排 + 提示行，故比通用 .picker 小一圈 ──

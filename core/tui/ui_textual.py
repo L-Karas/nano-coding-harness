@@ -29,7 +29,7 @@ from core.tui.info_panel import _InfoPanel
 from core.tui.interactions import _DockInteractions
 from core.tui.panels import _ChatBoard, _ChatDock, _Welcome
 from core.tui.surface import _RenderSurface
-from core.tui.theme import DEFAULT_SUBTITLE, DEFAULT_TITLE
+from core.tui.theme import DEFAULT_SUBTITLE, DEFAULT_TITLE, TERMINAL_TITLE
 from core.tui.widgets import _CommandInput
 
 
@@ -47,6 +47,19 @@ class _ChatScreen(Screen):
                 if widget is not prompt and not prompt.disabled:
                     widget = prompt
         super().set_focus(widget, scroll_visible=scroll_visible, from_app_focus=from_app_focus)
+
+
+def _set_terminal_title(driver: Any, title: str) -> None:
+    """OSC 2 设终端窗口标题；driver 为 None / headless 时写空操作，空串即清空。"""
+    if driver is not None:
+        driver.write(f"\x1b]2;{title}\x07")
+
+
+def _set_terminal_progress(driver: Any, state: int, value: Optional[int] = None) -> None:
+    """OSC 9;4 任务栏进度：3 不确定（运行中）/ 4 黄色（等待用户输入）/ 0 清除；driver 为 None 时忽略。"""
+    if driver is not None:
+        tail = f";{value}" if value is not None else ""
+        driver.write(f"\x1b]9;4;{state}{tail}\x07")
 
 
 class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
@@ -117,6 +130,33 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._chat().anchor()  # 钉底：溢出时保持贴底，用户上滚解除、滚回底部恢复
         self._set_welcome(True)
         self._refresh_footer()
+        _set_terminal_title(self._driver, TERMINAL_TITLE)
+
+    def on_unmount(self) -> None:
+        """退出（App Unmount，driver 尚未 close）时清空窗口标题与任务栏进度，交还 shell 默认状态。"""
+        _set_terminal_title(self._driver, "")
+        self._progress_clear()
+
+    # ---------- 终端任务栏进度（OSC 9;4） ----------
+
+    def _progress_working(self) -> None:
+        """回合运行中：任务栏不确定进度（动态条）。"""
+        _set_terminal_progress(self._driver, 3)
+
+    def _progress_waiting(self) -> None:
+        """等待用户作答（权限确认 / clarify）：任务栏满格黄色静态条（state 4 + 100%）。"""
+        _set_terminal_progress(self._driver, 4, 100)
+
+    def _progress_clear(self) -> None:
+        """回合结束 / 应用退出：清除任务栏进度。"""
+        _set_terminal_progress(self._driver, 0)
+
+    def _progress_resume(self) -> None:
+        """作答后恢复进度：前景回合仍在跑则转动态条，回合外（子代理 / cron 询问）直接清除，避免残留。"""
+        if self._busy:
+            self._progress_working()
+        else:
+            self._progress_clear()
 
     def on_resize(self, event: events.Resize) -> None:
         self._refresh_footer()  # 页脚右对齐随终端宽度实时重算

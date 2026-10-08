@@ -74,7 +74,7 @@ async def run(app, pilot) -> None:
     assert "[tool: terminal]" in sub_str, f"子代理阶段切换未上屏: {sub_str}"
     _sa_mod.SUBAGENT_TASKS.pop("sa-0001")
     await pilot.pause(1.3)
-    assert "No subagents" in _rows_text("#subagents-list .info-row"), "子代理结束后应显示空态"
+    assert _rows_text("#subagents-list .info-row") == "(Empty)", "子代理结束后应显示 (Empty)"
     with BACKGROUND_LOCK:  # 模拟 bg 线程完成
         BACKGROUND_TASKS["bg-7777"]["status"] = "completed"
     await pilot.pause(1.3)
@@ -171,7 +171,16 @@ async def run(app, pilot) -> None:
     assert not app.query_one("#info-panel").display, "折叠后提示应随面板隐藏"
     await pilot.click(tab)
     await pilot.pause(0.1)
-    print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + independent collapse")
+    # 空态：三区数据清空后各显示 (Empty)（bg 列表还留有演示回合的任务，临时清空再还原）
     _todo_mod.CURRENT_TODOS = []  # 复位全局（仅冒烟进程内生效）
     with BACKGROUND_LOCK:
         BACKGROUND_TASKS.pop("bg-7777", None)
+        _saved_bg = dict(BACKGROUND_TASKS)
+        BACKGROUND_TASKS.clear()
+    await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
+    for _key in ("todos", "bg", "subagents"):
+        _rows = _rows_text(f"#{_key}-list .info-row")
+        assert _rows == "(Empty)", f"空分区应显示 (Empty): #{_key}-list = {_rows!r}"
+    with BACKGROUND_LOCK:
+        BACKGROUND_TASKS.update(_saved_bg)  # 还原，避免影响后续分区
+    print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + independent collapse")
