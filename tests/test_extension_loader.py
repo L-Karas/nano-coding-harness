@@ -93,3 +93,13 @@ def test_load_is_idempotent(tmp_path):
     load_extensions(tmp_path)
     load_extensions(tmp_path)
     assert _count("before_llm") == 1
+
+
+def test_example_extension_loads(tmp_path):
+    import shutil
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "examples" / "extension_example"
+    shutil.copytree(source, tmp_path / "extension_example")
+    load_extensions(tmp_path)
+    assert _count("before_llm") >= 1

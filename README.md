@@ -223,6 +223,51 @@ MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main 
 - `read_file` / `write_file` / `edit_file` 的路径解析后落在工作目录之外时同样需要确认；
 - 另注册了 `tool_call_log_hook`（调用日志）与 `post_tool_call` 的 `large_tool_output_hook`（超长输出告警）。
 
+## 扩展（extensions）
+
+外部扩展放在 `.harness/extensions/<name>/`，进程启动时加载，不改 harness 源码即可在
+LLM 调用前/后、工具调用前/后介入主流程。每个扩展是一个含 `extension.json` 与 `__init__.py` 的包：
+
+```
+.harness/extensions/
+  my_ext/
+    extension.json     # {"enabled": true}
+    __init__.py        # 入口，必须定义 register(api)
+```
+
+- `extension.json` 的 `enabled` 必须严格为布尔 `true`（`false` / 字段缺失 / 清单缺失 / JSON 非法 /
+  字符串 `"true"` 等一律不加载）；修改 `enabled` 或扩展代码后需重启进程生效。
+- `__init__.py` 定义 `register(api)`，用 `api.on(event, callback)` 注册回调，同步 / 异步（`async def`）均可；
+  每个回调接收一个上下文对象，原地修改其可写字段即可介入本次调用。
+
+| 事件 | 触发时机 | 可写字段 | 控制流 |
+| --- | --- | --- | --- |
+| `before_llm` | 发送 LLM 请求前 | `messages`、`tools`、`max_tokens` | `ctx.abort(reason)`：本回合不再调 LLM，以带原因的消息结束 |
+| `after_llm` | 收到完整 LLM 响应后、写会话前 | `content`、`tool_calls`、`inject_messages` | 无 |
+| `before_tool` | 工具执行前、权限检查前 | `args` | `ctx.block(reason)`：跳过执行，原因写回为工具结果 |
+| `after_tool` | 工具真正执行完成后、结果写回前 | `result`、`inject_messages` | 无 |
+
+最小示例见 `examples/extension_example/`，整体复制到 `.harness/extensions/` 后重启进程即可冒烟观察：
+
+```python
+def register(api):
+    api.on("before_llm", on_before_llm)
+    api.on("after_tool", on_after_tool)
+
+def on_before_llm(ctx):
+    ctx.messages.append({"role": "user", "content": "[Reminder] ..."})
+
+async def on_after_tool(ctx):
+    ctx.result = f"{ctx.result}\n[after_tool] ..."
+```
+
+- **fail-open**：单个回调异常只记日志并跳过，不阻断主流程；`block` / `abort` 会短路该事件剩余回调。
+- **信任模型**：扩展在 agent 进程内以完整进程权限运行，只放可信代码。
+- **不参与**：后台任务执行结果不触发 `after_tool`；上下文压缩 / 标题生成等辅助 LLM 调用不触发
+  `before_llm` / `after_llm`；旧 `.hooks.json` 教学示例与本系统相互独立，不参与加载。
+
+完整契约见 `docs/superpowers/specs/2026-10-08-extension-hooks-design.md`。
+
 ## 子代理 / 团队 / Worktree
 
 - **子代理**：`spawn_subagent` 用 `agent_type="sub-agent"` 单独组装提示词与工具池（后台运行，最多 30 轮），
