@@ -72,6 +72,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
             await dispatch("before_llm", llm_ctx)
             if llm_ctx.aborted:
                 return f"(subagent aborted by extension: {llm_ctx.abort_reason})"
+            messages = llm_ctx.messages
 
             stream = await with_retry_async(
                 lambda: sub_client.get_model_client(async_client=True)(
@@ -102,9 +103,9 @@ async def spawn_subagent(description: str, ctx=None) -> str:
                 return llm_result.content or "(subagent finished without a text conclusion)"
 
             _set_phase(agent_id, "tool", ", ".join(tc["function"]["name"] for tc in llm_result.tool_calls))
+            injected_messages: list[dict] = []
             for tool_call in llm_result.tool_calls:
                 name = tool_call["function"]["name"]
-                injected = []
                 try:
                     tool_args = json.loads(tool_call["function"]["arguments"] or "{}")
                 except json.JSONDecodeError as e:
@@ -127,11 +128,11 @@ async def spawn_subagent(description: str, ctx=None) -> str:
                                 is_error=str(output).startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX)))
                             await dispatch("after_tool", result_ctx)
                             output = result_ctx.result
-                            injected = result_ctx.inject_messages
+                            injected_messages.extend(result_ctx.inject_messages)
 
                 messages.append({"role": "tool", "tool_call_id": tool_call["id"], "content": str(output)})
-                for message in injected:
-                    messages.append(message)
+            for message in injected_messages:
+                messages.append(message)
 
         _LOGGER.warning(f"[Subagent] reached {MAX_SUB_AGENT_ROUNDS} rounds without a conclusion")
         return f"(subagent reached the {MAX_SUB_AGENT_ROUNDS}-round limit without a conclusion)"

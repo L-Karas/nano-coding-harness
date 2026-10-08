@@ -13,6 +13,10 @@ TOOL_ROUND = ("", "", [{"id": "t1", "type": "function",
                         "function": {"name": "terminal", "arguments": '{"command": "ls"}'}}],
               "tool_calls", None)
 DONE_ROUND = ("done", "", [], "stop", None)
+TWO_TOOL_ROUND = ("", "", [
+    {"id": "t1", "type": "function", "function": {"name": "terminal", "arguments": '{"command": "ls"}'}},
+    {"id": "t2", "type": "function", "function": {"name": "terminal", "arguments": '{"command": "pwd"}'}},
+], "tool_calls", None)
 
 
 @pytest.fixture(autouse=True)
@@ -105,3 +109,21 @@ def test_after_tool_rewrites_result(monkeypatch):
     second_round = calls["model_messages"][1]
     tool_message = next(m for m in second_round if m.get("role") == "tool")
     assert tool_message["content"] == "processed"
+
+
+def test_after_tool_inject_messages_batch_end_order(monkeypatch):
+    responses = [TWO_TOOL_ROUND, DONE_ROUND]
+    calls = _patch(monkeypatch, responses, "raw")
+
+    def hook(ctx):
+        ctx.inject_messages.append({"role": "user", "content": f"note-{ctx.args['command']}"})
+
+    add_hook("after_tool", hook, "test")
+    assert asyncio.run(sa.spawn_subagent("do it")) == "done"
+    second_round = calls["model_messages"][1]
+    tool_indices = [i for i, m in enumerate(second_round) if m.get("role") == "tool"]
+    note_indices = [i for i, m in enumerate(second_round)
+                    if isinstance(m.get("content"), str) and m["content"].startswith("note-")]
+    assert len(tool_indices) == 2
+    assert len(note_indices) == 2
+    assert max(tool_indices) < min(note_indices)

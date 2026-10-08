@@ -144,3 +144,16 @@ def test_after_tool_result_rewrite_and_inject(monkeypatch):
     assert tool_messages[0]["content"] == "processed"
     assert mgr.messages[-2] == {"role": "user", "content": "after-tool note"}
     assert mgr.messages[-1]["content"] == "done"
+
+
+def test_after_llm_clear_tool_calls_ends_turn(monkeypatch):
+    mgr = _Mgr()
+    runtime, calls = _prepare_runtime(monkeypatch, mgr,
+                                      [("", "", [TOOL_CALL], "tool_calls", None),
+                                       ("done", "", [], "stop", None)], "unused")
+    add_hook("after_llm", lambda ctx: setattr(ctx, "tool_calls", []), "test")
+    runtime.submit(runtime.run())
+    assert len(calls["llm"]) == 1
+    assert calls["tools"] == []
+    assert mgr.messages[-1]["role"] == "assistant"
+    assert mgr.messages[-1]["content"] == ""

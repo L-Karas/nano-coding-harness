@@ -240,12 +240,17 @@ LLM 调用前/后、工具调用前/后介入主流程。每个扩展是一个�
 - `__init__.py` 定义 `register(api)`，用 `api.on(event, callback)` 注册回调，同步 / 异步（`async def`）均可；
   每个回调接收一个上下文对象，原地修改其可写字段即可介入本次调用。
 
+主循环与子代理循环都会触发上述四个事件。
+
 | 事件 | 触发时机 | 可写字段 | 控制流 |
 | --- | --- | --- | --- |
 | `before_llm` | 发送 LLM 请求前 | `messages`、`tools`、`max_tokens` | `ctx.abort(reason)`：本回合不再调 LLM，以带原因的消息结束 |
 | `after_llm` | 收到完整 LLM 响应后、写会话前 | `content`、`tool_calls`、`inject_messages` | 无 |
 | `before_tool` | 工具执行前、权限检查前 | `args` | `ctx.block(reason)`：跳过执行，原因写回为工具结果 |
 | `after_tool` | 工具真正执行完成后、结果写回前 | `result`、`inject_messages` | 无 |
+
+表中未列出的字段（`finish_reason`、`usage`、`tool_name`、`is_error`）均为只读。
+`after_llm` 在 `finish_reason == "length"` 的自动扩窗重试与续写恢复路径中不会触发。
 
 最小示例见 `examples/extension_example/`，整体复制到 `.harness/extensions/` 后重启进程即可冒烟观察：
 
@@ -263,6 +268,9 @@ async def on_after_tool(ctx):
 
 - **fail-open**：单个回调异常只记日志并跳过，不阻断主流程；`block` / `abort` 会短路该事件剩余回调。
 - **信任模型**：扩展在 agent 进程内以完整进程权限运行，只放可信代码。
+- **provider 邻接性警告**：在 tool-calling 轮次中，`after_llm` 的 `inject_messages` 会被插入到
+  assistant 的 `tool_calls` 消息与 tool 结果之间；部分对消息邻接性校验严格的 provider 可能返回 400。
+  tool-calling 轮次请优先使用 `after_tool` 注入（批量工具结果全部写回后追加，位置安全）。
 - **不参与**：后台任务执行结果不触发 `after_tool`；上下文压缩 / 标题生成等辅助 LLM 调用不触发
   `before_llm` / `after_llm`；旧 `.hooks.json` 教学示例与本系统相互独立，不参与加载。
 
