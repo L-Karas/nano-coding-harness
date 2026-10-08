@@ -13,10 +13,14 @@ from core.client import shared_sub_model_client
 from core.config import CONFIGMANAGER
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
+from core.extension import (
+    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext, dispatch,
+)
 from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.streaming import streaming_message
+from core.template import TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
 
 MAX_SUB_AGENT_ROUNDS = 30
 _LOGGER = get_logger(__name__)
@@ -63,48 +67,71 @@ async def spawn_subagent(description: str, ctx=None) -> str:
             _set_phase(agent_id, "thinking")
             sub_client = shared_sub_model_client()
             messages = await prepare_messages(messages, ctx, sub_model=True)
+            sub_max_tokens = sub_client.clamp_max_tokens(CONFIGMANAGER.config.default_max_tokens)
+            llm_ctx = BeforeLLMContext(messages=messages, tools=tools, max_tokens=sub_max_tokens)
+            await dispatch("before_llm", llm_ctx)
+            if llm_ctx.aborted:
+                return f"(subagent aborted by extension: {llm_ctx.abort_reason})"
+
             stream = await with_retry_async(
                 lambda: sub_client.get_model_client(async_client=True)(
-                    messages=messages,
-                    tools=tools,
-                    max_tokens=sub_client.clamp_max_tokens(CONFIGMANAGER.config.default_max_tokens),
+                    messages=llm_ctx.messages,
+                    tools=llm_ctx.tools,
+                    max_tokens=llm_ctx.max_tokens,
                     stream=True
                 ),
                 provider=sub_client.current_provider,
             )
-            content, reasoning_content, tool_calls, _, _ = await streaming_message(stream)
+            content, reasoning_content, tool_calls, finish_reason, usage = await streaming_message(stream)
 
+            llm_result = AfterLLMContext(content=content, tool_calls=tool_calls or [],
+                                         finish_reason=finish_reason or "", usage=usage)
+            await dispatch("after_llm", llm_result)
             assistant_message = {
                 "role": "assistant",
-                "content": content,
+                "content": llm_result.content,
                 "reasoning_content": reasoning_content,
             }
-            if tool_calls:
-                assistant_message["tool_calls"] = tool_calls
+            if llm_result.tool_calls:
+                assistant_message["tool_calls"] = llm_result.tool_calls
             messages.append(assistant_message)
+            for message in llm_result.inject_messages:
+                messages.append(message)
 
-            if not tool_calls:
-                return content or "(subagent finished without a text conclusion)"
+            if not llm_result.tool_calls:
+                return llm_result.content or "(subagent finished without a text conclusion)"
 
-            _set_phase(agent_id, "tool", ", ".join(tc["function"]["name"] for tc in tool_calls))
-            for tool_call in tool_calls:
+            _set_phase(agent_id, "tool", ", ".join(tc["function"]["name"] for tc in llm_result.tool_calls))
+            for tool_call in llm_result.tool_calls:
                 name = tool_call["function"]["name"]
-                blocked = trigger_hooks("pre_tool_call", ChatCompletionMessageToolCall(**tool_call))
-                if blocked:
-                    output = str(blocked)
+                injected = []
+                try:
+                    tool_args = json.loads(tool_call["function"]["arguments"] or "{}")
+                except json.JSONDecodeError as e:
+                    output = f"[Error] {type(e).__name__}: {e}"
                 else:
-                    try:
-                        tool_args = json.loads(tool_call["function"]["arguments"] or "{}")
-                    except json.JSONDecodeError as e:
-                        output = f"[Error] {type(e).__name__}: {e}"
+                    tool_ctx = BeforeToolContext(tool_name=name, args=tool_args)
+                    await dispatch("before_tool", tool_ctx)
+                    if tool_ctx.blocked:
+                        output = f"[Extension blocked] {tool_ctx.block_reason}"
                     else:
-                        output = await execute_tool(handlers.get(name), tool_args, name, ctx)
+                        permission_call = ChatCompletionMessageToolCall(**tool_call)
+                        permission_call.function.arguments = json.dumps(tool_ctx.args, ensure_ascii=False)
+                        blocked = trigger_hooks("pre_tool_call", permission_call)
+                        if blocked:
+                            output = str(blocked)
+                        else:
+                            output = await execute_tool(handlers.get(name), tool_ctx.args, name, ctx)
+                            result_ctx = AfterToolContext(
+                                tool_name=name, args=tool_ctx.args, result=str(output),
+                                is_error=str(output).startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX)))
+                            await dispatch("after_tool", result_ctx)
+                            output = result_ctx.result
+                            injected = result_ctx.inject_messages
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call["id"],
-                    "content": str(output),
-                })
+                messages.append({"role": "tool", "tool_call_id": tool_call["id"], "content": str(output)})
+                for message in injected:
+                    messages.append(message)
 
         _LOGGER.warning(f"[Subagent] reached {MAX_SUB_AGENT_ROUNDS} rounds without a conclusion")
         return f"(subagent reached the {MAX_SUB_AGENT_ROUNDS}-round limit without a conclusion)"
