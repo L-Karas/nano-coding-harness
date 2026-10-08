@@ -22,6 +22,9 @@ from core.context.prompt import build_system_prompt
 from core.context.session import SESSION_MANAGER
 from core.cron_scheduler import consume_cron_queue
 from core.experimental.protocol_state import consume_lead_inbox
+from core.extension import (
+    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext, dispatch,
+)
 from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
 from core.recovery.error_recovery import RecoveryState, with_retry_async
@@ -148,8 +151,17 @@ class AgentRuntime:
                 # todo: 工具获取异步重构?
                 tools, handlers = assemble_tool_pool("main", tool_type="async")
 
+                llm_ctx = BeforeLLMContext(messages=messages, tools=tools, max_tokens=max_tokens)
+                await dispatch("before_llm", llm_ctx)
+                if llm_ctx.aborted:
+                    abort_text = f"[Extension aborted] {llm_ctx.abort_reason}"
+                    SESSION_MANAGER.add_message({"role": "assistant", "content": abort_text})
+                    render_background_notification(abort_text, title="⛔ Extension Abort")
+                    return
+
                 try:
-                    stream = await self.call_llm(messages=messages, tools=tools, max_tokens=max_tokens, ctx=ctx)
+                    stream = await self.call_llm(messages=llm_ctx.messages, tools=llm_ctx.tools,
+                                                 max_tokens=llm_ctx.max_tokens, ctx=ctx)
                 except Exception as e:
                     # todo: 是否需要将模型调用错误信息作为消息历史的一部分
                     error_text = f"[Error] {type(e).__name__}: {e}"
@@ -191,12 +203,23 @@ class AgentRuntime:
                 max_tokens = CONFIGMANAGER.config.default_max_tokens
                 state.has_escalated = False
 
+                llm_ctx = AfterLLMContext(content=accumulated_text, tool_calls=tool_calls or [],
+                                          finish_reason=finish_reason or "", usage=usage)
+                await dispatch("after_llm", llm_ctx)
+                assistant_message["content"] = llm_ctx.content
+                tool_calls = llm_ctx.tool_calls
+                injected = llm_ctx.inject_messages
+
                 if not tool_calls:
                     SESSION_MANAGER.add_message(assistant_message)
+                    for message in injected:
+                        SESSION_MANAGER.add_message(message)
                     return
                 else:
                     assistant_message["tool_calls"] = tool_calls
                     SESSION_MANAGER.add_message(assistant_message)
+                    for message in injected:
+                        SESSION_MANAGER.add_message(message)
                     await self.call_tools(tool_calls, handlers, ctx)
         except AgentInterrupted:
             raise
@@ -235,6 +258,7 @@ class AgentRuntime:
 
     async def call_tools(self, tool_calls: list[dict], handlers: dict, ctx: AgentRunContext):
         tool_call_results = []
+        injected_messages: list[dict] = []
         try:
             # todo: 采用 asyncio.gather 并发执行工具，当前工具执行实质为串行执行
             for tool_call in tool_calls:
@@ -255,7 +279,18 @@ class AgentRuntime:
                     })
                     continue
 
+                tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args)
+                await dispatch("before_tool", tool_ctx)
+                tool_args = tool_ctx.args
+                tool_call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
                 render_tool_call(tool_name, tool_args)
+                if tool_ctx.blocked:
+                    tool_call_results.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": f"[Extension blocked] {tool_ctx.block_reason}"
+                    })
+                    continue
 
                 blocked = trigger_hooks("pre_tool_call", tool_call)
                 if blocked:
@@ -305,10 +340,15 @@ class AgentRuntime:
 
                 render_tool_result(result)
 
+                result_ctx = AfterToolContext(tool_name=tool_name, args=tool_args,
+                                              result=str(result), is_error=tool_failed)
+                await dispatch("after_tool", result_ctx)
+                injected_messages.extend(result_ctx.inject_messages)
+
                 tool_call_results.append({
                                              "role": "tool",
                                              "tool_call_id": tool_call_id,
-                                             "content": str(result)
+                                             "content": result_ctx.result
                                          } | ({"payload": diff} if diff and not tool_failed else {}))
 
         finally:
@@ -323,6 +363,8 @@ class AgentRuntime:
                     })
             for tool_result in tool_call_results:
                 SESSION_MANAGER.add_message(tool_result)
+            for message in injected_messages:
+                SESSION_MANAGER.add_message(message)
 
         ctx.raise_if_cancelled()
 
