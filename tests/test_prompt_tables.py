@@ -5,6 +5,7 @@ import pytest
 
 from core.context import prompt
 from core.context.memory.memory import Memory
+from core.skill.skills import Skill
 from core.tools import shell
 
 
@@ -48,7 +49,7 @@ def test_build_memories_table_empty(monkeypatch):
 
 def test_build_skills_table_renders_rows(monkeypatch):
     monkeypatch.setattr(prompt, "load_skills", lambda: {
-        "review": {"name": "review", "description": "Review code"},
+        "review": Skill(name="review", description="Review code", content="raw", skill_type="user"),
     })
     assert prompt.build_skills_table() == (
         "|Skill name|Skill description|\n|---|---|\n|review|Review code|"
@@ -99,7 +100,8 @@ def test_build_system_prompt_main_includes_all_tables(monkeypatch):
     monkeypatch.setattr(prompt.MEMORY_MANAGER, "load_memories",
                         lambda: [Memory(id="m1", title="t", content="c", mem_type="user")])
     monkeypatch.setattr(prompt, "load_skills",
-                        lambda: {"s": {"name": "s", "description": "d"}})
+                        lambda: {"s": Skill(name="s", description="d", content="raw",
+                                            skill_type="project")})
     text = prompt.build_system_prompt("main", [_tool("read", "Read a file")])
     assert "|`read`|Read a file|" in text
     assert "|t|c|user|" in text

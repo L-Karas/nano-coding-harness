@@ -1,5 +1,7 @@
 """core/tools/shell.py 的 shell 优先级探测、命令拼装与启动。"""
 import asyncio
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -198,3 +200,57 @@ def test_run_terminal_async_uses_shared_shell_invocation(monkeypatch):
 
     assert asyncio.run(terminal.run_terminal_async("echo ok")) == "ok"
     assert captured["invocation"] == shell.build_command_invocation("echo ok")
+
+
+# ---------- 子进程控制台隔离（防止子进程 SetConsoleTitle 覆盖 TUI 终端标题） ----------
+
+
+def test_hidden_console_kwargs_matches_platform():
+    """Windows 用 CREATE_NO_WINDOW 给子进程独立隐藏控制台；其它平台不加参数。"""
+    if os.name == "nt":
+        assert shell.hidden_console_kwargs() == {"creationflags": subprocess.CREATE_NO_WINDOW}
+    else:
+        assert shell.hidden_console_kwargs() == {}
+
+
+def test_start_process_isolates_child_console_on_windows(monkeypatch):
+    """web_extract 经 npx、terminal 经 bash 启动的子进程不得覆盖 TUI 的 OSC 2 标题。"""
+    captured = {}
+    process = _FakeProcess()
+
+    async def fake_exec(*argv, **kwargs):
+        captured["kwargs"] = kwargs
+        return process
+
+    monkeypatch.setattr(shell.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(shell, "find_shell", lambda: _GIT_BASH)
+    asyncio.run(shell.start_process(shell.build_command_invocation("echo hi")))
+
+    if os.name == "nt":
+        assert captured["kwargs"]["creationflags"] == subprocess.CREATE_NO_WINDOW
+    else:
+        assert "creationflags" not in captured["kwargs"]
+
+
+def test_run_terminal_isolates_child_console_on_windows(monkeypatch, tmp_path):
+    """同步 terminal 路径与异步路径同样隔离子进程控制台。"""
+    import core.tools.base_tools.terminal as terminal
+
+    captured = {}
+
+    class _Completed:
+        stdout = b"ok"
+        stderr = b""
+
+    def fake_run(argv, **kwargs):
+        captured["kwargs"] = kwargs
+        return _Completed()
+
+    monkeypatch.setattr(shell, "find_shell", lambda: _GIT_BASH)
+    monkeypatch.setattr(terminal.subprocess, "run", fake_run)
+
+    assert terminal.run_terminal("echo ok", cwd=tmp_path) == "ok"
+    if os.name == "nt":
+        assert captured["kwargs"]["creationflags"] == subprocess.CREATE_NO_WINDOW
+    else:
+        assert "creationflags" not in captured["kwargs"]

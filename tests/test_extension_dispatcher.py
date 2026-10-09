@@ -62,6 +62,31 @@ def test_abort_short_circuits_remaining_hooks():
     assert ctx.aborted and calls == []
 
 
+def test_successful_hook_logs_debug(monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(dispatcher, "_LOGGER", logger)
+
+    def hook(ctx):
+        pass
+
+    dispatcher.add("before_llm", hook, "ext_a")
+    _run("before_llm", BeforeLLMContext(messages=[], tools=[], max_tokens=1))
+    logger.debug.assert_called_once_with("[Extension] ext_a:hook 执行成功 at before_llm")
+
+
+def test_failed_hook_does_not_log_success(monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(dispatcher, "_LOGGER", logger)
+
+    def broken(ctx):
+        raise RuntimeError("boom")
+
+    dispatcher.add("before_tool", broken, "ext_a")
+    _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
+    assert not logger.debug.called
+    assert logger.exception.called
+
+
 def test_async_hook_is_awaited():
     seen = []
 

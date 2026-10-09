@@ -25,7 +25,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 | `.harness/.settings.json` | `AgentConfig` 参数：默认 `provider` / `model` / `thinking_level` 由 `/provider`、`/model`、`/effort` 写入，其余运行参数由 `/settings` 写入 |
 | `.harness/.auth.json` | 各 provider 的 `api_key` |
 | `.harness/.mcp/.mcp.json` | MCP Server 配置（`mcpServers`） |
-| `.harness/skills/<name>/SKILL.md` | 技能清单（YAML frontmatter + 正文） |
+| `~/.agents/skills/<name>/SKILL.md` / `.harness/skills/<name>/SKILL.md` / `.agents/skills/<name>/SKILL.md` | 技能清单三来源（global / user / project，同名 project > user > global；YAML frontmatter + 正文） |
 | `.harness/.memory/*.json` | 长期记忆条目 |
 | `.harness/.session/` | `session-<ts>.jsonl` 会话文件 + `session_index.jsonl` 索引 |
 | `.harness/.tasks/task_*.json` | 任务板数据 |

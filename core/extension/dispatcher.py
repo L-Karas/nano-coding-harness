@@ -29,11 +29,18 @@ async def dispatch(event: str, ctx: Any) -> None:
                 await result
         except Exception:
             _LOGGER.exception(
-                f"[Extension] {module_name}:{getattr(callback, '__name__', callback)} failed at {event}")
+                f"[Extension] {module_name}:{_callback_name(callback)} failed at {event}")
             continue
+        _LOGGER.debug(
+            f"[Extension] {module_name}:{_callback_name(callback)} 执行成功 at {event}")
         if getattr(ctx, "blocked", False) or getattr(ctx, "aborted", False):
             break
     _normalize(ctx)
+
+
+def _callback_name(callback: Callable) -> str:
+    """取回调可读名；lambda / 可调用对象回退到 str(callback)。"""
+    return getattr(callback, "__name__", str(callback))
 
 
 def _normalize(ctx: Any) -> None:

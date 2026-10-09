@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -86,8 +88,9 @@ class _InfoPanel(Vertical):
     SECTIONS = {"todos": "Todos", "bg": "Background Tasks", "subagents": "Subagents"}  # 顺序即上下顺序
     EMPTY = "(Empty)"  # 空分区占位行（各分区同一文案）
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, on_sections_changed: Callable[[bool], None] | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._on_sections_changed = on_sections_changed  # 三区活动状态回传（驱动 App 自动展开/收回）
         self._sig: dict[str, object] = {}  # 各区上次渲染的数据签名
         self._cursor = 0
         self._anim = None  # 加载动画 interval（有进行中项时惰性启动）
@@ -118,13 +121,18 @@ class _InfoPanel(Vertical):
     # ---------- 数据同步 ----------
 
     def _refresh(self) -> None:
-        """同步分区：条目按签名按需重建，标题更新计数，有进行中项时驱动轮播。"""
+        """同步分区：条目按签名按需重建，标题更新计数，有进行中项时驱动轮播；
+        最后把三区活动状态回传给构造时注入的回调（驱动 App 自动展开/收回）。"""
         running = False
+        non_empty = False
         for kind in self.SECTIONS:
             items = self._sync_rows(kind)
+            non_empty |= bool(items)
             self._head_text(kind, len(items))
             running |= any(it["status"] in _RUNNING_STATUSES for it in items)
         self._sync_anim(running)
+        if self._on_sections_changed is not None:
+            self._on_sections_changed(non_empty)
 
     def _items(self, kind: str) -> list[dict]:
         """分区条目快照 [{id, status, text}]。todo_write 整体替换 CURRENT_TODOS 引用、

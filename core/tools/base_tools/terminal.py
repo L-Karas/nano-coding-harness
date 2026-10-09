@@ -6,7 +6,7 @@ from typing import Optional
 from pydantic import Field
 
 from core.config import WORKDIR
-from core.tools.shell import build_command_invocation, start_process
+from core.tools.shell import build_command_invocation, hidden_console_kwargs, start_process
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _to_text
 
@@ -37,7 +37,7 @@ class Terminal(BaseTool):
     agent_type: set = {"main", "sub-agent", "teammate"}
 
 
-def run_terminal(command: str, cwd: Optional[Path] = None) -> str:
+def run_terminal(command: str, should_run_in_background: bool = False, cwd: Optional[Path] = None) -> str:
     """
     should_run_in_background is consumed by the dispatcher; direct execution ignores it.
     """
@@ -45,7 +45,8 @@ def run_terminal(command: str, cwd: Optional[Path] = None) -> str:
     # kills that thread and communicate() returns stdout=None. Capture bytes, decode here.
     # stdin=DEVNULL：子进程不得继承终端 stdin，否则交互命令会提示并抢读控制台；WSL bash 用 stdin 传脚本。
     args = build_command_invocation(command)
-    run_kwargs = dict(shell=args.use_shell, capture_output=True, cwd=cwd or WORKDIR, timeout=120)
+    run_kwargs = dict(shell=args.use_shell, capture_output=True, cwd=cwd or WORKDIR, timeout=120,
+                      **hidden_console_kwargs())
     if args.stdin_script is None:
         run_kwargs["stdin"] = subprocess.DEVNULL
     else:
@@ -55,7 +56,8 @@ def run_terminal(command: str, cwd: Optional[Path] = None) -> str:
     return output[:int(5e4)] if output else "(Tool no output)"
 
 
-async def run_terminal_async(command: str, cwd: Optional[Path] = None, ctx=None):
+async def run_terminal_async(command: str, should_run_in_background: bool = False, cwd: Optional[Path] = None,
+                             ctx=None):
     process = await start_process(build_command_invocation(command), cwd=cwd or WORKDIR)
     try:
         out, error = await process.communicate()

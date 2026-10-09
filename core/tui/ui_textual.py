@@ -103,7 +103,9 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._clarify_chosen: set[int] = set()
         self._clarify_options: list[str] = []
         self._clarify_other = False
-        self._panel_pct: Optional[int] = None  # 右栏宽度百分比（Ctrl+←/→ 调整）；None = 默认
+        self._panel_pct: Optional[int] = None  # 右栏宽度百分比（Ctrl+←/→ 调整）；None = 默认 20%
+        self._sections_non_empty = False  # 三区活动快照：驱动「全空 ↔ 非空」跳变的自动展开/收回
+        self._manual_expand = False  # 用户手动展开后，三区清空也不自动收回
 
     def get_default_screen(self) -> Screen:
         return _ChatScreen(id="_default")
@@ -118,12 +120,12 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
                 yield _Welcome(title, subtitle)
                 yield _ChatBoard(id="chat")
                 yield _ChatDock(id="dock")
-            with Vertical(id="right"):
+            with Vertical(id="right", classes="-collapsed"):  # 默认折叠，三区非空时 _sync_info_panel 自动展开
                 with Vertical(id="info-tab"):  # 分栏线旁的 »/« 折叠开关
-                    tab = Static("»", id="info-tab-glyph")
-                    tab.tooltip = "Collapse info panel"
+                    tab = Static("«", id="info-tab-glyph")
+                    tab.tooltip = "Expand info panel"
                     yield tab
-                yield _InfoPanel(id="info-panel")
+                yield _InfoPanel(id="info-panel", on_sections_changed=self._sync_info_panel)
 
     def on_mount(self) -> None:
         self._prompt().focus()
@@ -169,29 +171,61 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
             return
         if target.id != "info-tab-glyph":
             return
+        collapsed = not self.query_one("#right", Vertical).has_class("-collapsed")
+        self._set_info_collapsed(collapsed, manual_expand=not collapsed)
+
+    # ---------- 右栏折叠 / 展开与调宽（Ctrl+←/→，绑定见 _CommandInput.BINDINGS） ----------
+
+    def _set_info_collapsed(self, collapsed: bool, *, manual_expand: bool = False) -> None:
+        """收/放右栏：折叠只留左缘 »/« 标签一列。manual_expand=True 记录用户展开意图，
+        使三区清空后不再自动收回（读取见 _sync_info_panel）。"""
         right = self.query_one("#right", Vertical)
-        collapsed = not right.has_class("-collapsed")
         right.set_class(collapsed, "-collapsed")
+        glyph = self.query_one("#info-tab-glyph", Static)
+        glyph.update("«" if collapsed else "»")
+        glyph.tooltip = "Expand info panel" if collapsed else "Collapse info panel"
         if self._panel_pct is not None:  # 内联宽度优先于 CSS 折叠规则，折叠/展开须同步设宽
             right.styles.width = 1 if collapsed else f"{self._panel_pct}%"
+        if manual_expand:
+            self._manual_expand = True
         self.call_after_refresh(self._refresh_footer)  # 左栏宽度随右栏变化
-        target.update("«" if collapsed else "»")
-        target.tooltip = "Expand info panel" if collapsed else "Collapse info panel"
 
-    # ---------- 右栏调宽（Ctrl+←/→，绑定见 _CommandInput.BINDINGS） ----------
+    def _sync_info_panel(self, non_empty: bool) -> None:
+        """三区「全空 ↔ 非空」跳变时自动展开/收回（_InfoPanel 每次轮询后回调）。
+
+        - 非空跳变：折叠则自动展开（手动折叠只保持到这次跳变）；
+        - 全空跳变：仅当用户没手动展开过才自动收回（手动展开优先保持）。"""
+        if non_empty == self._sections_non_empty:
+            return
+        self._sections_non_empty = non_empty
+        right = self.query_one("#right", Vertical)
+        if non_empty:
+            if right.has_class("-collapsed"):
+                self._set_info_collapsed(False)
+        elif not self._manual_expand:
+            self._set_info_collapsed(True)
 
     def action_narrow_info_panel(self) -> None:
         self._resize_info_panel(-10)
 
     def action_widen_info_panel(self) -> None:
+        """Ctrl+←：折叠态展开到（或恢复到）上次宽度；已展开则加宽一档（封顶 40%）。"""
+        if self.query_one("#right", Vertical).has_class("-collapsed"):
+            self._panel_pct = self._panel_pct or 20  # None = 默认 20%
+            self._set_info_collapsed(False, manual_expand=True)
+            return
         self._resize_info_panel(10)
 
     def _resize_info_panel(self, delta: int) -> None:
-        """按档位设右栏宽度（默认 20%，每档 10%，夹在 20%–40%）；折叠态忽略。"""
+        """按档位设右栏宽度（默认 20%，每档 10%，夹在 20%–40%）；低于 20% 即收成折叠态。"""
         right = self.query_one("#right", Vertical)
         if right.has_class("-collapsed"):
+            return  # 折叠态已是最低宽度
+        pct = (self._panel_pct or 20) + delta
+        if pct < 20:
+            self._set_info_collapsed(True)
             return
-        self._panel_pct = max(20, min(40, (self._panel_pct or 20) + delta))
+        self._panel_pct = min(40, pct)
         right.styles.width = f"{self._panel_pct}%"
         self.call_after_refresh(self._refresh_footer)
 

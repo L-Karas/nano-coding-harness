@@ -41,8 +41,8 @@ def build_skills_table() -> str:
     if not skills:
         return "(none)"
     sections = ["|Skill name|Skill description|", "|---|---|"]
-    for _, skill in skills.items():
-        sections.append(f"|{skill['name']}|{skill['description']}|")
+    for skill in skills.values():
+        sections.append(f"|{skill.name}|{skill.description}|")
 
     return "\n".join(sections)
 

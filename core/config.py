@@ -27,6 +27,9 @@ SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
 MCP_CONFIG_FILE = MCP_DIR / ".mcp.json"
 CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
 
+GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
+PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
+
 
 def _scale_tokens(value: float | int, base: int) -> int:
     """运行时 token 解析：值 <= 1 视为 base 的比例，否则视为绝对值；绝对值超界时封顶（不抛错）。"""

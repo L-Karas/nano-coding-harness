@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
+from textual.binding import Binding
 from textual.widgets.option_list import Option
 
 from core.tui.screens.base import _InlineConfirm, _ListPickerScreen, _SessionRow, _rebuild_options
@@ -16,8 +17,10 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
     TITLE = "Select a session"
     HINT = "  ↑/↓ browse    Enter switch    Delete remove    Esc close"
     LIST_ID = "sess-list"
+    SEARCH_PLACEHOLDER = "Search sessions…"
     CONFIRM = True
-    BINDINGS = [("delete", "remove_selected", "Delete")]
+    # priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
+    BINDINGS = [Binding("delete", "remove_selected", "Delete", priority=True)]
 
     def __init__(self, manager: Any, on_delete_current: Optional[Callable[[], None]] = None) -> None:
         super().__init__()
@@ -35,7 +38,8 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
     def _reload(self) -> None:
         self._sessions = sorted(self._manager.load_session_list(), key=lambda s: s.timestamp, reverse=True)
         _rebuild_options(self._list(),
-                         [Option(self._row(s), id=s.id) for s in self._sessions])
+                         [Option(self._row(s), id=s.id) for s in self._sessions
+                          if self._match(s.title or s.id)])
 
     def action_cancel(self) -> None:
         if not self._cancel_confirm():  # 确认中：Esc 只撤销确认，弹窗保持打开
@@ -46,7 +50,11 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
         olist = self._list()
         if olist.highlighted is None:
             return
-        session = self._sessions[olist.highlighted]
+        # 过滤后高亮位置不再对应 self._sessions，按选项 id 回查
+        session_id = str(olist.get_option_at_index(olist.highlighted).id)
+        session = next((s for s in self._sessions if s.id == session_id), None)
+        if session is None:
+            return
         self._ask_confirm(f'Delete "{session.title or session.id}"?',
                           lambda: self._delete_session(session.id))
 

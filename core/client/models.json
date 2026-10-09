@@ -454,5 +454,67 @@
         "max_output": 128000
       }
     }
+  },
+  "Tencent TokenHub": {
+    "base_url": "https://tokenhub.tencentmaas.com/v1",
+    "model_list": {
+      "hy4-preview": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 1000000,
+        "max_output": 64000
+      },
+      "hy3": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 256000,
+        "max_output": 128000
+      }
+    }
+  },
+  "Tencent TokenPlan": {
+    "base_url": "https://api.lkeap.cloud.tencent.com/plan/v3",
+    "model_list": {
+      "hy4-preview": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 1000000,
+        "max_output": 64000
+      },
+      "hy3": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 256000,
+        "max_output": 128000
+      }
+    }
   }
 }

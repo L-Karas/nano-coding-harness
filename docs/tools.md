@@ -16,7 +16,7 @@
 | `glob` | `pattern` | 按 glob 模式查找文件（异步路径优先 ripgrep 并尊重 .gitignore，缺失时回退 Python glob） |
 | `grep` | `pattern`, `path`, `file_pattern` | 优先 ripgrep / grep，缺失时回退纯 Python 实现 |
 | `clarify` | `options`, `multi_select=false` | 停靠区选项列表询问用户（main / sub-agent）：单选或 Space 多选 + Enter 确认，末尾 Other 可键入自定义回答，Esc 取消 |
-| `web_search` | `query` | 联网搜索：按已配置 Key 的提供方顺序（firecrawl → tavily → exa）尝试，失败自动禁用该提供方，最终回退免 Key 的 ddgs |
+| `web_search` | `query`, `max_results=10` | 联网搜索：按已配置 Key 的提供方顺序（firecrawl → tavily → exa）尝试，失败自动禁用该提供方，最终回退免 Key 的 ddgs；`max_results` 最小 1 |
 | `web_extract` | `url` | 抓取网页正文：先 `npx defuddle` 解析，再按同一提供方顺序回退，最终 ddgs；结果截断 15000 字符 |
 
 文件类工具支持 `cwd` 注入，teammate 认领带 worktree 的任务后会切到对应目录执行。

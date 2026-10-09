@@ -1,7 +1,7 @@
-"""冒烟自检 · 会话：/new 延迟建会话、会话选择弹窗（150 条可达、排序、原地删除）。"""
+"""冒烟自检 · 会话：/new 延迟建会话、会话选择弹窗（搜索过滤、150 条可达、排序、原地删除）。"""
 from __future__ import annotations
 
-from textual.widgets import OptionList, Static
+from textual.widgets import Input, OptionList, Static
 
 from core.tui.screens import SessionPickerScreen
 from smoke._util import prompt_of, settle
@@ -91,6 +91,21 @@ async def run(app, pilot) -> None:
     assert olist.highlighted == 149, f"↓ 无法到达最后一个会话: {olist.highlighted}"
     # 末行 = 最旧会话（列表新到旧排列，order[-1] 即末尾行）
     assert olist.get_option_at_index(149).id == order[-1].id
+    # 顶部搜索栏：样式 / 行为同 /skills /mcp /provider（❯ 标记、仅下边框、默认聚焦、大小写不敏感过滤）
+    s_search = scr.query_one("#search-input", Input)
+    assert s_search.placeholder == "Search sessions…", s_search.placeholder
+    assert s_search.has_focus, "搜索栏应默认聚焦"
+    s_bar = scr.query_one("#search-row")
+    assert not s_bar.styles.border_top[0] and s_bar.styles.border_bottom[0] == "solid", \
+        f"搜索栏应仅显示下边框: {(s_bar.styles.border_top, s_bar.styles.border_bottom)}"
+    assert str(scr.query_one("#search-prompt").render()) == "❯", "搜索栏缺 ❯ 标记"
+    s_search.value = "SESSION 149"  # 大写：验证忽略大小写
+    await settle(pilot)
+    filtered = [olist.get_option_at_index(i).id for i in range(olist.option_count)]
+    assert filtered == ["session-000149.jsonl"], filtered
+    s_search.value = ""
+    await settle(pilot)
+    assert olist.option_count == 150, "清空搜索应恢复全部会话"
     # Delete 删除会话：窗内底部红字原地确认（Esc 撤销不删 / Enter 确认后从列表移除并刷新）
     _n_before = len(scr._manager.sessions)
     await pilot.press("delete")
@@ -109,7 +124,23 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert len(scr._manager.sessions) == _n_before - 1, "确认后应删除会话"
     assert olist.option_count == _n_before - 1, "删除后列表应刷新"
+    # 过滤后 Delete：搜索栏聚焦时 delete 仍是窗级删除（priority 绑定）；目标按行 id 回查
+    # （_sessions 下标已不对应过滤后的列表位置，旧实现会删错会话）
+    s_search.value = "SESSION 148"
+    await settle(pilot)
+    filtered = [olist.get_option_at_index(i).id for i in range(olist.option_count)]
+    assert filtered == ["session-000148.jsonl"], filtered
+    await pilot.press("delete")
+    await settle(pilot)
+    f_hint = str(scr.query_one("#confirm-hint", Static).render())
+    assert 'Delete "Session 148"?' in f_hint, f"过滤后 Delete 目标错误: {f_hint!r}"
+    await pilot.press("enter")
+    await settle(pilot)
+    remaining = {s.id for s in scr._manager.sessions}
+    assert "session-000148.jsonl" not in remaining, "过滤后 Delete 应删高亮会话"
+    assert "session-000147.jsonl" in remaining and len(remaining) == _n_before - 2, \
+        f"过滤后 Delete 删错了会话（按下标取回复现）: {len(remaining)}"
     await pilot.press("escape")
     await settle(pilot)
     assert app._exception is None, f"渲染异常: {app._exception}"
-    print("[smoke] sessions picker OK: 150 sessions, all reachable, no clipping")
+    print("[smoke] sessions picker OK: search filter, 150 sessions all reachable, no clipping")

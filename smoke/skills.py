@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from textual.widgets import Input, OptionList
 
+from core.skill.skills import Skill
 from core.tui.screens import SkillsScreen
 from smoke._util import prompt_of, settle
 
@@ -15,8 +16,10 @@ async def run(app, pilot) -> None:
 
     _skills_orig = dict(_skills_mod.SKILL_REGISTRY)
     _skills_mod.SKILL_REGISTRY.update({
-        "smoke-skill-a": {"name": "smoke-skill-a", "description": "writes smoke checks", "content": ""},
-        "smoke-skill-b": {"name": "smoke-skill-b", "description": "example skill description", "content": ""},
+        "smoke-skill-a": Skill(name="smoke-skill-a", description="writes smoke checks",
+                               content="", skill_type="user"),
+        "smoke-skill-b": Skill(name="smoke-skill-b", description="example skill description",
+                               content="", skill_type="user"),
     })
 
     # /skills：SkillsScreen（OptionList 弹窗，同会话 /provider /model 弹窗组件）
@@ -36,7 +39,7 @@ async def run(app, pilot) -> None:
     assert any("find-skills" in r for r in rows), "真实磁盘扫描的技能也应列出"
     # 行布局：首行为「● 技能名」，描述自第二行起（strip 后整段插入）
     a_row = next(r for r in rows if r.startswith("● smoke-skill-a"))
-    assert a_row.splitlines() == ["● smoke-skill-a", "writes smoke checks"], a_row
+    assert a_row.splitlines() == ["● smoke-skill-a [user]", "writes smoke checks"], a_row
     # 行内两段 span：技能名绿色加粗（#4ade80，同 /mcp 弹窗 server 名）、描述暗灰（#64748b）
     sk_opt_a = next(sk_lst.get_option_at_index(i) for i in range(sk_lst.option_count)
                     if sk_lst.get_option_at_index(i).prompt.plain.startswith("● smoke-skill-a"))
@@ -61,7 +64,7 @@ async def run(app, pilot) -> None:
     sk_search.value = "SMOKE-SKILL-A"  # 大写：验证忽略大小写
     await settle(pilot)
     rows = [sk_lst.get_option_at_index(i).prompt.plain for i in range(sk_lst.option_count)]
-    assert rows == ["● smoke-skill-a\nwrites smoke checks"], rows
+    assert rows == ["● smoke-skill-a [user]\nwrites smoke checks"], rows
     sk_search.value = ""
     await settle(pilot)
     assert sk_lst.option_count >= 2, "清空搜索应恢复全部技能"

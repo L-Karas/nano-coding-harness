@@ -30,7 +30,7 @@
   my_ext/
     extension.json     # 启用开关：{"enabled": true}
     __init__.py        # 入口：必须定义 register(api)
-    helpers.py         # 可选：同包模块，可用相对导入
+    helpers.py         # 可选：同包模块，包内导入必须用相对导入
   disabled_ext/
     extension.json     # {"enabled": false} → 不加载
     __init__.py
@@ -93,7 +93,7 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 | 跳过前缀 | 名称以 `_` 开头的文件夹跳过（如 `_draft/`） |
 | 启用门槛 | `extension.json` 中 `enabled` **严格为布尔 `true`**（Python 的 `is True`）才加载 |
 | 不启用的情况 | `enabled` 为 `false`、缺失、`"true"`、`1`、`null`、清单缺失、JSON 非法 → 一律按不启用处理并记日志 |
-| 入口 | 固定为 `__init__.py`，以包方式加载（模块名 `nano_extension_<文件夹名>`），支持 `from .helpers import x` 等相对导入 |
+| 入口 | 固定为 `__init__.py`，以包方式加载（模块名 `nano_extension_<文件夹名>`）；扩展目录不在 `sys.path` 上，包内多文件**必须用相对导入**（`from .helpers import x`） |
 | 注册入口 | 必须定义可调用的 `register(api)`；缺失或不认识 `api.on` 的非法参数 → 该扩展整体作废 |
 | 原子性 | `api.on()` 只缓冲注册；`register(api)` **正常返回后**才一次性提交全部注册。中途抛错 → 该扩展零注册 |
 | 失败隔离 | 单个扩展导入失败 / 注册失败只影响自己并记日志，不阻断启动，也不影响其它扩展 |
@@ -102,6 +102,8 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 | 生效时机 | 启动时读取一次；修改 `enabled` 或扩展代码后**必须重启进程** |
 
 `.harness/extensions/` 相对于**启动进程时的工作目录**（`WORKDIR`）。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
+
+> **包内导入规则**：扩展目录**不在 `sys.path` 上**（加载器刻意如此，避免与标准库/项目包重名），因此扩展包内部的多文件组织**必须使用相对导入**（如 `from .helpers import x`、`from .subpkg import y`）；裸绝对导入（`import helpers`）不会命中扩展目录，会导致 `ModuleNotFoundError` 或误命中同名模块。harness 内部模块（`core.*`）与第三方包不受此限制，照常绝对导入。
 
 ## 3. API 参考
 
@@ -301,8 +303,8 @@ def stop_on_policy(ctx):
 
 | 日志文件 | 内容 |
 | --- | --- |
-| `.harness/log/loader.log` | 清单缺失 / JSON 非法 / `enabled` 非严格 `true` / 导入失败 / 缺少 `register` / 注册中途抛错，前缀 `[Extension]` |
-| `.harness/log/dispatcher.log` | hook 运行期的异常（fail-open），包含扩展模块名、函数名与事件名 |
+| `.harness/log/loader.log` | 加载成功（INFO，含扩展名与注册回调数） / 清单缺失 / JSON 非法 / `enabled` 非严格 `true` / 导入失败 / 缺少 `register` / 注册中途抛错，前缀 `[Extension]` |
+| `.harness/log/dispatcher.log` | 每次 hook 执行成功（DEBUG，含模块名、函数名与事件名） / hook 运行期的异常（fail-open，ERROR） |
 
 ### 6.2 常见「扩展没生效」原因
 
@@ -313,6 +315,7 @@ def stop_on_policy(ctx):
 5. **`register` 里抛错**：例如 `api.on("before_llm", "not-callable")`（`TypeError`）或事件名拼写错误（`ValueError`）。原子提交意味着此时**该扩展零注册**，其它扩展不受影响。
 6. **写错了目录**：必须是**启动进程时工作目录**下的 `.harness/extensions/`，且只扫描直接子文件夹。
 7. **回调异常被 fail-open 吞掉**：看 `dispatcher.log`；`inject_messages` 写成非 list 也会被丢弃并记 ERROR。
+8. **包内模块用了裸绝对导入**：`import helpers` / `from helpers import x` 不会命中扩展目录（扩展目录不在 `sys.path`），必须写成 `from .helpers import x`；此时扩展整体加载失败，见 `loader.log`。
 
 ## 7. 测试扩展
 
@@ -367,5 +370,6 @@ def test_blocks_rm_commands():
 - 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)
 - 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)
+- 进阶示例（`after_tool` 读取并按需改写 `web_search` 结果）：[`examples/jev-for-web-search/`](../examples/jev-for-web-search/)
 - 主循环接线：[`core/loop_with_interrupt.py`](../core/loop_with_interrupt.py)
 - 子代理接线：[`core/sub_agent.py`](../core/sub_agent.py)

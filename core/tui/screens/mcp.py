@@ -16,6 +16,7 @@ from core.tui.screens.base import (
     _ArrowNav,
     _InlineConfirm,
     _ListPickerScreen,
+    _NamedItem,
     _NamedListScreen,
     _error_text,
     _field,
@@ -158,7 +159,8 @@ class MCPToolsScreen(_NamedListScreen):
     SEARCH_PLACEHOLDER = "Search tools…"
 
     def __init__(self, server: str, tools: list[dict]) -> None:
-        super().__init__([(tool["tool_name"], tool.get("tool_description", "")) for tool in tools])
+        super().__init__([_NamedItem(tool["tool_name"], tool.get("tool_description", ""))
+                          for tool in tools])
         self.TITLE = f"{server} tools"
 
 

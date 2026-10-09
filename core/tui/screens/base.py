@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from rich.cells import cell_len
@@ -23,10 +24,13 @@ _ENTRY_NAME_STYLE = "bold #4ade80"  # 「● 名称」段（/skills、/mcp 工�
 _ENTRY_DESC_STYLE = "#64748b"
 
 
-def _entry_row(name: str, desc: str = "") -> Text:
-    """「● 名称」行；描述 strip 后自第二行起（内部换行 / 缩进原样保留）。"""
+def _entry_row(name: str, desc: str = "", tag: str = "") -> Text:
+    """「● 名称」行；tag 非空时以 model provider 同款样式追加 [tag]；描述 strip 后自第二行起
+    （内部换行 / 缩进原样保留）。"""
     row = Text()
     row.append("● " + name, style=_ENTRY_NAME_STYLE)
+    if tag:
+        row.append(f" [{tag}]", style=_MODEL_PROVIDER_STYLE)
     desc = (desc or "").strip()
     if desc:
         row.append("\n" + desc, style=_ENTRY_DESC_STYLE)
@@ -269,17 +273,26 @@ class _ListPickerScreen(ModalScreen[Any]):
         self.dismiss(None)
 
 
-class _NamedListScreen(_ListPickerScreen):
-    """「● 名称 + 描述」列表弹窗：Enter/点击关窗回传名称（/skills 与 /mcp 工具列表共用）。"""
+@dataclass(frozen=True)
+class _NamedItem:
+    """命名列表行：名称 + 描述 + 可选标签（/skills 传来源，/mcp 工具列表留空）。"""
 
-    def __init__(self, items: list[tuple[str, str]]) -> None:
+    name: str
+    description: str = ""
+    tag: str = ""
+
+
+class _NamedListScreen(_ListPickerScreen):
+    """「● 名称 + [tag] + 描述」列表弹窗：Enter/点击关窗回传名称（/skills 与 /mcp 工具列表共用）。"""
+
+    def __init__(self, items: list[_NamedItem]) -> None:
         super().__init__()
         self._items = items
 
     def _reload(self) -> None:
-        _rebuild_options(self._list(), [Option(_entry_row(name, desc), id=name)
-                                        for name, desc in self._items
-                                        if self._match(name)])
+        _rebuild_options(self._list(), [Option(_entry_row(item.name, item.description, item.tag), id=item.name)
+                                        for item in self._items
+                                        if self._match(item.name)])
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()

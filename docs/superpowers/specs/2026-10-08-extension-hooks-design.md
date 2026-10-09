@@ -37,7 +37,7 @@ Agent 执行流程的关键节点（LLM 调用前/后、工具调用前/后）�
   extension1/
     extension.json     # {"enabled": true}
     __init__.py        # 入口，必须定义 register(api)
-    helpers.py         # 可选，同包相对导入
+    helpers.py         # 可选，同包模块（必须相对导入）
   extension2/
     extension.json     # {"enabled": false} → 跳过
     __init__.py
@@ -51,7 +51,7 @@ Agent 执行流程的关键节点（LLM 调用前/后、工具调用前/后）�
 - 入口固定为 `__init__.py`，以包方式加载，允许扩展内部多文件组织（`from .helpers import x`）：
   - `spec_from_file_location("nano_extension_<文件夹名>", folder / "__init__.py", submodule_search_locations=[str(folder)])`；
   - 执行前注册进 `sys.modules`，失败时清理，避免半加载状态；
-  - 不把扩展目录加入 `sys.path`，避免与标准库/项目包重名。
+  - 不把扩展目录加入 `sys.path`，避免与标准库/项目包重名；因此扩展包内部的模块导入必须使用相对形式（`from .helpers import x`），裸绝对导入（`import helpers`）不可用。
 - 加载失败（导入错误、缺少 `register`、`register` 抛错）→ 整扩展作废并记日志，不阻断启动。
 - 注册原子性：`api.on()` 先缓冲，`register(api)` 正常返回后才把该模块的全部注册一次性提交；中途抛错则零注册。
 - `load_extensions()` 进程内幂等；`reset_extensions()` 供测试清空注册表。

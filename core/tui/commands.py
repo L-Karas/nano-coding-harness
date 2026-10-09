@@ -102,8 +102,10 @@ class _CommandFlow:
         """/skills：core.skill 扫描到的技能列表。"""
         rows = list(_skills.SKILL_REGISTRY.values())
         if not rows:
-            render_background_notification("No skills found: add SKILL.md manifests under .harness/skills",
-                                           title="⚠️ Skills")
+            render_background_notification(
+                "No skills found: add SKILL.md manifests under the global (~/.agents/skills), "
+                "user (.harness/skills) or project (.agents/skills) skills directory",
+                title="⚠️ Skills")
             return
         self.push_screen(SkillsScreen(rows), callback=self._on_skill_picked)
 

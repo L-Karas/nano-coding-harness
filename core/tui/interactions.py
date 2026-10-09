@@ -51,10 +51,17 @@ class _DockInteractions:
             self._answer_permission("no")
         elif self._clarify_pending:
             self._answer_clarify("[User cancelled]")
-        elif self._busy and self._interrupt:
-            self._set_status_text("Interrupting…", spin=True)
+        elif self._interrupt and (self._busy or self._agent_running()):
+            if self._busy:  # 外部回合（auto_loop）无 UI 忙碌态，状态行不该被永久占为 Interrupting…
+                self._set_status_text("Interrupting…", spin=True)
             self._interrupt()
             self.notify("User interrupted")
+
+    def _agent_running(self) -> bool:
+        """runtime 里是否有回合在跑：UI 的 _busy 只覆盖自己发起的回合，
+        auto_loop 的 cron / 后台自动回合不经过 UI，Esc 需另经 runtime 判断。"""
+        runtime = self._runtime
+        return runtime is not None and runtime.is_running()
 
     # ---------- clarify ----------
 

@@ -6,7 +6,7 @@
 
 ## 核心特性
 
-- **全屏 TUI**：卡片式聊天记录、流式思考/正文渲染、工具调用与 diff 预览，右栏展示 Todos 与后台任务；
+- **全屏 TUI**：卡片式聊天记录、流式思考/正文渲染、工具调用与 diff 预览，右栏展示 Todos、后台任务与子代理；
 - **工具系统**：文件读写编辑、shell（慢命令自动转后台）、glob / grep、clarify、MCP 工具合并；
 - **两层上下文压缩**：工具输出统一截断 + 历史摘要，阈值随当前模型动态解析；
 - **健壮性**：Esc 中断、按 provider 分类的错误退避重试、截断自动扩窗与续写恢复、会话逐条落盘；
@@ -41,7 +41,8 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 ## TUI 使用
 
 左右分栏：左侧会话（卡片式聊天记录 + 状态行 + 输入条 + 页脚），右侧 Information 面板
-（Todos / 后台任务，可点击折叠）。布局与界面模块见 [`docs/tui.md`](docs/tui.md)。
+（Todos / 后台任务 / 子代理，默认折叠，有活动时自动展开，可点击折叠）。
+布局与界面模块见 [`docs/tui.md`](docs/tui.md)。
 
 | 操作 | 说明 |
 | --- | --- |
@@ -51,6 +52,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | `@` | 弹出项目文件候选（相对路径，补进输入，不发送） |
 | `Esc` | 收起候选；权限确认挂起时「拒绝」；否则中断当前回合或压缩 |
 | `Ctrl+C` | 不退出（有选中文本时复制）；退出用 `/exit` 或 `Ctrl+Q` |
+| `Ctrl+←` / `Ctrl+→` | 调宽信息栏（20%–40%）；折叠态 `Ctrl+←` 展开，`Ctrl+→` 收到底即折叠 |
 
 内置指令：`/new`（新会话）、`/sessions`（会话选择）、`/compact`（压缩当前上下文，可被 Esc 中断）、
 `/fork`（列出当前会话的用户消息，选中后从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改）、
@@ -81,4 +83,4 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | [`docs/permissions.md`](docs/permissions.md) | 权限与 Hook 策略 |
 | [`docs/teams.md`](docs/teams.md) | 子代理 / 队友 / 任务板 / Worktree |
 | [`docs/extensions.md`](docs/extensions.md) | 外部扩展系统完整指南 |
-| [`examples/`](examples/) | s01–s18 教学脚本（从 agent loop 到 worktree 隔离的演进示例） |
+| [`examples/`](examples/) | s01–s18 教学脚本（从 agent loop 到 worktree 隔离的演进示例）与扩展示例（`extension_example`、`jev-for-web-search`） |

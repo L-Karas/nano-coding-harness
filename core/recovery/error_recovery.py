@@ -3,7 +3,6 @@ Error recovery
 """
 import asyncio
 import random
-import time
 from enum import Enum
 from typing import Callable
 
@@ -41,11 +40,11 @@ def get_error_type(error: Exception, provider: str = "") -> ErrorType:
     error_msg = str(error).lower().strip()
     current_provider = provider or shared_model_client().current_provider
 
-    if current_provider == "deepseek":
+    if current_provider == "Deepseek":
         if "40" in error_msg or "422" in error_msg:
             return ErrorType.UnRecoverable
         return ErrorType.RateLimit
-    elif current_provider == "qwen":
+    elif current_provider == "Qwen":
         if "40" in error_msg:
             return ErrorType.UnRecoverable
         if "429" in error_msg:
@@ -54,10 +53,10 @@ def get_error_type(error: Exception, provider: str = "") -> ErrorType:
             return ErrorType.RateLimit
         if "430" in error_msg:
             return ErrorType.UnRecoverable
-        # todo: 该错误码绝大多数解决方案为重试
+        # 该错误码绝大多数解决方案为重试
         if "500" in error_msg or "503" in error_msg:
             return ErrorType.RateLimit
-    elif current_provider == "z.ai":
+    elif current_provider == "Z.AI":
         if "429" in error_msg:
             if "1302" in error_msg or "1305" in error_msg:
                 return ErrorType.RateLimit
@@ -66,38 +65,20 @@ def get_error_type(error: Exception, provider: str = "") -> ErrorType:
             if "1261" in error_msg:
                 return ErrorType.PromptTooLong
             return ErrorType.UnRecoverable
-        if "401" in error_msg or "403" in error_msg or "500" in error_msg:
+        if any(code in error_msg for code in ("401", "403", "500")):
             return ErrorType.UnRecoverable
-    elif current_provider == "kimi":
+    elif current_provider == "Kimi":
         if "400" in error_msg or "401" in error_msg:
             return ErrorType.UnRecoverable
         return ErrorType.RateLimit
+    elif current_provider in ("Xiaomi MiMo", "Xiaomi MiMo Token Plan"):
+        if any(code in error_msg for code in ("400", "401", "402", "403", "404", "421")):
+            return ErrorType.UnRecoverable
+        if any(code in error_msg for code in ("429", "500", "503")):
+            return ErrorType.RateLimit
 
+    # MiniMax / Tencent 暂无分类规则：与未知 provider 一样按不可恢复处理
     return ErrorType.UnRecoverable
-
-
-def _rate_limit_delay(attempt: int, error: Exception, provider: str) -> float | None:
-    """限流类错误返回退避秒数；其余错误返回 None（调用方直接抛出）。"""
-    if get_error_type(error, provider) != ErrorType.RateLimit:
-        return None
-    delay = retry_delay(attempt)
-    _LOGGER.info(
-        f"[Access rate limit] retry {attempt + 1}/{CONFIGMANAGER.config.max_retries} after {delay:.1f}s")
-    return delay
-
-
-def with_retry(fn: Callable, provider: str = ""):
-    max_retries = CONFIGMANAGER.config.max_retries
-    for attempt in range(max_retries):
-        try:
-            return fn()
-        except Exception as e:
-            delay = _rate_limit_delay(attempt, e, provider)
-            if delay is None:
-                raise
-            time.sleep(delay)
-
-    raise RuntimeError(f"Max retries ({max_retries}) exceeded")
 
 
 async def with_retry_async(fn: Callable, provider: str = ""):
@@ -106,9 +87,13 @@ async def with_retry_async(fn: Callable, provider: str = ""):
         try:
             return await fn()
         except Exception as e:
-            delay = _rate_limit_delay(attempt, e, provider)
-            if delay is None:
+            _LOGGER.exception(f"[Error Recovery] Call model error")
+            error_type = get_error_type(e, provider)
+            if error_type in (ErrorType.UnRecoverable, ErrorType.PromptTooLong):
                 raise
+            delay = retry_delay(attempt)
+            _LOGGER.info(
+                f"[Access rate limit] retry {attempt + 1}/{max_retries} after {delay:.1f}s")
             await asyncio.sleep(delay)
 
     raise RuntimeError(f"Max retries ({max_retries}) exceeded")

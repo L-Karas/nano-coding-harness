@@ -1,10 +1,12 @@
 """加载器：清单门槛、原子注册、失败隔离、包内相对导入、幂等。"""
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 import core.extension.dispatcher as dispatcher
+import core.extension.loader as loader
 from core.extension import reset_extensions
 from core.extension.loader import load_extensions
 
@@ -36,6 +38,23 @@ def test_enabled_extension_registers(tmp_path):
     _make_extension(tmp_path, "demo", REGISTER_LLM)
     load_extensions(tmp_path)
     assert _count("before_llm") == 1
+
+
+def test_load_success_logged_with_name_and_count(tmp_path, monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(loader, "_LOGGER", logger)
+    _make_extension(tmp_path, "demo", REGISTER_LLM)
+    load_extensions(tmp_path)
+    assert "[Extension] 加载成功: demo（注册 1 个回调）" in [c.args[0] for c in logger.info.call_args_list]
+
+
+def test_register_failure_does_not_log_success(tmp_path, monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(loader, "_LOGGER", logger)
+    _make_extension(tmp_path, "half",
+                    "def register(api):\n    api.on('before_llm', lambda ctx: None)\n    raise RuntimeError('late')\n")
+    load_extensions(tmp_path)
+    assert all("加载成功" not in c.args[0] for c in logger.info.call_args_list)
 
 
 @pytest.mark.parametrize("value", [False, "true", 1, None])

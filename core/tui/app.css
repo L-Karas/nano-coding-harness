@@ -26,9 +26,11 @@ Toast, Toast:ansi { background: #1e293b; }
    右栏折叠开关（»/«）固定在右栏左缘，随分栏线移动 */
 #left { width: 4fr; border-right: solid #475569; }
 
-/* 右栏折叠态：收成左缘标签一列，聊天区吃满其余宽度。
-   Ctrl+←/→（ui_textual._resize_info_panel）调整后的内联百分比宽度优先于本规则，
-   折叠/展开由 on_click 同步设宽（1 ↔ 原百分比） */
+/* 右栏默认折叠（compose 挂 -collapsed）：收成左缘标签一列，聊天区吃满其余宽度；
+   三区（Todos / Background Tasks / Subagents）全空 ↔ 非空的跳变由
+   ui_textual._sync_info_panel 自动展开 / 收回。Ctrl+←/→
+   （ui_textual._resize_info_panel）调整后的内联百分比宽度优先于本规则，
+   折叠/展开由 _set_info_collapsed 同步设宽（1 ↔ 原百分比，低于 20% 即折叠） */
 #right.-collapsed { width: 1; }
 #right.-collapsed > #info-panel { display: none; }
 /* 右栏左缘常驻 »/« 标签：点击折叠/展开右栏（height:1fr 占满整列，字形垂直居中） */

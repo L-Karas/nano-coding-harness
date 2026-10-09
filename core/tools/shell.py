@@ -4,9 +4,11 @@ terminal 工具、web_extract 的 defuddle 抓取与 build_guidelines 提示共�
 与「实际用哪个 shell」一致。
 """
 import asyncio
+import os
 import re
 import shlex
 import shutil
+import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cache
@@ -112,6 +114,19 @@ def build_argv_invocation(argv: Sequence[str], executable_path: str | None = Non
     return _command_invocation(command, shell)
 
 
+def hidden_console_kwargs() -> dict[str, int]:
+    """Windows 下让子进程在独立隐藏控制台启动，防止其 SetConsoleTitle 覆盖 TUI 的 OSC 2 标题。
+
+    npm / npx / node / cmd 等启动时会把控制台标题改成 "npm" / "cmd.exe"（web_extract 经 npx 触发，
+    terminal 工具同理），与 _set_terminal_title 写的标题抢同一个窗口；CREATE_NO_WINDOW 让子进程
+    持有自己的隐藏控制台，标题互不干扰。stdin / stdout / stderr 已全部重定向，不需要共享父控制台；
+    mcp SDK 的 stdio 传输同样以 CREATE_NO_WINDOW 启动 server。
+    """
+    if os.name != "nt":
+        return {}
+    return {"creationflags": subprocess.CREATE_NO_WINDOW}
+
+
 async def start_process(invocation: ShellInvocation, cwd: str | Path | None = None) -> asyncio.subprocess.Process:
     """按 ShellInvocation 启动进程，WSL 的脚本经 stdin 传入。"""
     # stdin=DEVNULL：子进程不得继承终端 stdin，否则交互命令会提示并抢读控制台，
@@ -121,6 +136,7 @@ async def start_process(invocation: ShellInvocation, cwd: str | Path | None = No
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=cwd,
+        **hidden_console_kwargs(),
     )
     if invocation.use_shell:
         process = await asyncio.create_subprocess_shell(invocation.argv[0], **kwargs)

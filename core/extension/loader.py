@@ -79,8 +79,10 @@ def _load_extension(folder: Path) -> None:
 
         api = ExtensionAPI(module_name)
         register(api)
-        for event, callback in api.commit():
+        registered = api.commit()
+        for event, callback in registered:
             dispatcher.add(event, callback, module_name)
+        _LOGGER.info(f"[Extension] 加载成功: {folder.name}（注册 {len(registered)} 个回调）")
     except Exception:
         _LOGGER.exception(f"[Extension] 加载失败，已隔离: {folder.name}")
         sys.modules.pop(module_name, None)

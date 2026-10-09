@@ -129,8 +129,10 @@ async def run(app, pilot) -> None:
     assert not any(c._has_order_style for c in cards), \
         "聊天卡片带 order 样式标记：检查 app.css 是否有 *:last-child 类规则"
     # 消息卡片宽度 = 左栏 - 1（内容超出视口时右侧滑块占 1 列）；无溢出时仍占满左栏
-    assert left_w - 2 <= cards[0].region.width <= left_w, \
-        f"卡片宽度异常: {cards[0].region.width} (左栏 {left_w})"
+    # （demo 的 todos/bg 已让信息栏自动展开，左栏宽度随之变化，按当前宽度校验）
+    left_now = app.query_one("#left").region.width
+    assert left_now - 2 <= cards[0].region.width <= left_now, \
+        f"卡片宽度异常: {cards[0].region.width} (左栏 {left_now})"
     assert any("assistant" in c.classes for c in cards), "缺少 Assistant 卡片"
     # 增量流式自检：每 chunk 只传新增片段 → 内容逐字拼接，不丢不重
     app._stop_stream()

@@ -14,15 +14,17 @@ _LOGGER = get_logger(__name__)
 class WebSearch(BaseTool):
     """Web search tool. Use this tool when you need real-time or external information."""
     query: str = Field(description="The web query to search for.")
+    max_results: int = Field(default=10, ge=1,
+                            description="Maximum number of search results to return (default: 10).")
     agent_type: set = {"main", "sub-agent", "teammate"}
 
 
-async def firecrawl_search(query: str) -> tuple[bool, str]:
+async def firecrawl_search(query: str, max_results: int = 10) -> tuple[bool, str]:
     url = "https://api.firecrawl.dev/v2/search"
     payload = {
         "query": query,
         "sources": ["web"],
-        "limit": 10
+        "limit": max_results
     }
     headers = {
         "Authorization": f"Bearer {os.getenv('FIRECRAWL_API_KEY')}",
@@ -50,12 +52,12 @@ async def firecrawl_search(query: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-async def tavily_search(query: str) -> tuple[bool, str]:
+async def tavily_search(query: str, max_results: int = 10) -> tuple[bool, str]:
     url = "https://api.tavily.com/search"
     payload = {
         "query": query,
         "search_depth": "advanced",
-        "max_results": 10
+        "max_results": max_results
     }
     headers = {
         "Authorization": f"Bearer {os.getenv('TAVILY_API_KEY')}",
@@ -74,17 +76,17 @@ async def tavily_search(query: str) -> tuple[bool, str]:
                 update_provider_state("tavily", enable=False)
             return False, str(response_json)
         else:
-            return True, format_search_result(response_json.get("results", []))
+            return True, format_search_result(response_json.get("results", []), provider="tavily")
     except Exception as e:
         _LOGGER.exception(e)
         return False, str(e)
 
 
-async def exa_search(query: str) -> tuple[bool, str]:
+async def exa_search(query: str, max_results: int = 10) -> tuple[bool, str]:
     url = "https://api.exa.ai/search"
     payload = {
         "query": query,
-        "numResults": 10,
+        "numResults": max_results,
         "type": "auto",
         "contents": {
             "highlights": True
@@ -103,7 +105,7 @@ async def exa_search(query: str) -> tuple[bool, str]:
             )
         response_json = response.json()
         if response.status_code == 200:
-            return True, format_search_result(response_json.get("results", []))
+            return True, format_search_result(response_json.get("results", []), provider="exa")
         else:
             if response.status_code in (401, 402):
                 update_provider_state("exa", enable=False)
@@ -113,13 +115,13 @@ async def exa_search(query: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-async def ddgs_search(query: str) -> tuple[bool, str]:
+async def ddgs_search(query: str, max_results: int = 10) -> tuple[bool, str]:
     import ddgs
 
     try:
         with ddgs.DDGS() as client:
             # 不指定 backend：ddgs 默认 auto，按当前版本选择可用引擎
-            response = await asyncio.to_thread(client.text, query=query)
+            response = await asyncio.to_thread(client.text, query=query, max_results=max_results)
         if not response:
             return False, "(No search results)"
         return True, format_search_result(response, "ddgs")
@@ -128,24 +130,24 @@ async def ddgs_search(query: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-async def run_web_search_async(query: str, ctx=None) -> str:
+async def run_web_search_async(query: str, max_results: int = 10, ctx=None) -> str:
     try:
         if PROVIDER_STATE.firecrawl_enabled:
-            ok, result = await firecrawl_search(query)
+            ok, result = await firecrawl_search(query, max_results)
             if ok:
                 return result
         if PROVIDER_STATE.tavily_enabled:
-            ok, result = await tavily_search(query)
+            ok, result = await tavily_search(query, max_results)
             if ok:
                 return result
         if PROVIDER_STATE.exa_enabled:
-            ok, result = await exa_search(query)
+            ok, result = await exa_search(query, max_results)
             if ok:
                 return result
         # todo: brave search
         if PROVIDER_STATE.brave_search_enabled:
             pass
-        _, result = await ddgs_search(query)
+        _, result = await ddgs_search(query, max_results)
         return result
     except Exception as e:
         return str(e)

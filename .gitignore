@@ -8,14 +8,14 @@ wheels/
 
 # Dotfiles at any depth (covers .venv, .env, /.idea, /.claude, etc.)
 .*
-!.mcp/
 
 # Temp
 /skills/*
 /log
 /temp
 
-# Track only .py files under src
+# Track only .py files under core
+skills-lock.json
 /core/**
 !/core/**/
 !/core/**/*.py

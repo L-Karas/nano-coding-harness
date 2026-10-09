@@ -92,6 +92,12 @@ class AgentRuntime:
 
         return True
 
+    def is_running(self) -> bool:
+        """是否有回合（run / compact，含 auto_loop 的 cron / 后台自动回合）已登记且未结束；
+        UI 的 Esc 据此判断可否中断：auto_loop 直接跑 runtime，不经过 UI 的 _busy。"""
+        task = self._run_task
+        return task is not None and not task.done()
+
     def submit(self, coro) -> Future:
         """跑协程并阻塞取结果；被 interrupt() 取消（concurrent.futures.CancelledError）时统一抛
         AgentInterrupted，取消语义单一（Esc 的 ctx/task 双路取消都落到同一个异常）。"""
@@ -338,11 +344,11 @@ class AgentRuntime:
                     if diff and not tool_failed:
                         render_tool_result_diff(diff)
 
-                render_tool_result(result)
-
                 result_ctx = AfterToolContext(tool_name=tool_name, args=tool_args,
                                               result=str(result), is_error=tool_failed)
                 await dispatch("after_tool", result_ctx)
+
+                render_tool_result(result_ctx.result)
                 injected_messages.extend(result_ctx.inject_messages)
 
                 tool_call_results.append({

@@ -21,7 +21,7 @@
 | `core/hook/hook.py` | `pre_tool_call` / `post_tool_call` hook 与权限策略 |
 | `core/recovery/error_recovery.py` | 按 provider 分类错误、指数退避重试、恢复状态 |
 | `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环） |
-| `core/skill/skills.py` | 扫描 `.harness/skills/` 下的 `SKILL.md` |
+| `core/skill/skills.py` | 扫描 global（`~/.agents/skills`）/ user（`.harness/skills`）/ project（`.agents/skills`）三来源的 `SKILL.md`，同名 project > user > global |
 | `core/context/memory/memory.py` | 长期记忆的增删查，注入系统提示词 |
 | `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 30 轮，只回传最终文本 |
 | `core/experimental/` | `teammates.py`（自治队友线程）、`message_bus.py`（JSONL 邮箱）、`protocol_state.py`（请求状态）、`task.py`（任务板：任务 JSON、`blockedBy` 依赖、认领/完成）、`worktree/worktree.py`（git worktree 创建/移除/保留） |

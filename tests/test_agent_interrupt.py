@@ -51,3 +51,48 @@ def test_interrupt_stops_running_turn(monkeypatch):
     assert not worker.is_alive(), "中断后 submit 必须返回（回合已收尾）"
     assert outcome == ["interrupted"], outcome
     assert runtime.interrupt() is False, "空闲时中断应返回 False"
+
+
+def test_is_running_tracks_turn_lifecycle(monkeypatch):
+    """UI 的 Esc 以 is_running() 识别外部回合（auto_loop 的 cron / 后台自动回合）：进行中 True，结束后 False。"""
+    class _Mgr:
+        def load_messages(self):
+            return []
+
+        def update_messages(self, _m):
+            pass
+
+        def add_message(self, _m):
+            pass
+
+    async def _hang(**_kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(lwi, "consume_cron_queue", lambda: [])
+    monkeypatch.setattr(lwi, "inject_background_notifications", lambda: None)
+    monkeypatch.setattr(lwi, "assemble_tool_pool", lambda *a, **k: ([], {}))
+    monkeypatch.setattr(lwi, "SESSION_MANAGER", _Mgr())
+
+    runtime = lwi.AgentRuntime()
+    monkeypatch.setattr(runtime, "call_llm", _hang)
+    assert runtime.is_running() is False, "空闲 runtime 不应报告 running"
+
+    outcome = []
+
+    def turn():
+        try:
+            runtime.submit(runtime.run())
+        except lwi.AgentInterrupted:
+            outcome.append("interrupted")
+
+    worker = threading.Thread(target=turn)
+    worker.start()
+    deadline = time.monotonic() + 5
+    while runtime._current_ctx is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert runtime.is_running() is True, "回合进行中应报告 running（Esc 据此中断 auto_loop 回合）"
+
+    runtime.interrupt()
+    worker.join(timeout=5)
+    assert outcome == ["interrupted"]
+    assert runtime.is_running() is False, "回合结束后应恢复 idle"

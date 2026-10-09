@@ -21,7 +21,7 @@
 
 ## Skills
 
-在 `.harness/skills/<name>/SKILL.md` 放置技能，YAML frontmatter 提供 `name` / `description`：
+技能从三处扫描，同名靠后来源覆盖靠前：global `~/.agents/skills/`、user `.harness/skills/`、project `<cwd>/.agents/skills/`（优先级 project > user > global）。每处一个 `<name>/SKILL.md`，YAML frontmatter 提供 `name` / `description`：
 
 ```markdown
 ---
@@ -31,7 +31,7 @@ description: 一句话说明这个技能做什么
 技能正文，`load_skill` 会原样返回给模型。
 ```
 
-扫描发生在模块导入时，技能摘要进入系统提示词的 Available skills 段，`/skills` 弹窗可直接选中触发一轮对话。
+扫描在启动阶段（`core/bootstrap.py` 的 `bootstrap()`）执行一次，技能摘要进入系统提示词的 Available skills 段，`/skills` 弹窗可直接选中触发一轮对话。
 
 ## Memory
 
