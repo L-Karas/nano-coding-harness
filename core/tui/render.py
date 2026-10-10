@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from rich.text import Text
 
-from core.interaction import register_interaction
+from core.interaction import register_interaction, register_render
 from core.template import (
     INJECTION_MESSAGES_PREFIX,
     INJECTION_MESSAGES_SUFFIX,
@@ -86,10 +86,11 @@ def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MA
     _add_capped_card("tool", _dim_body(_format_args(tool_args)), max_lines, head=head)
 
 
-def render_tool_result(output: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """工具输出卡片：失败输出（TOOL_ERROR_PREFIX / UNKNOWN_TOOL_PREFIX 前缀）为 error 卡，其余 result 卡。"""
+def render_tool_result(output: Any, is_error: bool | None = None, max_lines: int = DEFAULT_MAX_LINES) -> None:
+    """工具输出卡片：is_error 为真为 error 卡；回放路径没有标志时回退识别错误前缀。"""
     output_str = str(output)
-    kind = "error" if output_str.startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX)) else "result"
+    failed = is_error if is_error is not None else output_str.startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX))
+    kind = "error" if failed else "result"
     _add_capped_card(kind, _dim_body(output_str), max_lines)
 
 
@@ -226,6 +227,16 @@ def ask_clarify(questions: list[str], multi_select: bool = False) -> str:
                          "ask_clarify must be called from a non-App thread (e.g. inside a tool handler)")
 
 
-# 渲染桥接入域层交互端口：工具（clarify）/ hook（permission）经 core.interaction 提问，
-# 不再反向 import TUI；未导入本模块的场景（子代理 / 测试）走端口默认（拒绝 / 取消）。
+# 渲染桥接入域层 UI 端口：工具（clarify）/ hook（permission）提问与渲染事件都经 core.interaction，
+# 域层不再反向 import TUI；未导入本模块的场景（子代理 / 队友 / 测试）走端口默认（拒绝 / 取消 / no-op）。
 register_interaction(ask_permission=ask_permission, ask_clarify=ask_clarify)
+register_render(
+    stream_assistant_response=stream_assistant_response,
+    render_tool_call=render_tool_call,
+    render_tool_result=render_tool_result,
+    render_tool_result_diff=render_tool_result_diff,
+    render_background_notification=render_background_notification,
+    render_thinking_status=render_thinking_status,
+    render_working_status=render_working_status,
+    render_scope=render_scope,
+)
