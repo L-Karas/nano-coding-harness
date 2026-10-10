@@ -1,6 +1,5 @@
-"""新增 /compact 指令：指令表顺序紧跟 /sessions；空闲时持 AGENT_LOCK 经 AgentRuntime.submit 在
-runtime 的事件循环上调 AgentRuntime.compact 压缩，完成后按会话最新消息重放聊板；忙碌 / 无 runtime 时只提示。"""
-import asyncio
+"""新增 /compact 指令：指令表顺序紧跟 /sessions；空闲时经 AgentRuntime.run_compact 在 runtime
+的事件循环上调 AgentRuntime.compact 压缩，完成后按会话最新消息重放聊板；忙碌 / 无 runtime 时只提示。"""
 from types import SimpleNamespace
 
 import core.tui.commands as commands
@@ -9,15 +8,12 @@ from core.tui.ui_textual import ChatApp
 from core.tui.utils import SLASH_COMMANDS
 
 
-class _Runtime:  # 模拟 AgentRuntime：compact 为协程方法，submit 在 runtime 事件循环上跑完并阻塞返回
+class _Runtime:  # 模拟 AgentRuntime：run_compact 在内部锁与事件循环上跑完并阻塞返回
     compacted = 0
 
-    async def compact(self) -> bool:
+    def run_compact(self) -> bool:
         self.compacted += 1
         return True
-
-    def submit(self, coro):
-        return asyncio.run(coro)
 
 
 def _app(monkeypatch, events):
@@ -56,11 +52,8 @@ def test_compact_worker_reports_noop_without_rerender(monkeypatch):
     events = []
 
     class _NoopRuntime:
-        async def compact(self) -> bool:
+        def run_compact(self) -> bool:
             return False
-
-        def submit(self, coro):
-            return asyncio.run(coro)
 
     app = _app(monkeypatch, events)
     app._spawn_worker(lambda: app._compact_worker(_NoopRuntime()), "agent-compact", "⚠️ Compact Error").join()
@@ -73,10 +66,7 @@ def test_compact_worker_reports_interrupt_without_error_card(monkeypatch):
     events = []
 
     class _Interrupting:
-        def compact(self):
-            return None  # submit 直接抛中断：无需真协程
-
-        def submit(self, coro):
+        def run_compact(self):
             raise AgentInterrupted("User interrupted")
 
     app = _app(monkeypatch, events)

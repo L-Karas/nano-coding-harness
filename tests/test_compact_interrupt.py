@@ -1,4 +1,4 @@
-"""压缩（/compact）可被 Esc 中断：compact 期间注册 _current_ctx / _run_task，
+"""压缩（/compact）可被 Esc 中断：run_compact 期间注册 ctx/task，
 runtime.interrupt()（UI 的 Esc 回调）中断压缩协程，且不落会话、注册状态清理。"""
 import asyncio
 import threading
@@ -28,7 +28,7 @@ def test_compact_registers_ctx_and_task_for_interrupt(monkeypatch):
 
     def _drive() -> None:
         try:
-            runtime.submit(runtime.compact())
+            runtime.run_compact()
         except BaseException as exc:  # submit 已把取消统一成 AgentInterrupted
             errors.append(exc)
 
@@ -42,4 +42,4 @@ def test_compact_registers_ctx_and_task_for_interrupt(monkeypatch):
     assert not thread.is_alive(), "中断后压缩线程未退出"
     assert errors and isinstance(errors[0], AgentInterrupted), errors
     assert updated == [], "中断后不应写会话"
-    assert runtime._current_ctx is None and runtime._run_task is None, "中断后未清理注册状态"
+    assert runtime.current_context is None and runtime.is_running() is False, "中断后未清理注册状态"

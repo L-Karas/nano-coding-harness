@@ -22,8 +22,8 @@ async def run(app, pilot) -> None:
     shown = [flv.get_option_at_index(i).prompt.plain
              for i in range(flv.option_count)]
     assert shown == expected, f"列表展示与匹配不一致: {shown} != {expected}"
-    assert all(c.endswith("/") for c in expected), \
-        f"同级规则：只应展示目录 core/tui/，实际 {expected}"
+    assert "core/tui/" in expected and all(c.startswith("core/tu") for c in expected), \
+        f"同级规则：应展示 core/tu 前缀下的目录与文件，实际 {expected}"
     await pilot.press("tab")  # 选中 core/tui/ → 补全为 @core/tui/ 并展开其内容
     await settle(pilot)
     assert prompt.text == "check @core/tui/", prompt.text

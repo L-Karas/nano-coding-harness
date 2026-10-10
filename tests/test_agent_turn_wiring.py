@@ -14,11 +14,9 @@ def test_turn_wires_cron_and_absorbs_inbox(monkeypatch):
             started.append(self.kw)
 
     class _Runtime:
-        def run(self):
-            return "coro"
-
-        def submit(self, coro):
-            submitted.append(coro)
+        def run_turn(self, prepare=None):
+            submitted.append("turn")
+            return True
 
     monkeypatch.setattr(lwi.threading, "Thread", _Thread)
     monkeypatch.setattr(lwi, "AgentRuntime", _Runtime)
@@ -33,6 +31,6 @@ def test_turn_wires_cron_and_absorbs_inbox(monkeypatch):
 
     auto = [kw for kw in started if kw["target"] is lwi.auto_loop]
     assert auto and auto[0]["args"][0] is runtime, "自动回合线程必须拿到同一个 runtime"
-    assert submitted == ["coro"], "回合必须提交给 runtime 并阻塞至结束"
+    assert submitted == ["turn"], "回合必须交给 runtime 并阻塞至结束"
     assert saved and "[Inbox messages]" in saved[0]["content"], "回合后应吸收 lead inbox"
     assert "request_0001" in saved[0]["content"], "inbox 标签应带 request_id"
