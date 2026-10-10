@@ -1,6 +1,7 @@
 from pydantic import Field
 
 from core import cron_scheduler
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
 
@@ -16,10 +17,16 @@ class ScheduleCron(BaseTool):
 
     agent_type: set = {"main"}
 
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return cron_scheduler.run_schedule_cron(self.cron_expression, self.prompt, self.recurring, self.durable)
+
 
 class ListCrons(BaseTool):
     """List all registered cron jobs."""
     agent_type: set = {"main"}
+
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return cron_scheduler.run_list_crons()
 
 
 class CancelCron(BaseTool):
@@ -28,27 +35,5 @@ class CancelCron(BaseTool):
 
     agent_type: set = {"main"}
 
-
-def run_schedule_cron(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> str:
-    return cron_scheduler.run_schedule_cron(cron_expression, prompt, recurring, durable)
-
-
-def run_list_crons() -> str:
-    return cron_scheduler.run_list_crons()
-
-
-def run_cancel_cron(job_id: str) -> str:
-    return cron_scheduler.run_cancel_cron(job_id)
-
-
-async def run_schedule_cron_async(cron_expression: str, prompt: str, recurring: bool = True,
-                                  durable: bool = True, ctx=None) -> str:
-    return run_schedule_cron(cron_expression, prompt, recurring, durable)
-
-
-async def run_list_crons_async(ctx=None) -> str:
-    return run_list_crons()
-
-
-async def run_cancel_cron_async(job_id: str, ctx=None) -> str:
-    return run_cancel_cron(job_id)
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return cron_scheduler.run_cancel_cron(self.job_id)

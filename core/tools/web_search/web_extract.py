@@ -5,6 +5,7 @@ import shutil
 import httpx
 from pydantic import Field
 
+from core.runtime_context import ToolContext
 from core.tools.shell import build_argv_invocation, start_process
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _to_text
@@ -16,6 +17,37 @@ class WebExtract(BaseTool):
     url: str = Field(
         description="The URL of the web page to extract content from.")
     agent_type: set = {"main", "sub-agent", "teammate"}
+
+    async def arun(self, tctx: ToolContext | None = None) -> str:
+        if not self.url:
+            return NO_CONTENT
+
+        content = ""
+        try:
+            # todo: tool logger
+            ok, content = await defuddle_extract(self.url)
+            if ok:
+                return content
+            if PROVIDER_STATE.firecrawl_enabled:
+                ok, content = await firecrawl_extract(self.url)
+                if ok:
+                    return content
+            if PROVIDER_STATE.tavily_enabled:
+                ok, content = await tavily_extrack(self.url)
+                if ok:
+                    return content
+            if PROVIDER_STATE.exa_enabled:
+                ok, content = await exa_extract(self.url)
+                if ok:
+                    return content
+            ok, content = await ddgs_extract(self.url)
+            if ok:
+                return content
+        except Exception as e:
+            content = str(e)
+
+        # todo: tool output budget
+        return (content or NO_CONTENT)[:15000]
 
 
 async def defuddle_extract(url: str) -> tuple[bool, str]:
@@ -149,32 +181,4 @@ async def ddgs_extract(url: str) -> tuple[bool, str]:
         raise
 
 
-async def run_web_extract_async(url: str, ctx=None) -> str:
-    if not url:
-        return NO_CONTENT
 
-    try:
-        # todo: tool logger
-        ok, content = await defuddle_extract(url)
-        if ok:
-            return content
-        if PROVIDER_STATE.firecrawl_enabled:
-            ok, content = await firecrawl_extract(url)
-            if ok:
-                return content
-        if PROVIDER_STATE.tavily_enabled:
-            ok, content = await tavily_extrack(url)
-            if ok:
-                return content
-        if PROVIDER_STATE.exa_enabled:
-            ok, content = await exa_extract(url)
-            if ok:
-                return content
-        ok, content = await ddgs_extract(url)
-        if ok:
-            return content
-    except Exception as e:
-        content = str(e)
-
-    # todo: tool output budget
-    return (content or NO_CONTENT)[:15000]

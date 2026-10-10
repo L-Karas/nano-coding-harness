@@ -62,14 +62,14 @@ async def run(app, pilot) -> None:
     assert ol.styles.display == "none"
     print("[smoke] clarify Esc cancel OK")
 
-    # 端到端：非 App 线程经渲染桥调工具入口 run_clarify，UI 作答后返回
+    # 端到端：非 App 线程经渲染桥调工具入口 Clarify.run，UI 作答后返回
     import threading
 
     result: dict = {}
 
     def _worker() -> None:
-        from core.tools.base_tools.clarify import run_clarify
-        result["answer"] = run_clarify(["Bridge [A]?", "Bridge [B]?"], False)  # 含 markup 字符：不得被解析
+        from core.tools.base_tools.clarify import Clarify
+        result["answer"] = Clarify(options=["Bridge [A]?", "Bridge [B]?"], multi_select=False).run()  # 含 markup 字符：不得被解析
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
@@ -77,7 +77,7 @@ async def run(app, pilot) -> None:
         await pilot.pause(0.05)
         if app._clarify_pending:
             break
-    assert app._clarify_pending, "run_clarify 未经渲染桥拉起澄清列表"
+    assert app._clarify_pending, "Clarify.run 未经渲染桥拉起澄清列表"
     await pilot.press("enter")
     thread.join(timeout=5)
     assert result.get("answer") == "Bridge [A]?", result

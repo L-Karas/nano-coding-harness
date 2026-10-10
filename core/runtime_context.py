@@ -1,5 +1,7 @@
 import asyncio
 import concurrent.futures
+from dataclasses import dataclass
+from pathlib import Path
 
 
 class AgentInterrupted(asyncio.CancelledError):
@@ -38,3 +40,15 @@ class AgentRunContext:
             # concurrent.futures.Future.cancel() 会同步跑 done 回调删除 task，
             # 可能导致 self.tasks 发生变化
             task.cancel()
+
+
+@dataclass
+class ToolContext:
+    """一次工具执行的运行上下文：取消信号、工作目录与发起 agent 的身份，由调用方持有并传入。"""
+    agent_run: AgentRunContext | None = None
+    cwd: Path | None = None
+    agent_name: str = "lead"
+
+    def raise_if_cancelled(self) -> None:
+        if self.agent_run is not None:
+            self.agent_run.raise_if_cancelled()

@@ -10,12 +10,10 @@ from core.tui.theme import _SPINNER_FRAMES
 async def run(app, pilot) -> None:
 
     # 右栏信息分区：Todos / Background Tasks / Subagents 折叠列表（Skills 已迁往 /skills
-    # 弹窗，不再显示在右栏）。默认展开并同步模块级数据源（core.todo CURRENT_TODOS /
-    # core.background_task BACKGROUND_TASKS，1s 轮询）；标题（▼/▶ + 计数）嵌在上边框，
-    # 点边框独立折叠/展开（列表本体隐藏，边框标题保留）
-    import core.todo.todo as _todo_mod
-    import core.sub_agent as _sa_mod
-    from core.background_task import BACKGROUND_LOCK, BACKGROUND_TASKS
+    # 弹窗，不再显示在右栏）。默认展开并同步 RuntimeState 快照（ADR-0004，1s 轮询）；
+    # 标题（▼/▶ + 计数）嵌在上边框，点边框独立折叠/展开（列表本体隐藏，边框标题保留）
+    from core.runtime_state import RUNTIME_STATE, TodoEntry
+    from core.tools import ToolResult
     todos_section = app.query_one("#todos-section", Vertical)
     bg_section = app.query_one("#bg-section", Vertical)
     sub_section = app.query_one("#subagents-section", Vertical)
@@ -26,14 +24,11 @@ async def run(app, pilot) -> None:
         "Skills 不应再显示在右栏（已迁往 /skills 弹窗）"
     assert todos_section.region.y < bg_section.region.y < sub_section.region.y, \
         "分区顺序应为 todos / bg / subagents"
-    _todo_mod.CURRENT_TODOS = [_todo_mod.Todo("add right-panel smoke checks", "in_progress"),
-                               _todo_mod.Todo("hook up the real agent", "completed")]
-    with BACKGROUND_LOCK:  # 结构对齐 core/background_task.py start_background_task 的登记
-        BACKGROUND_TASKS["bg-7777"] = {"tool_call_id": "t-1",
-                                       "tool_call": "terminal(command='pip install textual', cwd='/very/long/remote/path')",
-                                       "status": "running"}
-    _sa_mod.SUBAGENT_TASKS["sa-0001"] = {"description": "summarize the asyncio doc",
-                                         "phase": "thinking", "detail": ""}
+    RUNTIME_STATE.set_todos([TodoEntry("add right-panel smoke checks", "in_progress"),
+                             TodoEntry("hook up the real agent", "completed")])
+    RUNTIME_STATE.register_background(
+        "bg-7777", "terminal(command='pip install textual', cwd='/very/long/remote/path')")
+    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc")
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
 
     def _rows_text(sel: str) -> str:
@@ -68,15 +63,14 @@ async def run(app, pilot) -> None:
     await pilot.click(sub_row, offset=(2, 0))
     await pilot.pause(0.1)
     assert "summarize the asyncio doc" not in str(sub_row.render()), "再点应收起 description"
-    _sa_mod.SUBAGENT_TASKS["sa-0001"].update(phase="tool", detail="terminal")
+    RUNTIME_STATE.update_subagent("sa-0001", "tool", "terminal")
     await pilot.pause(1.3)
     sub_str = _rows_text("#subagents-list .info-row")
     assert "[tool: terminal]" in sub_str, f"子代理阶段切换未上屏: {sub_str}"
-    _sa_mod.SUBAGENT_TASKS.pop("sa-0001")
+    RUNTIME_STATE.remove_subagent("sa-0001")
     await pilot.pause(1.3)
     assert _rows_text("#subagents-list .info-row") == "(Empty)", "子代理结束后应显示 (Empty)"
-    with BACKGROUND_LOCK:  # 模拟 bg 线程完成
-        BACKGROUND_TASKS["bg-7777"]["status"] = "completed"
+    RUNTIME_STATE.complete_background("bg-7777", ToolResult(content="(smoke finished)"))
     await pilot.pause(1.3)
     bg_str = _rows_text("#bg-list .info-row")
     assert "● bg-7777" in bg_str, f"bg 完成态未上屏: {bg_str}"
@@ -172,15 +166,19 @@ async def run(app, pilot) -> None:
     await pilot.click(tab)
     await pilot.pause(0.1)
     # 空态：三区数据清空后各显示 (Empty)（bg 列表还留有演示回合的任务，临时清空再还原）
-    _todo_mod.CURRENT_TODOS = []  # 复位全局（仅冒烟进程内生效）
-    with BACKGROUND_LOCK:
-        BACKGROUND_TASKS.pop("bg-7777", None)
-        _saved_bg = dict(BACKGROUND_TASKS)
-        BACKGROUND_TASKS.clear()
+    saved = RUNTIME_STATE.snapshot()
+    RUNTIME_STATE.clear()  # 空态检查（仅冒烟进程内生效）
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
     for _key in ("todos", "bg", "subagents"):
         _rows = _rows_text(f"#{_key}-list .info-row")
         assert _rows == "(Empty)", f"空分区应显示 (Empty): #{_key}-list = {_rows!r}"
-    with BACKGROUND_LOCK:
-        BACKGROUND_TASKS.update(_saved_bg)  # 还原，避免影响后续分区
+    # 还原，避免影响后续分区
+    RUNTIME_STATE.set_todos(saved.todos)
+    for _bg in saved.background:
+        RUNTIME_STATE.register_background(_bg.id, _bg.tool_call)
+        if _bg.status == "completed":
+            RUNTIME_STATE.complete_background(_bg.id, ToolResult(content=""))
+    for _sa in saved.subagents:
+        RUNTIME_STATE.register_subagent(_sa.id, _sa.description)
+        RUNTIME_STATE.update_subagent(_sa.id, _sa.phase, _sa.detail)
     print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + independent collapse")

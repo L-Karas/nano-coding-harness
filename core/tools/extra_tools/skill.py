@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from core.runtime_context import ToolContext
 from core.skill import load_skill
 from core.tools.tool_base import BaseTool
 
@@ -10,10 +11,5 @@ class LoadSkill(BaseTool):
 
     agent_type: set = {"main"}
 
-
-def run_load_skill(name: str) -> str:
-    return load_skill(name)
-
-
-async def run_load_skill_async(name: str, ctx=None) -> str:
-    return load_skill(name)
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return load_skill(self.name)

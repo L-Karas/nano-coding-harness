@@ -1,6 +1,7 @@
 from pydantic import Field
 
 from core.interaction import ask_clarify
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
 MAX_OPTIONS = 4
@@ -30,13 +31,6 @@ class Clarify(BaseTool):
 
     agent_type: set = {"main", "sub-agent"}
 
-
-def run_clarify(options: list[str], multi_select: bool = False) -> str:
-    """经交互端口弹出澄清列表并阻塞等待作答；无 UI / 取消时返回 "[User cancelled]"。"""
-    return ask_clarify(options, multi_select) or "[User cancelled]"
-
-
-async def run_clarify_async(options: list[str], multi_select: bool = False, ctx=None) -> str:
-    if ctx:
-        ctx.raise_if_cancelled()
-    return run_clarify(options, multi_select)
+    def run(self, tctx: ToolContext | None = None) -> str:
+        """经交互端口弹出澄清列表并阻塞等待作答；无 UI / 取消时返回 "[User cancelled]"。"""
+        return ask_clarify(self.options, self.multi_select) or "[User cancelled]"

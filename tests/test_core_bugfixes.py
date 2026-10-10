@@ -8,6 +8,8 @@ import types
 
 import pytest
 
+from core.runtime_context import ToolContext
+
 
 def test_glob_async_with_ripgrep_lists_matches(monkeypatch, tmp_path):
     if not shutil.which("rg"):
@@ -19,15 +21,15 @@ def test_glob_async_with_ripgrep_lists_matches(monkeypatch, tmp_path):
     monkeypatch.setattr(glob_mod, "WORKDIR", tmp_path)
     (tmp_path / "a.py").write_text("x", encoding="utf-8")
 
-    assert "a.py" in asyncio.run(glob_mod.run_glob_async("*.py"))
-    assert asyncio.run(glob_mod.run_glob_async("*.nope")) == "(No matches)"
+    assert "a.py" in asyncio.run(glob_mod.Glob(pattern="*.py").arun())
+    assert asyncio.run(glob_mod.Glob(pattern="*.nope").arun()) == "(No matches)"
 
 
 def test_glob_no_matches_placeholder(monkeypatch, tmp_path):
     import core.tools.base_tools.glob as glob_mod
 
     monkeypatch.setattr(glob_mod, "WORKDIR", tmp_path)
-    assert glob_mod.run_glob("*.nope") == "(No matches)"
+    assert glob_mod.Glob(pattern="*.nope").run() == "(No matches)"
 
 
 def test_grep_async_python_fallback_searches(monkeypatch, tmp_path):
@@ -36,7 +38,7 @@ def test_grep_async_python_fallback_searches(monkeypatch, tmp_path):
     monkeypatch.setattr(grep_mod, "_find_grep_tool", lambda: "python")
     (tmp_path / "a.py").write_text("needle\n", encoding="utf-8")
 
-    out = asyncio.run(grep_mod.run_grep_async("needle", path=str(tmp_path), cwd=tmp_path))
+    out = asyncio.run(grep_mod.Grep(pattern="needle", path=str(tmp_path)).arun(ToolContext(cwd=tmp_path)))
 
     assert "needle" in out
 
@@ -46,9 +48,9 @@ def test_list_tasks_shows_tasks_without_worktree(monkeypatch, tmp_path):
     from core.tools.extra_tools import task as task_tool
 
     monkeypatch.setattr(task_mod, "TASK_DIR", tmp_path)
-    task_tool.run_create_task("write docs", "desc")
+    task_tool.CreateTask(subject="write docs", description="desc").run()
 
-    out = task_tool.run_list_tasks()
+    out = task_tool.ListTasks().run()
 
     assert "write docs" in out and "[pending]" in out
 

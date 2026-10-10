@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import time
 
-from core import background_task as _bg
-from core import sub_agent as _sa
+from core.runtime_state import RUNTIME_STATE
 from core.todo import todo_write
+from core.tools import ToolResult
 from core.tui.render import (
     ask_permission,
     render_assistant_response,
@@ -40,23 +40,19 @@ def _demo_agent(query: str) -> None:
     render_tool_result("total 0\n-rw-r--r-- 1 user user 1234 demo.txt\n(demo output)")
     render_tool_result_diff([(" ", 1, "def main():"), ("-", 2, "    print('old')"),
                              ("+", 2, "    print('new')")])
-    # 右栏信息分区演示：写入与真实 Agent 相同的数据源（core.todo / core.background_task 模块级状态，
-    # UI 经 1s 轮询上屏，无需额外渲染调用）；todo_write 即 agent 的 todo 工具实现
+    # 右栏信息分区演示：写入与真实 Agent 相同的 RuntimeState（ADR-0004），UI 经 1s 轮询上屏，
+    # 无需额外渲染调用；todo_write 即 agent 的 todo 工具实现
     todo_write([{"content": "Refactor right panel into collapsible sections", "status": "in_progress"},
                 {"content": "Color-code list rows by status", "status": "completed"}])
-    with _bg.BACKGROUND_LOCK:
-        _bg.BACKGROUND_TASKS["bg-0001"] = {"tool_call_id": "demo-0001",
-                                           "tool_call": "terminal(command='pip install -r requirements.txt')",
-                                           "status": "running"}
-    _sa.SUBAGENT_TASKS["sa-0001"] = {"description": "summarize the asyncio doc",
-                                     "phase": "thinking", "detail": ""}
+    bg_id = RUNTIME_STATE.allocate_background_id()
+    RUNTIME_STATE.register_background(bg_id, "terminal(command='pip install -r requirements.txt')")
+    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc")
     time.sleep(1.6)  # 右栏可见 running 态（1s 轮询粒度）
     todo_write([{"content": "Refactor right panel into collapsible sections", "status": "completed"}])
-    with _bg.BACKGROUND_LOCK:
-        _bg.BACKGROUND_TASKS["bg-0001"]["status"] = "completed"
-    _sa.SUBAGENT_TASKS["sa-0001"].update(phase="tool", detail="read_file")
+    RUNTIME_STATE.complete_background(bg_id, ToolResult(content="(demo finished)"))
+    RUNTIME_STATE.update_subagent("sa-0001", "tool", "read_file")
     time.sleep(1.6)  # 右栏可见状态流转（✓ 完成 / 子代理阶段切换）
-    _sa.SUBAGENT_TASKS.pop("sa-0001", None)
+    RUNTIME_STATE.remove_subagent("sa-0001")
     render_background_notification("Background task bg-0001 finished (demo)", title="🔔 Background Task")
     if query.startswith("sudo"):
         answer = ask_permission(f"High-risk command detected — allow execution?\n\n{query}")

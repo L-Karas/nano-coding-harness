@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from core.context import memory
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
 
@@ -19,12 +20,5 @@ class SaveMemory(BaseTool):
 
     agent_type: set = {"main"}
 
-
-def run_save_memory(title: str, content: str, mem_type: Literal["user", "feedback", "project", "reference"]):
-    return memory.run_save_memory(title, content, mem_type)
-
-
-async def run_save_memory_async(title: str, content: str,
-                                mem_type: Literal["user", "feedback", "project", "reference"],
-                                ctx=None):
-    return memory.run_save_memory(title, content, mem_type)
+    def run(self, tctx: ToolContext | None = None):
+        return memory.run_save_memory(self.title, self.content, self.mem_type)

@@ -4,9 +4,9 @@ AgentInterrupted 继承 CancelledError（BaseException），`except Exception` �
 清理分支写窄了就会在仓库里留下 tmpxxxx 残骸。"""
 import asyncio
 
-from core.runtime_context import AgentRunContext, AgentInterrupted
-from core.tools.base_tools.edit import run_edit_file_async
-from core.tools.base_tools.write import run_write_file_async
+from core.runtime_context import AgentRunContext, AgentInterrupted, ToolContext
+from core.tools.base_tools.edit import EditFile
+from core.tools.base_tools.write import WriteFile
 
 
 def test_interrupt_after_mkstemp_removes_tmp(tmp_path):
@@ -21,7 +21,9 @@ def test_interrupt_after_mkstemp_removes_tmp(tmp_path):
         except AgentInterrupted:
             pass
 
-    asyncio.run(run(lambda ctx: run_edit_file_async("a.txt", "hello", "hi", cwd=tmp_path, ctx=ctx)))
-    asyncio.run(run(lambda ctx: run_write_file_async("a.txt", "hi", cwd=tmp_path, ctx=ctx)))
+    asyncio.run(run(lambda ctx: EditFile(path="a.txt", old_text="hello", new_text="hi").arun(
+        ToolContext(agent_run=ctx, cwd=tmp_path))))
+    asyncio.run(run(lambda ctx: WriteFile(path="a.txt", content="hi").arun(
+        ToolContext(agent_run=ctx, cwd=tmp_path))))
 
     assert sorted(p.name for p in tmp_path.iterdir()) == ["a.txt"]

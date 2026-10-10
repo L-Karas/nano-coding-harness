@@ -2,11 +2,12 @@ import asyncio
 import re
 import shutil
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Literal
 
 from pydantic import Field
 
 from core.config import WORKDIR
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 from core.tools.utils import _to_text
 
@@ -19,6 +20,69 @@ class Grep(BaseTool):
                                                        "Default is '*' (all files).")
 
     agent_type: set = {"main", "sub-agent", "teammate"}
+
+    def run(self, tctx: ToolContext | None = None) -> str:
+        path = _validate_path(self.path, tctx.cwd if tctx else None)
+        regex = re.compile(self.pattern)
+
+        output = ["[Matches]\n"]
+        for file_path in path.rglob(self.file_pattern):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    for line_no, line in enumerate(f, 1):
+                        if regex.search(line):
+                            output.append(f"file path: \"{file_path}\", line: [{line_no}], content: \"{line}\"")
+            except Exception:
+                continue
+
+        return _format_matches(output)
+
+    async def arun(self, tctx: ToolContext | None = None) -> str:
+        if tctx:
+            tctx.raise_if_cancelled()
+
+        path = _validate_path(self.path, tctx.cwd if tctx else None)
+
+        grep_tool = _find_grep_tool()
+        if grep_tool == "ripgrep":
+            command = ["rg", "--no-heading", "-n", "--glob", self.file_pattern, self.pattern, str(path)]
+        elif grep_tool == "grep":
+            command = ["grep", "-r", "-n", "--include", self.file_pattern, self.pattern, str(path)]
+        else:
+            return await asyncio.to_thread(self.run, tctx)
+
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        output = ["[Matches]\n"]
+        try:
+            stdout, stderr = await process.communicate()
+            if tctx:
+                tctx.raise_if_cancelled()
+            if process.returncode not in (0, 1):
+                raise RuntimeError(_to_text(stderr))
+
+            for file_path, line_no, content in _parse_match(_to_text(stdout).splitlines()):
+                output.append(
+                    f"file path: \"{file_path}\", line: [{line_no}], content: \"{content}\""
+                )
+        except asyncio.CancelledError:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+            raise
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+
+        return _format_matches(output)
 
 
 _MATCH_RE = re.compile(r"^(.*?):(\d+):(.*)$")
@@ -33,7 +97,7 @@ def _find_grep_tool() -> Literal["grep", "ripgrep", "python"]:
     return "python"
 
 
-def _validate_path(path: str = "", cwd: Optional[Path] = None) -> Path:
+def _validate_path(path: str = "", cwd: Path | None = None) -> Path:
     base = cwd or WORKDIR
     path = Path(path)
 
@@ -64,69 +128,3 @@ def _format_matches(output: list[str]) -> str:
         output = output[:_MATCH_LIMIT] + ["Results truncated. More than 50 matches found. "
                                           "Consider a more specific path or pattern if needed."]
     return "\n".join(output)
-
-
-def run_grep(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optional[Path] = None) -> str:
-    path = _validate_path(path, cwd)
-    regex = re.compile(pattern)
-
-    output = ["[Matches]\n"]
-    for file_path in path.rglob(file_pattern):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                for line_no, line in enumerate(f, 1):
-                    if regex.search(line):
-                        output.append(f"file path: \"{file_path}\", line: [{line_no}], content: \"{line}\"")
-        except Exception:
-            continue
-
-    return _format_matches(output)
-
-
-async def run_grep_async(pattern: str, path: str = "", file_pattern: str = "*", cwd: Optional[Path] = None,
-                         ctx=None) -> str:
-    if ctx:
-        ctx.raise_if_cancelled()
-
-    path = _validate_path(path, cwd)
-
-    grep_tool = _find_grep_tool()
-    if grep_tool == "ripgrep":
-        command = ["rg", "--no-heading", "-n", "--glob", file_pattern, pattern, str(path)]
-    elif grep_tool == "grep":
-        command = ["grep", "-r", "-n", "--include", file_pattern, pattern, str(path)]
-    else:
-        return await asyncio.to_thread(run_grep, pattern, path, file_pattern, cwd)
-
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    output = ["[Matches]\n"]
-    try:
-        stdout, stderr = await process.communicate()
-        if ctx:
-            ctx.raise_if_cancelled()
-        if process.returncode not in (0, 1):
-            raise RuntimeError(_to_text(stderr))
-
-        for file_path, line_no, content in _parse_match(_to_text(stdout).splitlines()):
-            output.append(
-                f"file path: \"{file_path}\", line: [{line_no}], content: \"{content}\""
-            )
-    except asyncio.CancelledError:
-        process.terminate()
-        try:
-            await asyncio.wait_for(process.wait(), timeout=10)
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-        raise
-    finally:
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
-
-    return _format_matches(output)

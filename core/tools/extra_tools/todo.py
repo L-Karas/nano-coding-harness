@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from core.runtime_context import ToolContext
 from core.todo import todo_write
 from core.tools.tool_base import BaseTool
 
@@ -19,10 +20,5 @@ class TodoWrite(BaseTool):
 
     agent_type: set = {"main"}
 
-
-def run_todo_write(todos: list):
-    return todo_write(todos)
-
-
-async def run_todo_write_async(todos: list, ctx=None) -> str:
-    return todo_write(todos)
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return todo_write(self.todos)

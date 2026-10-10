@@ -7,7 +7,7 @@ import core.context.compact.context_compact as compact_mod
 from core.context.compact import truncate_large_tool_outputs
 from core.context.truncate import truncate_tool_output
 from core.template import PERSIST_TOOL_MESSAGE_PREFIX, PERSIST_TOOL_MESSAGE_SUFFIX
-from core.tools.base_tools.read import run_read_file
+from core.tools.base_tools.read import ReadFile
 
 
 @pytest.fixture
@@ -138,5 +138,5 @@ def test_saved_file_continues_at_notice_offset(tool_results_dir):
     offset = int(re.search(r"offset=(\d+)", inline).group(1))
     saved = next(iter(tool_results_dir.iterdir()))
     # 截断从 offset=1 起算，落盘全文的行号与提示 offset 对齐，可直接续读
-    assert run_read_file(str(saved), limit=None, offset=offset) == \
+    assert ReadFile.model_construct(path=str(saved), limit=None, offset=offset).run() == \
         "\n".join(content.splitlines()[offset - 1:])

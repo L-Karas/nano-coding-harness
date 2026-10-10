@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from core.runtime_context import AgentRunContext
+from core.runtime_context import ToolContext
 from core.sub_agent import spawn_subagent
 from core.tools.tool_base import BaseTool
 
@@ -11,6 +11,5 @@ class SpawnSubagent(BaseTool):
 
     agent_type: set = {"main"}
 
-
-async def run_spawn_subagent_async(description: str, ctx: AgentRunContext = None) -> str:
-    return await spawn_subagent(description, ctx)
+    async def arun(self, tctx: ToolContext | None = None) -> str:
+        return await spawn_subagent(self.description, tctx.agent_run if tctx else None)

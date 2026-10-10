@@ -7,6 +7,7 @@ from pydantic import Field
 
 from core.config import WORKDIR
 from core.context.truncate import MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES, truncate_lines
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
 DESCRIPTION = (
@@ -30,34 +31,25 @@ class ReadFile(BaseTool):
 
     agent_type: set = {"main", "sub-agent", "teammate"}
 
+    def run(self, tctx: ToolContext | None = None) -> str:
+        base = tctx.cwd if tctx and tctx.cwd else WORKDIR
+        fp = (base / self.path).resolve()
+        lines = fp.read_text(encoding="utf-8").splitlines()
+        return _slice_content(lines, self.limit, self.offset) or "(Empty file)"
+
+    async def arun(self, tctx: ToolContext | None = None) -> str:
+        base = tctx.cwd if tctx and tctx.cwd else WORKDIR
+        fp = (base / self.path).resolve()
+
+        if anydoc.format_from_path(self.path):
+            content = anydoc.to_markdown(fp)
+        else:
+            async with aiofiles.open(fp, "r", encoding="utf-8") as f:
+                content = await f.read()
+        return _slice_content(content.splitlines(), self.limit, self.offset) or "(Empty file)"
+
 
 def _slice_content(lines: list[str], limit: Optional[int], offset: Optional[int]) -> str:
     """薄包装：保留模块级 MAX_OUTPUT_BYTES 供测试 / 调用方调整，逻辑在 core.context.truncate。"""
     text, _ = truncate_lines(lines, limit, offset, MAX_OUTPUT_BYTES)
     return text
-
-
-def run_read_file(path: str, limit: Optional[int] = MAX_OUTPUT_LINES, offset: Optional[int] = 1,
-                  cwd: Optional[Path] = None) -> str:
-    base = cwd or WORKDIR
-    fp = (base / path).resolve()
-    lines = fp.read_text(encoding="utf-8").splitlines()
-    return _slice_content(lines, limit, offset) or "(Empty file)"
-
-
-async def run_read_file_async(
-        path: str,
-        limit: Optional[int] = MAX_OUTPUT_LINES,
-        offset: Optional[int] = 1,
-        cwd: Optional[Path] = None,
-        ctx=None
-) -> str:
-    base = cwd or WORKDIR
-    fp = (base / path).resolve()
-
-    if anydoc.format_from_path(path):
-        content = anydoc.to_markdown(fp)
-    else:
-        async with aiofiles.open(fp, "r", encoding="utf-8") as f:
-            content = await f.read()
-    return _slice_content(content.splitlines(), limit, offset) or "(Empty file)"

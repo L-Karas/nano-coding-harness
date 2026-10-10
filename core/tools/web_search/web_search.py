@@ -5,6 +5,7 @@ import httpx
 from pydantic import Field
 
 from core.log import get_logger
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 from core.tools.web_search.utils import update_provider_state, format_search_result, PROVIDER_STATE
 
@@ -17,6 +18,28 @@ class WebSearch(BaseTool):
     max_results: int = Field(default=10, ge=1,
                             description="Maximum number of search results to return (default: 10).")
     agent_type: set = {"main", "sub-agent", "teammate"}
+
+    async def arun(self, tctx: ToolContext | None = None) -> str:
+        try:
+            if PROVIDER_STATE.firecrawl_enabled:
+                ok, result = await firecrawl_search(self.query, self.max_results)
+                if ok:
+                    return result
+            if PROVIDER_STATE.tavily_enabled:
+                ok, result = await tavily_search(self.query, self.max_results)
+                if ok:
+                    return result
+            if PROVIDER_STATE.exa_enabled:
+                ok, result = await exa_search(self.query, self.max_results)
+                if ok:
+                    return result
+            # todo: brave search
+            if PROVIDER_STATE.brave_search_enabled:
+                pass
+            _, result = await ddgs_search(self.query, self.max_results)
+            return result
+        except Exception as e:
+            return str(e)
 
 
 async def firecrawl_search(query: str, max_results: int = 10) -> tuple[bool, str]:
@@ -130,24 +153,4 @@ async def ddgs_search(query: str, max_results: int = 10) -> tuple[bool, str]:
         return False, str(e)
 
 
-async def run_web_search_async(query: str, max_results: int = 10, ctx=None) -> str:
-    try:
-        if PROVIDER_STATE.firecrawl_enabled:
-            ok, result = await firecrawl_search(query, max_results)
-            if ok:
-                return result
-        if PROVIDER_STATE.tavily_enabled:
-            ok, result = await tavily_search(query, max_results)
-            if ok:
-                return result
-        if PROVIDER_STATE.exa_enabled:
-            ok, result = await exa_search(query, max_results)
-            if ok:
-                return result
-        # todo: brave search
-        if PROVIDER_STATE.brave_search_enabled:
-            pass
-        _, result = await ddgs_search(query, max_results)
-        return result
-    except Exception as e:
-        return str(e)
+

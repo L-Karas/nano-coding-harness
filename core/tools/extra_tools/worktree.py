@@ -1,6 +1,7 @@
 from pydantic import Field
 
 from core.experimental.worktree import create_worktree, remove_worktree, keep_worktree
+from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
 
@@ -12,6 +13,9 @@ class CreateWorktree(BaseTool):
     agent_type: set = {"main"}
     experimental: bool = True
 
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return create_worktree(self.name, self.task_id or "")
+
 
 class RemoveWorktree(BaseTool):
     """Remove a worktree. Refuses if uncommitted changes exist."""
@@ -22,6 +26,9 @@ class RemoveWorktree(BaseTool):
     agent_type: set = {"main"}
     experimental: bool = True
 
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return remove_worktree(self.name, self.discard_changes)
+
 
 class KeepWorktree(BaseTool):
     """Keep a worktree for manual review instead of auto-removing it."""
@@ -30,26 +37,5 @@ class KeepWorktree(BaseTool):
     agent_type: set = {"main"}
     experimental: bool = True
 
-
-def run_create_worktree(name: str, task_id: str = "") -> str:
-    return create_worktree(name, task_id)
-
-
-def run_remove_worktree(name: str, discard_changes: bool = False) -> str:
-    return remove_worktree(name, discard_changes)
-
-
-def run_keep_worktree(name: str) -> str:
-    return keep_worktree(name)
-
-
-async def run_create_worktree_async(name: str, task_id: str = "", ctx=None) -> str:
-    return create_worktree(name, task_id)
-
-
-async def run_remove_worktree_async(name: str, discard_changes: bool = False, ctx=None) -> str:
-    return remove_worktree(name, discard_changes)
-
-
-async def run_keep_worktree_async(name: str, ctx=None) -> str:
-    return keep_worktree(name)
+    def run(self, tctx: ToolContext | None = None) -> str:
+        return keep_worktree(self.name)

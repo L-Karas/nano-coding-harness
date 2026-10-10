@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core.runtime_context import ToolContext
 from core.tools import shell
 
 _WSL_BASH = "C:\\Windows\\System32\\bash.exe"
@@ -198,7 +199,7 @@ def test_run_terminal_async_uses_shared_shell_invocation(monkeypatch):
     monkeypatch.setattr(shell, "find_shell", lambda: _GIT_BASH)
     monkeypatch.setattr(terminal, "start_process", fake_start_process)
 
-    assert asyncio.run(terminal.run_terminal_async("echo ok")) == "ok"
+    assert asyncio.run(terminal.Terminal(command="echo ok").arun()) == "ok"
     assert captured["invocation"] == shell.build_command_invocation("echo ok")
 
 
@@ -249,7 +250,7 @@ def test_run_terminal_isolates_child_console_on_windows(monkeypatch, tmp_path):
     monkeypatch.setattr(shell, "find_shell", lambda: _GIT_BASH)
     monkeypatch.setattr(terminal.subprocess, "run", fake_run)
 
-    assert terminal.run_terminal("echo ok", cwd=tmp_path) == "ok"
+    assert terminal.Terminal(command="echo ok").run(ToolContext(cwd=tmp_path)) == "ok"
     if os.name == "nt":
         assert captured["kwargs"]["creationflags"] == subprocess.CREATE_NO_WINDOW
     else:

@@ -1,4 +1,4 @@
-"""WebSearch 新增 max_results：schema 默认 10、4 个 provider 负载、run_web_search_async 透传。"""
+"""WebSearch 新增 max_results：schema 默认 10、4 个 provider 负载、arun 透传。"""
 import asyncio
 import sys
 import types
@@ -108,7 +108,7 @@ def test_run_web_search_async_passes_max_results_to_provider(monkeypatch):
     monkeypatch.setattr(web_search.PROVIDER_STATE, "firecrawl_enabled", False)
     monkeypatch.setattr(web_search.PROVIDER_STATE, "tavily_enabled", True)
 
-    result = asyncio.run(web_search.run_web_search_async("q", max_results=7))
+    result = asyncio.run(web_search.WebSearch(query="q", max_results=7).arun())
 
     assert result == "ok"
     assert calls["tavily"] == ("q", 7)
