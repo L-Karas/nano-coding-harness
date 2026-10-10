@@ -5,136 +5,69 @@ Sub Agent
 后台语义（主代理不等结论、结果稍后注入）由 background_task 的占位符 + notification 提供，
 这里只负责跑完并把最终结论返回。
 """
-import json
-
-from openai.types.chat import ChatCompletionMessageToolCall
-
 from core.client import shared_sub_model_client
 from core.config import CONFIGMANAGER
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
-from core.extension import (
-    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext, dispatch,
-)
-from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
-from core.recovery.error_recovery import with_retry_async
-from core.streaming import streaming_message
-from core.template import TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
+from core.runtime_context import ToolContext
+from core.runtime_state import RUNTIME_STATE
 
 MAX_SUB_AGENT_ROUNDS = 30
 _LOGGER = get_logger(__name__)
 
-# TUI 数据源：运行中的子代理及其执行阶段（用法同 core.background_task.BACKGROUND_TASKS）。
-# phase: "thinking" = 等 LLM 生成中， "tool" = 工具执行中；detail 为正在跑的工具名。结束即移除。
-SUBAGENT_TASKS: dict[str, dict] = {}
-_SUBAGENT_COUNTER = 0
-
 
 def _set_phase(agent_id: str, phase: str, detail: str = "") -> None:
-    info = SUBAGENT_TASKS.get(agent_id)
-    if info is not None:
-        info["phase"], info["detail"] = phase, detail
+    """右栏数据源：阶段与正在跑的工具名（"thinking" / "tool"）。"""
+    RUNTIME_STATE.update_subagent(agent_id, phase, detail)
 
 
 async def spawn_subagent(description: str, ctx=None) -> str:
     """在调用方 loop 上跑完一个子代理，返回它的最终文本结论。
 
     ctx 为父回合的 AgentRunContext：每轮模型调用前协作式检查取消（Esc），
-    并透传给工具执行，使中断能到达子进程；每轮调用前走与主代理相同的
-    上下文预算管线（prepare_messages）。
+    透传给 step 的工具执行使中断能到达子进程；每轮调用前走与主代理相同的
+    上下文预算管线（prepare_messages，作用于不含 system 的 history）。
     """
-    global _SUBAGENT_COUNTER
-
+    from core.agent_step import StepPolicy, StepRenderer, run_agent_step
     from core.tools import assemble_tool_pool
-    from core.tools.tool_loader import execute_tool
 
-    _SUBAGENT_COUNTER += 1
-    agent_id = f"sa-{_SUBAGENT_COUNTER:04d}"
-    SUBAGENT_TASKS[agent_id] = {"description": description, "phase": "thinking", "detail": ""}
+    agent_id = RUNTIME_STATE.allocate_subagent_id()
+    RUNTIME_STATE.register_subagent(agent_id, description)
 
     try:
-        tools, handlers = assemble_tool_pool("sub-agent", tool_type="async")
-        messages = [
-            {"role": "system", "content": build_system_prompt("sub-agent", tools=tools)},
-            {"role": "user", "content": description},
-        ]
+        pool = assemble_tool_pool("sub-agent")
+        system_prompt = build_system_prompt("sub-agent", tools=pool.schemas())
+        history = [{"role": "user", "content": description}]
+        tctx = ToolContext(agent_run=ctx, agent_name="sub-agent")
+        policy = StepPolicy(use_extensions=True, permission_hooks=True)
+        renderer = StepRenderer(on_tool_call=lambda tool_name, _args: _set_phase(agent_id, "tool", tool_name))
 
         for _ in range(MAX_SUB_AGENT_ROUNDS):
             if ctx:
                 ctx.raise_if_cancelled()
 
             _set_phase(agent_id, "thinking")
-            sub_client = shared_sub_model_client()
-            messages = await prepare_messages(messages, ctx, sub_model=True)
-            sub_max_tokens = sub_client.clamp_max_tokens(CONFIGMANAGER.config.default_max_tokens)
-            llm_ctx = BeforeLLMContext(messages=messages, tools=tools, max_tokens=sub_max_tokens)
-            await dispatch("before_llm", llm_ctx)
-            if llm_ctx.aborted:
-                return f"(subagent aborted by extension: {llm_ctx.abort_reason})"
-            messages = llm_ctx.messages
-
-            stream = await with_retry_async(
-                lambda: sub_client.get_model_client(async_client=True)(
-                    messages=llm_ctx.messages,
-                    tools=llm_ctx.tools,
-                    max_tokens=llm_ctx.max_tokens,
-                    stream=True
-                ),
-                provider=sub_client.current_provider,
+            history = await prepare_messages(history, ctx, sub_model=True)
+            outcome = await run_agent_step(
+                history,
+                system_prompt,
+                client=shared_sub_model_client(),
+                pool=pool,
+                tctx=tctx,
+                max_tokens=CONFIGMANAGER.config.default_max_tokens,
+                policy=policy,
+                renderer=renderer,
             )
-            content, reasoning_content, tool_calls, finish_reason, usage = await streaming_message(stream)
+            if outcome.aborted:
+                return f"(subagent aborted by extension: {outcome.abort_reason})"
 
-            llm_result = AfterLLMContext(content=content, tool_calls=tool_calls or [],
-                                         finish_reason=finish_reason or "", usage=usage)
-            await dispatch("after_llm", llm_result)
-            assistant_message = {
-                "role": "assistant",
-                "content": llm_result.content,
-                "reasoning_content": reasoning_content,
-            }
-            if llm_result.tool_calls:
-                assistant_message["tool_calls"] = llm_result.tool_calls
-            messages.append(assistant_message)
-            for message in llm_result.inject_messages:
-                messages.append(message)
-
-            if not llm_result.tool_calls:
-                return llm_result.content or "(subagent finished without a text conclusion)"
-
-            _set_phase(agent_id, "tool", ", ".join(tc["function"]["name"] for tc in llm_result.tool_calls))
-            injected_messages: list[dict] = []
-            for tool_call in llm_result.tool_calls:
-                name = tool_call["function"]["name"]
-                try:
-                    tool_args = json.loads(tool_call["function"]["arguments"] or "{}")
-                except json.JSONDecodeError as e:
-                    output = f"[Error] {type(e).__name__}: {e}"
-                else:
-                    tool_ctx = BeforeToolContext(tool_name=name, args=tool_args)
-                    await dispatch("before_tool", tool_ctx)
-                    if tool_ctx.blocked:
-                        output = f"[Extension blocked] {tool_ctx.block_reason}"
-                    else:
-                        permission_call = ChatCompletionMessageToolCall(**tool_call)
-                        permission_call.function.arguments = json.dumps(tool_ctx.args, ensure_ascii=False)
-                        blocked = trigger_hooks("pre_tool_call", permission_call)
-                        if blocked:
-                            output = str(blocked)
-                        else:
-                            output = await execute_tool(handlers.get(name), tool_ctx.args, name, ctx)
-                            result_ctx = AfterToolContext(
-                                tool_name=name, args=tool_ctx.args, result=str(output),
-                                is_error=str(output).startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX)))
-                            await dispatch("after_tool", result_ctx)
-                            output = result_ctx.result
-                            injected_messages.extend(result_ctx.inject_messages)
-
-                messages.append({"role": "tool", "tool_call_id": tool_call["id"], "content": str(output)})
-            for message in injected_messages:
-                messages.append(message)
+            history.append(outcome.assistant_message)
+            history.extend(outcome.followup_messages)
+            if not outcome.tool_calls:
+                return outcome.assistant_message.get("content") or "(subagent finished without a text conclusion)"
 
         _LOGGER.warning(f"[Subagent] reached {MAX_SUB_AGENT_ROUNDS} rounds without a conclusion")
         return f"(subagent reached the {MAX_SUB_AGENT_ROUNDS}-round limit without a conclusion)"
     finally:
-        SUBAGENT_TASKS.pop(agent_id, None)
+        RUNTIME_STATE.remove_subagent(agent_id)

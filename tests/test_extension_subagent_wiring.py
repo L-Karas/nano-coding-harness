@@ -1,13 +1,14 @@
-"""子代理四节点接线：abort、改参送达执行器、拦截写回、结果改写。"""
+"""子代理接线：Agent step 的产出回填本地消息；扩展四事件在 step 内生效。"""
 import asyncio
 
 import pytest
 
+import core.agent_step as step_mod
 import core.sub_agent as sa
 import core.tools
-import core.tools.tool_loader
 from core.extension import reset_extensions
 from core.extension.dispatcher import add as add_hook
+from core.tools import ToolResult
 
 TOOL_ROUND = ("", "", [{"id": "t1", "type": "function",
                         "function": {"name": "terminal", "arguments": '{"command": "ls"}'}}],
@@ -45,24 +46,27 @@ class _FakeModelClient:
 def _patch(monkeypatch, responses, execute):
     calls = {"args": []}
 
-    async def _streaming_message(stream, ctx=None):
-        return responses.pop(0)
+    class _Pool:
+        def schemas(self):
+            return []
 
-    async def _execute_tool(handler, args, name, ctx):
-        calls["args"].append(args)
-        return execute
+        async def execute(self, name, args, tctx=None):
+            calls["args"].append(args)
+            return ToolResult(content=execute)
 
     async def _prepare(messages, ctx=None, sub_model=False):
         return messages
 
     monkeypatch.setattr(sa, "shared_sub_model_client", lambda: _FakeModelClient(calls))
-    monkeypatch.setattr(sa, "with_retry_async", lambda fn, provider="": fn())
     monkeypatch.setattr(sa, "prepare_messages", _prepare)
-    monkeypatch.setattr(sa, "streaming_message", _streaming_message)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
-    monkeypatch.setattr(sa, "trigger_hooks", lambda *a: None)
-    monkeypatch.setattr(core.tools, "assemble_tool_pool", lambda *a, **k: ([], {"terminal": object()}))
-    monkeypatch.setattr(core.tools.tool_loader, "execute_tool", _execute_tool)
+    monkeypatch.setattr(core.tools, "assemble_tool_pool", lambda *a, **k: _Pool())
+
+    async def fake_stream(stream, on_text=None):
+        return responses.pop(0)
+
+    monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
+    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a: None)
     return calls
 
 

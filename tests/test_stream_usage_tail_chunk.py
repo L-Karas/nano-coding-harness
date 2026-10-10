@@ -1,18 +1,16 @@
-"""AgentRuntime.stream 的 usage 两种交付姿势都不能崩，且 usage 被记录。
+"""streaming_message 的 usage 两种交付姿势都不能崩，且 usage 被记录。
 
 情况 A：usage 挂在最后一个正常 chunk 上（带 choices，如直连 Zhipu GLM）。
 情况 B：流末尾追加独立的 usage-only 尾块（choices 为空，如 one-api/new-api 代理）。
 情况 C：provider 不返回 completion_tokens_details（None）。
 """
 import asyncio
-from contextlib import nullcontext
 from types import SimpleNamespace as NS
-from unittest.mock import patch
 
 from openai.types import CompletionUsage
 from openai.types.completion_usage import CompletionTokensDetails
 
-from core.loop_with_interrupt import AgentRuntime
+from core.streaming import streaming_message
 
 EXPECTED = {"prompt_tokens": 11, "completion_tokens": 7, "reasoning_tokens": 3, "total_tokens": 18}
 
@@ -66,11 +64,7 @@ def _case_c():
 
 
 def _stream(chunks):
-    runtime = AgentRuntime.__new__(AgentRuntime)  # 跳过 __init__：只测 stream，无需事件循环线程
-    with patch("core.loop_with_interrupt.render_thinking_status", nullcontext), \
-            patch("core.loop_with_interrupt.render_scope", nullcontext), \
-            patch("core.loop_with_interrupt.stream_assistant_response", lambda *a, **k: None):
-        return asyncio.run(runtime.stream(_FakeStream(chunks)))
+    return asyncio.run(streaming_message(_FakeStream(chunks)))
 
 
 def test_usage_recorded_on_both_delivery_shapes():

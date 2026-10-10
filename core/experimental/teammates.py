@@ -1,19 +1,20 @@
 """
 Teammates
 """
+import asyncio
 import json
 import re
 import threading
 import time
-from functools import partial
-from pathlib import Path
-from typing import Optional
 
 from core.client import shared_model_client
+from core.config import CONFIGMANAGER
+from core.context.compact import prepare_messages
 from core.experimental import message_bus
-from core.experimental.task import TASK_DIR, can_start, claim_task, load_task, complete_task
+from core.experimental.task import TASK_DIR, can_start, claim_task
 from core.experimental.worktree import WORKTREES_DIR
 from core.log.log import get_logger
+from core.runtime_context import ToolContext
 
 _LOGGER = get_logger(__name__)
 
@@ -36,8 +37,7 @@ def scan_unclaimed_tasks() -> list[dict]:
 def idle_poll(
         agent_name: str,
         messages: list[dict],
-        name: str,
-        worktree_context: Optional[dict] = None
+        tctx: ToolContext,
 ) -> str:
     """
     Autonomous teammates wake up for inbox messages first, then look for
@@ -51,7 +51,7 @@ def idle_poll(
             for message in inbox_messages:
                 if message.get("msg_type") == "shutdown_request":
                     request_id = message.get("metadata", {}).get("request_id", "")
-                    message_bus.MESSAGE_BUS.send(name, "lead", "Shutting down.", "shutdown_response",
+                    message_bus.MESSAGE_BUS.send(agent_name, "lead", "Shutting down.", "shutdown_response",
                                                  {"request_id": request_id, "approve": True})
                     return "shutdown"
 
@@ -71,8 +71,7 @@ def idle_poll(
                 if task.get("worktree"):
                     wt_path = WORKTREES_DIR / task.get("worktree")
                     wt_info = f"\nWork directory: {wt_path}"
-                    if worktree_context is not None:
-                        worktree_context["path"] = str(wt_path)
+                    tctx.cwd = str(wt_path)
                 messages.append({
                     "role": "user",
                     "content": f"<claimed_task>Task {task.get('id')}: {task.get('subject')} {wt_info}</claimed_task>",
@@ -115,69 +114,40 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
 
     def run():
         # 延迟导入: core.tools -> extra_tools -> core.teammates 存在导入环
-        from core.tools import assemble_tool_pool, call_tool_handler
+        from core.agent_step import StepPolicy, StepRenderer, run_agent_step
+        from core.tools import assemble_tool_pool
 
-        wt_ctx = {"work_path": None}
+        # 与 main / sub-agent 相同：工具定义与执行统一取自 tool_loader（teammate 级）；
+        # 身份与 worktree 目录经调用方持有的 ToolContext 传达，认领任务时由工具更新 cwd。
+        tctx = ToolContext(agent_name=name)
+        pool = assemble_tool_pool(agent_type="teammate", enable_experimental=True,
+                                  exclude=frozenset({"compact", "check_inbox"}))
 
-        def _wt_cwd():
-            # Once a task with a worktree is claimed, all teammate file tools
-            # transparently run inside that isolated directory.
-            work_path = wt_ctx["work_path"]
-            return Path(work_path) if work_path else None
+        def _halt_after(tool_name: str, result) -> bool:
+            """submit_plan 一旦落定：关闭审批闸门，本响应剩余工具不再执行。"""
+            if tool_name != "submit_plan":
+                return False
+            match = re.search(r"\((req_\d+)\)", result.content)
+            protocol_ctx["waiting_plan"] = match.group(1) if match else result.content
+            return True
 
-        def _bind_worktree_cwd(fn):
-            # tool_loader 中注册的 run_* 均接受 cwd; 认领带 worktree 的任务后统一注入
-            def wrapped(**kwargs):
-                return fn(**kwargs, cwd=_wt_cwd())
+        policy = StepPolicy(use_extensions=True, permission_hooks=False, background=False,
+                            diff_preview=False, should_halt=_halt_after)
+        renderer = StepRenderer(
+            on_tool_call=lambda tool, args: _LOGGER.info(f">   [Call tool] (Teammate: {name}) {tool} {args}"),
+            on_tool_result=lambda text, err: _LOGGER.info(f">   [Tool result] (Teammate: {name}) {text[:100]}"),
+        )
 
-            return wrapped
-
-        def _run_claim_task(task_id: str):
-            result = claim_task(task_id, owner=name)
-            if "claimed" in result.lower():
-                task = load_task(task_id)
-                wt_ctx["work_path"] = str(WORKTREES_DIR / task.worktree) if task.worktree else None
-
-            return result
-
-        def _run_complete_task(task_id: str):
-            result = complete_task(task_id)
-            wt_ctx["work_path"] = None
-            return result
-
-        # 与 main / sub-agent 相同: 工具定义与默认 handler 统一取自 tool_loader(teammate 级);
-        # compact / check_inbox 绑定 main 会话与 lead 邮箱语义, 不适用于自治 teammate
-        excluded = {"compact", "check_inbox"}
-        tools, handlers = assemble_tool_pool(agent_type="teammate")
-        tools = [tool for tool in tools if tool["function"]["name"] not in excluded]
-        handlers = {tool_name: handler
-                    for tool_name, handler in handlers.items()
-                    if tool_name not in excluded}
-        # 文件类工具随认领的任务 worktree 切换 cwd
-        for tool_name in ("terminal", "edit_file", "glob", "grep", "read_file", "write_file"):
-            handlers[tool_name] = _bind_worktree_cwd(handlers[tool_name])
-
-        # 以下 handler 绑定到当前 teammate 身份
-        def _run_send_message(to_agent: str, content: str) -> str:
-            # 以队友名义发送(loader 的 run_send_message 固定以 lead 身份发送)
-            message_bus.MESSAGE_BUS.send(name, to_agent, content)
-            return "Sent"
-
-        handlers["send_message"] = _run_send_message
-        handlers["claim_task"] = _run_claim_task
-        handlers["complete_task"] = _run_complete_task
-        handlers["submit_plan"] = partial(handlers["submit_plan"], from_agent=name)
-
-        messages = [{"role": "system", "content": system_prompt}]
+        history: list[dict] = []
         if prompt:
-            messages.append({"role": "user", "content": prompt})
+            history.append({"role": "user", "content": prompt})
 
         while True:
             should_shutdown = False
             for _ in range(10):
                 inbox_messages = message_bus.MESSAGE_BUS.read(name)
                 for msg in inbox_messages:
-                    stopped = handle_inbox_message(name, msg, messages)
+                    stopped = handle_inbox_message(name, msg, history)
                     if stopped:
                         should_shutdown = True
                         break
@@ -194,56 +164,37 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                 if inbox_messages and not should_shutdown:
                     non_protocol = [message for message in inbox_messages if message.get("msg_type") == "message"]
                     if non_protocol:
-                        messages.append({
+                        history.append({
                             "role": "user",
                             "content": f"<inbox_messages>{json.dumps(non_protocol, ensure_ascii=False)}</inbox_messages>",
                         })
 
-                try:
-                    # 模型统一走 shared_model_client（.harness/.settings.json），
-                    # thinking 参数由模型配置决定（get_model_client 已按配置带 extra_body），不再单独指定
-                    response = shared_model_client().get_model_client()(
-                        messages=messages,
-                        tools=tools,
-                        max_tokens=8000,
+                async def _step_once():
+                    prepared = await prepare_messages(history[:], None, sub_model=True)
+                    history[:] = prepared
+                    return await run_agent_step(
+                        history, system_prompt,
+                        client=shared_model_client(),
+                        pool=pool,
+                        tctx=tctx,
+                        max_tokens=CONFIGMANAGER.config.default_max_tokens,
+                        policy=policy,
+                        renderer=renderer,
                     )
+
+                try:
+                    outcome = asyncio.run(_step_once())
                 except Exception:
+                    _LOGGER.exception("[Teammate] model step failed")
                     break
 
-                response_message = response.choices[0].message
-                if not response_message.tool_calls:
-                    messages.append({
-                        "role": "assistant",
-                        "content": response_message.content
-                    })
-                else:
-                    messages.append(response_message)
-                    for tool_call in response_message.tool_calls:
-                        tool_name = tool_call.function.name
-                        tool_args = json.loads(tool_call.function.arguments)
-                        _LOGGER.info(f">   [Call tool] (Teammate: {name}) {tool_name}")
-                        _LOGGER.info(f">   [Tool arguments] (Teammate: {name}) {tool_args}")
+                if outcome.aborted:
+                    # 扩展阻止了本步：不杀队友，落到外层 idle 轮询等任务/邮件
+                    _LOGGER.warning(f"[Teammate] step aborted by extension: {outcome.abort_reason}")
+                    break
 
-                        handler = handlers.get(tool_name)
-                        output = call_tool_handler(handler, tool_args, tool_name)
-                        if tool_name == "submit_plan":
-                            # run_submit_plan 返回 "Plan submitted (req_xxx)"; 命中即关闭
-                            # approval gate, 等待 lead 的 plan_approval_response
-                            match = re.search(r"\((req_\d+)\)", output)
-                            protocol_ctx["waiting_plan"] = match.group(1) if match else output
-
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": str(output),
-                        })
-
-                        _LOGGER.info(f">   [Tool result] (Teammate: {name}) {output[:100]}")
-                        if protocol_ctx["waiting_plan"]:
-                            # Ignore later tool_calls from the same model
-                            # response; they belong after approval, not before.
-                            break
-
+                history.append(outcome.assistant_message)
+                history.extend(outcome.followup_messages)
                 if protocol_ctx["waiting_plan"]:
                     break
 
@@ -253,12 +204,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             if protocol_ctx["waiting_plan"]:
                 continue
 
-            idle_result = idle_poll(name, messages, name, wt_ctx)
+            idle_result = idle_poll(name, history, tctx)
             if idle_result in ("shutdown", "timeout"):
                 break
 
         summary = "Done."
-        for msg in reversed(messages):
+        for msg in reversed(history):
             if isinstance(msg, dict) and msg["role"] == "assistant":
                 summary = msg["content"]
                 break

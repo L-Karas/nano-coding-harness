@@ -125,26 +125,26 @@ def register(api):
 
 | 事件 | 上下文对象（构造参数） | 可写字段 | 控制方法 |
 | --- | --- | --- | --- |
-| `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（主循环为不含 system 的会话视图；子代理为含 system 的本地消息列表）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
+| `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history)`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
 | `after_llm` | `AfterLLMContext(content, tool_calls, finish_reason="", usage=None)` | **`content`**、**`tool_calls`**、**`inject_messages`** | 无 |
 | `before_tool` | `BeforeToolContext(tool_name, args)` | **`args`** | `ctx.block(reason)` |
 | `after_tool` | `AfterToolContext(tool_name, args, result, is_error=False)` | **`result`**、**`inject_messages`** | 无 |
 
 补充说明：
 
-- `messages` / `tool_calls` / `inject_messages` 中的消息是普通 dict（`{"role": ..., "content": ...}`）；`before_llm` 里追加的消息随后会经过 `to_llm_messages()` 裁剪，多余的字段会被忽略。
+- `messages` / `tool_calls` / `inject_messages` 中的消息是普通 dict（`{"role": ..., "content": ...}`）；`before_llm` 里的消息就是即将发出的请求消息（已裁剪），追加的消息需是 API 可接受的普通 dict，不会再被二次裁剪。
 - `tool_calls` 在无工具调用时为空列表（不会为 `None`）。
 - `abort()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` / `block_reason` 字段可读。
 - `finish_reason`、`usage`、`tool_name`、`is_error` 为只读信息，供回调判断，不要写入。
 
 ### 3.3 事件触发时机
 
-| 事件 | 主循环（`core/loop_with_interrupt.py`） | 子代理（`core/sub_agent.py`） |
-| --- | --- | --- |
-| `before_llm` | `prepare_messages` / `update_messages` / `assemble_tool_pool` 之后，`call_llm` 之前 | `prepare_messages` 之后，模型调用之前 |
-| `after_llm` | 完整响应处理之后、写会话之前；`finish_reason == "length"` 的自动扩窗重试与续写恢复路径**不触发** | `streaming_message` 返回后、写入本地消息之前 |
-| `before_tool` | 工具参数 JSON 解析后、旧权限 hook（`pre_tool_call`）之前 | 同左 |
-| `after_tool` | 工具**真正执行完成后**、结果写回会话前 | 工具执行完成后、结果写入本地消息前 |
+| 事件 | 触发时机（`core/agent_step.py`，main / sub-agent / teammate 相同） |
+| --- | --- |
+| `before_llm` | 请求视图（system + history 裁剪）构造后、发出前 |
+| `after_llm` | 流式响应解析后、工具执行前；`finish_reason == "length"` 也会触发，扩窗 / 续写恢复由外层决定 |
+| `before_tool` | 工具参数 JSON 解析后、permission hook（`pre_tool_call`）之前 |
+| `after_tool` | 工具真正执行完成后、结果写入消息前 |
 
 ## 4. 执行语义
 

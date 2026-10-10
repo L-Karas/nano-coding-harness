@@ -6,7 +6,6 @@ Background tasks
 # keep moving.
 """
 import asyncio
-import inspect
 import json
 import re
 import threading
@@ -14,14 +13,11 @@ import threading
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
 from core.log import get_logger
-from core.template import TOOL_ERROR_PREFIX, USER_INTERRUPT_PROMPT
-from core.tools import call_tool_handler
-from core.tools.tool_loader import execute_tool
+from core.runtime_context import ToolContext
+from core.runtime_state import RUNTIME_STATE
+from core.template import USER_INTERRUPT_PROMPT
+from core.tools import ToolPool, ToolResult
 
-BG_COUNTER = 0
-BACKGROUND_TASKS: dict[str, dict] = {}
-BACKGROUND_RESULTS: dict[str, str] = {}
-BACKGROUND_LOCK = threading.Lock()
 _LOGGER = get_logger(__name__)
 
 # 慢命令判定只看命令位置的词(每条 ; && | 分隔的命令的第一个词)，不看参数/路径/字符串里的词。
@@ -65,84 +61,72 @@ def should_run_background(tool_name: str, tool_args: dict) -> bool:
     return bool(tool_args.get("should_run_in_background")) or is_slow_operation(tool_name, tool_args)
 
 
-def _complete_background(bg_id: str, result) -> None:
-    with BACKGROUND_LOCK:
-        BACKGROUND_TASKS[bg_id]["status"] = "completed"
-        BACKGROUND_RESULTS[bg_id] = str(result)
+def _bg_interrupted(tctx: ToolContext | None) -> bool:
+    return bool(tctx and tctx.agent_run and tctx.agent_run.interrupted)
 
 
-def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, handlers: dict, ctx=None, loop=None) -> str:
-    global BG_COUNTER
-    BG_COUNTER += 1
-
-    bg_id = f"bg-{BG_COUNTER:04d}"
+def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, pool: ToolPool,
+                         tctx: ToolContext | None = None, loop=None) -> str:
+    bg_id = RUNTIME_STATE.allocate_background_id()
     tool_args = json.loads(tool_call.function.arguments)
     tool_call_str = f"{tool_call.function.name}({', '.join(f'{k}={v}' for k, v in tool_args.items())})"
+    tool_name = tool_call.function.name
 
     loop = loop or asyncio.get_running_loop()
-    handler = handlers.get(tool_call.function.name)
 
-    with BACKGROUND_LOCK:
-        BACKGROUND_TASKS[bg_id] = {
-            "tool_call_id": tool_call.id,
-            "tool_call": tool_call_str,
-            "status": "running",
-        }
+    RUNTIME_STATE.register_background(bg_id, tool_call_str)
 
     _LOGGER.info(f"[Background Task] {bg_id}: {tool_call_str[:60]}")
 
-    if inspect.iscoroutinefunction(handler):
-        # 协程 handler 直接挂在调用方的 loop 上（call_tools 就跑在 runtime loop 上），
+    if pool.has_native_async(tool_name):
+        # 原生异步工具直接挂在调用方的 loop 上（Agent step 就跑在 runtime loop 上），
         # 免掉一个只用来 fut.result() 空等的 worker 线程。
-        task = loop.create_task(execute_tool(handler, tool_args, tool_call.function.name, ctx))
+        task = loop.create_task(pool.execute(tool_name, tool_args, tctx))
 
         def done(t):
             if t.cancelled():
-                result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else "[Background task cancelled]"
+                result = ToolResult(content=USER_INTERRUPT_PROMPT if _bg_interrupted(tctx)
+                                    else "[Background task cancelled]")
             else:
                 error = t.exception()
-                result = f"{TOOL_ERROR_PREFIX} {type(error).__name__}: {error}" if error else t.result()
-            _complete_background(bg_id, result)
+                result = ToolResult.error(f"{type(error).__name__}: {error}") if error else t.result()
+            RUNTIME_STATE.complete_background(bg_id, result)
 
         task.add_done_callback(done)
-        if ctx:
-            ctx.track(task)  # Esc 时 ctx.cancel() 直接 task.cancel()
+        if tctx and tctx.agent_run:
+            tctx.agent_run.track(task)  # Esc 时 ctx.cancel() 直接 task.cancel()
         return bg_id
 
     def worker():
         try:
-            if ctx and ctx.interrupted:
-                result = USER_INTERRUPT_PROMPT
+            if _bg_interrupted(tctx):
+                result = ToolResult(content=USER_INTERRUPT_PROMPT)
             else:
-                result = call_tool_handler(handler, tool_args, tool_call.function.name)
+                result = pool.execute_sync(tool_name, tool_args, tctx)
         except BaseException as e:
-            result = USER_INTERRUPT_PROMPT if ctx and ctx.interrupted else f"{TOOL_ERROR_PREFIX} {type(e).__name__}: {e}"
-        _complete_background(bg_id, result)
+            result = (ToolResult(content=USER_INTERRUPT_PROMPT) if _bg_interrupted(tctx)
+                      else ToolResult.error(f"{type(e).__name__}: {e}"))
+        RUNTIME_STATE.complete_background(bg_id, result)
 
     threading.Thread(target=worker, daemon=True).start()
     return bg_id
 
 
 def collect_background_results() -> list[str]:
-    with BACKGROUND_LOCK:
-        completed_tasks = [bg_id for bg_id, task in BACKGROUND_TASKS.items() if task["status"] == "completed"]
+    done = RUNTIME_STATE.pop_completed_backgrounds()
+    _LOGGER.info(f"[Collect Background Results] {[item.id for item in done]}")
 
     notifications = []
-    for bg_id in completed_tasks:
-        with BACKGROUND_LOCK:
-            task = BACKGROUND_TASKS.pop(bg_id)
-            output = BACKGROUND_RESULTS.pop(bg_id, "")
+    for item in done:
         # todo: limit output size
-        summary = output
+        summary = item.result.content if item.result is not None else ""
         notifications.append(
             f"<background-task-notification>\n"
-            f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>{task['status']}</status>\n"
-            f"  <tool>{task['tool_call']}</tool>\n"
+            f"  <task_id>{item.id}</task_id>\n"
+            f"  <status>completed</status>\n"
+            f"  <tool>{item.tool_call}</tool>\n"
             f"  <summary>{summary}</summary>\n"
             f"</background-task-notification>"
         )
-
-    _LOGGER.info(f"[Collect Background Results] {completed_tasks}")
 
     return notifications
