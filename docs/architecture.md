@@ -5,15 +5,19 @@
 | 路径 | 职责 |
 | --- | --- |
 | `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
-| `core/loop_with_interrupt.py` | Agent 主循环 `AgentRuntime`：LLM 流式调用、工具分发、中断、`/compact` |
+| `core/loop_with_interrupt.py` | Agent 主循环 `AgentRuntime`：外层骨架（cron / 后台注入、预算、会话落盘、长度恢复）、`/compact`；线程契约（loop / 锁 / 中断）委托 `TurnRunner` |
+| `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
+| `core/agent_step.py` | Agent step：一次模型调用 + 工具派发，main / sub-agent / teammate 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
 | `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑） |
 | `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、hook、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
-| `core/interaction.py` | 域层 → UI 交互端口（permission / clarify）：TUI 导入渲染桥时注册，headless 默认拒绝/取消 |
-| `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `AgentInterrupted` |
+| `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
+| `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |
+| `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
 | `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹） |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
-| `core/context/session/session.py` | `SessionManager`：会话索引、消息落盘、payload 回写 |
-| `core/tools/` | 工具基类、注册表与执行器；`base_tools/`（基础工具）、`extra_tools/`（扩展工具） |
+| `core/context/session/session.py` | `SessionManager`：消息状态的唯一 owner；`Message` 货币、JSON 只在文件边界、只读 `current_session` + `reset()`（ADR-0006） |
+| `core/context/message.py` | `Message` 会话消息类型与 `to_llm_messages` 模型请求视图（兼容 `Message` / dict） |
+| `core/tools/` | 工具基类（schema 字段 + `run`/`arun`）、注册表与 `ToolPool`；`base_tools/`（基础工具）、`extra_tools/`（扩展工具）、`web_search/`（含 `ToolResult` / `ToolContext`） |
 | `core/context/compact/context_compact.py` | 两层上下文压缩（工具结果截断 / 历史摘要）与 token 估算 |
 | `core/context/truncate.py` | 工具输出截断（2000 行 / 50KB 双上限），read 工具与上下文压缩共用 |
 | `core/background_task.py` | 慢工具转后台执行，结果回流注入 |
@@ -36,16 +40,22 @@
 
 1. 取出 cron 队列并作为注入消息入会话，收集后台任务结果注入；
 2. `prepare_messages()` 走上下文预算流水线（先截断工具结果，再按需摘要历史）；
-3. 重建工具池（内置 + MCP）并流式请求模型，实时渲染思考/正文/工具调用增量和 usage；
-4. 逐个执行工具调用（`PreToolUse` hook → 慢工具转后台 → 异步执行 → 渲染 diff/结果），
-   结果写回会话后进入下一轮；
+3. 重建工具池（内置 + MCP），把预算后的 history 交给 `run_agent_step()`；
+4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
+   → 扩展 `after_llm` → 逐个执行工具调用（扩展 `before_tool` → `PreToolUse` hook → 慢工具转后台 → 异步执行
+   → 扩展 `after_tool` → 渲染 diff/结果）；结果写回会话后进入下一轮。工具结局统一为 `ToolResult`（内容 +
+   失败标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
 5. 模型不再请求工具即结束回合。
+
+`run_agent_step()`（`core/agent_step.py`）是三个 agent 共用的唯一实现；子代理与队友各自的外层循环
+（轮次上限 / 阶段标记 / 协议门控 / inbox）只负责 append、调度与结束条件，差异（扩展、permission hooks、
+后台路由、diff 预览、工具执行后的 halt）经 `StepPolicy` 显式化（见 ADR-0003）。
 
 健壮性设计：
 
 - **中断**：`Esc → AgentRuntime.interrupt()` 同时置位 `AgentRunContext.cancelled` 并取消任务，
   取消统一收敛为 `AgentInterrupted`；回合收尾会给未回答的 tool call 补一条中断占位结果，保证消息历史合法。
-- **串行**：`AGENT_LOCK` 保证用户回合、cron 自动回合、`/compact` 三者互斥。
+- **串行**：`TurnRunner` 的锁保证用户回合、cron 自动回合、`/compact` 三者互斥；loop、锁与当前 ctx/task 都收在 `core/turn_runtime.py` 里。
 - **截断恢复**：`finish_reason == "length"` 先把 `max_tokens` 升到 `escalated_max_tokens`
   重试一次，仍截断则追加续写提示（最多 `max_recovery_retries` 次）。
 - **错误重试**：`core/recovery` 按 provider 把异常分类（限流 / 模型过载 / 上下文过长 / 不可恢复），
@@ -71,7 +81,7 @@
 切换模型（`/model`）后立即生效；`compact_threshold` / `reserve_threshold` / `summary_max_tokens`
 等参数说明见 [`configuration.md`](configuration.md#上下文压缩参数)。
 
-`/compact` 走 `AgentRuntime.compact()`：对整个会话做一次全量摘要后替换（中断则不落盘；
+`/compact` 走 `AgentRuntime.run_compact()`：对整个会话做一次全量摘要后替换（中断则不落盘；
 低于压缩阈值 / 未选择模型时不压缩，UI 提示 Nothing to compact）。
 
 ## 已知边界
