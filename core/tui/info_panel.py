@@ -1,7 +1,7 @@
 """右栏信息面板：Todos / Background Tasks / Subagents 分区。
 
-数据源为模块级状态（core.todo / core.background_task / core.sub_agent），由 agent 等线程
-随时写入；面板 1s 轮询同步，有进行中项时 0.1s 轮播字形。分区与条目点击在本部件内处理。"""
+数据源为 RuntimeState 单例的类型化快照（core.runtime_state，ADR-0004）；agent 等线程经具名
+写入口更新，面板 1s 轮询同步，有进行中项时 0.1s 轮播字形。分区与条目点击在本部件内处理。"""
 
 from __future__ import annotations
 
@@ -13,9 +13,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
 
-import core.background_task as _bg  # 模块引用：随 agent 线程写入实时可见
-import core.sub_agent as _sa
-from core.todo import todo as _todo  # todo_write 整体替换 CURRENT_TODOS，须经模块取最新引用
+from core.runtime_state import RUNTIME_STATE, RuntimeSnapshot, RuntimeState
 from core.tui.theme import _SPINNER_FRAMES
 
 _RUNNING_STATUSES = ("in_progress", "running")  # 需要轮播字形的状态
@@ -88,8 +86,10 @@ class _InfoPanel(Vertical):
     SECTIONS = {"todos": "Todos", "bg": "Background Tasks", "subagents": "Subagents"}  # 顺序即上下顺序
     EMPTY = "(Empty)"  # 空分区占位行（各分区同一文案）
 
-    def __init__(self, on_sections_changed: Callable[[bool], None] | None = None, **kwargs) -> None:
+    def __init__(self, state: RuntimeState = RUNTIME_STATE,
+                 on_sections_changed: Callable[[bool], None] | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._state = state  # 读侧只在 snapshot() 上取数，不 import 三个写入方
         self._on_sections_changed = on_sections_changed  # 三区活动状态回传（驱动 App 自动展开/收回）
         self._sig: dict[str, object] = {}  # 各区上次渲染的数据签名
         self._cursor = 0
@@ -116,7 +116,7 @@ class _InfoPanel(Vertical):
             event.stop()
             kind = target.id.removesuffix("-section")
             target.set_class(not target.has_class("-collapsed"), "-collapsed")
-            self._head_text(kind, len(self._items(kind)))
+            self._head_text(kind, len(self._items(kind, self._state.snapshot())))
 
     # ---------- 数据同步 ----------
 
@@ -125,8 +125,9 @@ class _InfoPanel(Vertical):
         最后把三区活动状态回传给构造时注入的回调（驱动 App 自动展开/收回）。"""
         running = False
         non_empty = False
+        snap = self._state.snapshot()
         for kind in self.SECTIONS:
-            items = self._sync_rows(kind)
+            items = self._sync_rows(kind, snap)
             non_empty |= bool(items)
             self._head_text(kind, len(items))
             running |= any(it["status"] in _RUNNING_STATUSES for it in items)
@@ -134,31 +135,28 @@ class _InfoPanel(Vertical):
         if self._on_sections_changed is not None:
             self._on_sections_changed(non_empty)
 
-    def _items(self, kind: str) -> list[dict]:
-        """分区条目快照 [{id, status, text}]。todo_write 整体替换 CURRENT_TODOS 引用、
-        bg 线程持锁改状态，故一律取副本。"""
+    def _items(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
+        """分区条目快照 [{id, status, text}]；展示文案与签名逻辑留在面板。"""
         if kind == "todos":
-            return [{"id": t.content, "status": t.status, "text": t.content}
-                    for t in list(_todo.CURRENT_TODOS)]
+            return [{"id": t.content, "status": t.status, "text": t.content} for t in snap.todos]
         if kind == "subagents":
             # 条目只在子代理运行期间存在（finally 移除）；阶段拼进 text 以触发签名重建
             items = []
-            for aid, info in list(_sa.SUBAGENT_TASKS.items()):
-                label = f"tool: {info['detail']}" if info.get("phase") == "tool" else "thinking"
-                items.append({"id": aid, "status": "running", "phase": info.get("phase"),
-                              "text": f"[{label}]", "expand_text": info.get("description", "")})
+            for sa in snap.subagents:
+                label = f"tool: {sa.detail}" if sa.phase == "tool" else "thinking"
+                items.append({"id": sa.id, "status": "running", "phase": sa.phase,
+                              "text": f"[{label}]", "expand_text": sa.description})
             return items
-        with _bg.BACKGROUND_LOCK:
-            items = []
-            for bid, info in _bg.BACKGROUND_TASKS.items():
-                name, _, args = info.get("tool_call", "").partition("(")
-                items.append({"id": bid, "status": info.get("status"), "text": name,
-                              "expand_text": args.removesuffix(")")})
-            return items
+        items = []
+        for bg in snap.background:
+            name, _, args = bg.tool_call.partition("(")
+            items.append({"id": bg.id, "status": bg.status, "text": name,
+                          "expand_text": args.removesuffix(")")})
+        return items
 
-    def _sync_rows(self, kind: str) -> list[dict]:
+    def _sync_rows(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
         """按最新条目重建 #kind-list（签名未变则跳过，避免 1s 轮询反复重建）；返回本次快照。"""
-        items = self._items(kind)
+        items = self._items(kind, snap)
         sig = tuple((it["id"], it["status"], it["text"]) for it in items)
         if sig == self._sig.get(kind):
             return items

@@ -2,30 +2,16 @@
 任一非空即自动展开；清空后若无手动展开则自动收回；Ctrl+←/→ 调宽，下限即折叠态。"""
 import asyncio
 
-import pytest
 from textual.containers import Vertical
 from textual.widgets import Static
 
-import core.background_task as _bg
-import core.sub_agent as _sa
-from core.todo import todo as _todo
-from core.todo.todo import Todo
+from core.runtime_state import RuntimeState, TodoEntry
 from core.tui.info_panel import _InfoPanel
 from core.tui.ui_textual import ChatApp
 
 
-@pytest.fixture(autouse=True)
-def _clean_panel_sources():
-    """用例前后清空三区数据源：其它测试残留的活动会让 App 启动即自动展开，污染折叠基线。"""
-    def clear() -> None:
-        _todo.CURRENT_TODOS = []
-        with _bg.BACKGROUND_LOCK:
-            _bg.BACKGROUND_TASKS.clear()
-        _sa.SUBAGENT_TASKS.clear()
-
-    clear()
-    yield
-    clear()
+def _app(state: RuntimeState) -> ChatApp:
+    return ChatApp(handle_query=lambda _q: None, runtime_state=state)
 
 
 def _is_collapsed(app: ChatApp) -> bool:
@@ -39,7 +25,7 @@ def _refresh(app: ChatApp) -> None:
 
 def test_panel_starts_collapsed():
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(RuntimeState())
         async with app.run_test():
             assert _is_collapsed(app)
             assert app.query_one("#info-tab-glyph", Static).content == "«"
@@ -48,10 +34,12 @@ def test_panel_starts_collapsed():
 
 
 def test_auto_expands_when_todos_appear():
+    state = RuntimeState()
+
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test():
-            _todo.CURRENT_TODOS = [Todo("write tests", "in_progress")]
+            state.set_todos([TodoEntry("write tests", "in_progress")])
             _refresh(app)
             assert not _is_collapsed(app)
 
@@ -59,11 +47,12 @@ def test_auto_expands_when_todos_appear():
 
 
 def test_auto_expands_when_background_task_appears():
+    state = RuntimeState()
+
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test():
-            with _bg.BACKGROUND_LOCK:
-                _bg.BACKGROUND_TASKS["bg-1"] = {"status": "running", "tool_call": "terminal(pytest)"}
+            state.register_background("bg-1", "terminal(pytest)")
             _refresh(app)
             assert not _is_collapsed(app)
 
@@ -71,10 +60,12 @@ def test_auto_expands_when_background_task_appears():
 
 
 def test_auto_expands_when_subagent_appears():
+    state = RuntimeState()
+
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test():
-            _sa.SUBAGENT_TASKS["sa-1"] = {"description": "explore", "phase": "thinking", "detail": ""}
+            state.register_subagent("sa-1", "explore")
             _refresh(app)
             assert not _is_collapsed(app)
 
@@ -82,13 +73,14 @@ def test_auto_expands_when_subagent_appears():
 
 
 def test_auto_collapses_when_activity_ends():
-    _todo.CURRENT_TODOS = [Todo("task", "in_progress")]
+    state = RuntimeState()
+    state.set_todos([TodoEntry("task", "in_progress")])
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test():
             assert not _is_collapsed(app)  # 启动时已有任务：挂载即自动展开
-            _todo.CURRENT_TODOS = []
+            state.set_todos([])
             _refresh(app)
             assert _is_collapsed(app)
 
@@ -96,8 +88,10 @@ def test_auto_collapses_when_activity_ends():
 
 
 def test_manual_expand_keeps_panel_open_when_empty():
+    state = RuntimeState()
+
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test() as pilot:
             await pilot.click("#info-tab-glyph")  # 空态手动展开
             assert not _is_collapsed(app)
@@ -108,20 +102,21 @@ def test_manual_expand_keeps_panel_open_when_empty():
 
 
 def test_manual_collapse_holds_until_next_activity():
-    _todo.CURRENT_TODOS = [Todo("task", "in_progress")]
+    state = RuntimeState()
+    state.set_todos([TodoEntry("task", "in_progress")])
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test() as pilot:
             assert not _is_collapsed(app)
             await pilot.click("#info-tab-glyph")  # 运行中手动折叠
             assert _is_collapsed(app)
             _refresh(app)
             assert _is_collapsed(app)  # 数据仍非空也不抢回
-            _todo.CURRENT_TODOS = []
+            state.set_todos([])
             _refresh(app)
             assert _is_collapsed(app)
-            _todo.CURRENT_TODOS = [Todo("next", "pending")]
+            state.set_todos([TodoEntry("next", "pending")])
             _refresh(app)
             assert not _is_collapsed(app)  # 下次「全空 → 非空」跳变再自动展开
 
@@ -130,7 +125,7 @@ def test_manual_collapse_holds_until_next_activity():
 
 def test_ctrl_left_expands_from_collapsed_and_widens_to_cap():
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(RuntimeState())
         async with app.run_test():
             assert _is_collapsed(app)
             app.action_widen_info_panel()  # 折叠态 Ctrl+←：展开到默认 20%
@@ -147,7 +142,7 @@ def test_ctrl_left_expands_from_collapsed_and_widens_to_cap():
 
 def test_ctrl_right_narrows_to_collapse_and_back():
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(RuntimeState())
         async with app.run_test():
             app.action_widen_info_panel()  # 展开到 20%
             app.action_narrow_info_panel()  # 20% - 10% 低于下限：收成折叠态
@@ -161,18 +156,19 @@ def test_ctrl_right_narrows_to_collapse_and_back():
 
 
 def test_auto_expand_restores_last_width():
-    _todo.CURRENT_TODOS = [Todo("task", "in_progress")]
+    state = RuntimeState()
+    state.set_todos([TodoEntry("task", "in_progress")])
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
+        app = _app(state)
         async with app.run_test() as pilot:
             for _ in range(3):  # 20 → 30 → 40
                 app.action_widen_info_panel()
             await pilot.click("#info-tab-glyph")  # 手动折叠
             assert _is_collapsed(app)
-            _todo.CURRENT_TODOS = []
+            state.set_todos([])
             _refresh(app)
-            _todo.CURRENT_TODOS = [Todo("again", "pending")]
+            state.set_todos([TodoEntry("again", "pending")])
             _refresh(app)  # 自动展开应回到用户宽度
             assert not _is_collapsed(app) and app._panel_pct == 40
 

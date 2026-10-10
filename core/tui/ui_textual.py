@@ -23,6 +23,7 @@ from textual.widgets import Input, OptionList, Static
 
 import core.tui.render as _render  # run() 把 ChatApp 挂到渲染桥接的 _APP 全局
 from core.context.session import SessionManager
+from core.runtime_state import RUNTIME_STATE, RuntimeState
 from core.tui.commands import _CommandFlow
 from core.tui.footer import _FooterBar
 from core.tui.info_panel import _InfoPanel
@@ -84,13 +85,15 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
                  session_manager: Optional[SessionManager] = None,
                  banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
                  on_interrupt: Optional[Callable[[], None]] = None,
-                 runtime: Any = None) -> None:
+                 runtime: Any = None,
+                 runtime_state: RuntimeState = RUNTIME_STATE) -> None:
         super().__init__(ansi_color=True)  # 按终端调色板显示 ANSI 色，避免与终端主题不一致
         if handle_query is None:
             handle_query, on_interrupt, runtime = _default_agent_turn()
         self._handle = handle_query
         self._interrupt = on_interrupt or (runtime.interrupt if runtime is not None else None)
         self._runtime = runtime
+        self._runtime_state = runtime_state  # 右栏信息面板的数据源（测试可注入 fresh RuntimeState）
         self._manager = session_manager
         self._banner = banner
         self._busy = False
@@ -125,7 +128,8 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
                     tab = Static("«", id="info-tab-glyph")
                     tab.tooltip = "Expand info panel"
                     yield tab
-                yield _InfoPanel(id="info-panel", on_sections_changed=self._sync_info_panel)
+                yield _InfoPanel(id="info-panel", state=self._runtime_state,
+                                 on_sections_changed=self._sync_info_panel)
 
     def on_mount(self) -> None:
         self._prompt().focus()

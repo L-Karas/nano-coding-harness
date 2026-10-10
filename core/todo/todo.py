@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from core.log import get_logger
+from core.runtime_state import RUNTIME_STATE, TodoEntry
 
 _LOGGER = get_logger(__name__)
-CURRENT_TODOS: list["Todo"] = []
 
 
 @dataclass
@@ -44,11 +44,9 @@ def _normalize_todos(todos):
 
 
 def todo_write(todos: list) -> str:
-    global CURRENT_TODOS
-
     todos, error = _normalize_todos(todos)
     if error:
         raise Exception(f"run todo write error: {error}")
-    CURRENT_TODOS = todos
-    _LOGGER.info(f"[Todo Update] updated {len(CURRENT_TODOS)} item(s)")
-    return f"Updated todos. Current todos:\n {CURRENT_TODOS}"
+    RUNTIME_STATE.set_todos([TodoEntry(content=t.content, status=t.status) for t in todos])
+    _LOGGER.info(f"[Todo Update] updated {len(todos)} item(s)")
+    return f"Updated todos. Current todos:\n {todos}"
