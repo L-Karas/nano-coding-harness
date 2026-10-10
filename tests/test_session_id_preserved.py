@@ -35,7 +35,7 @@ def test_id_survives_rewrite_and_fork_still_works(manager):
     old_ids = _ids(manager)
     original_session = manager.current_session
     stripped = manager.load_messages()
-    stripped[2]["content"] = "[Old tool result content cleared. Re-run if needed.]"  # micro_compact 类改动
+    stripped[2].content = "[Old tool result content cleared. Re-run if needed.]"  # micro_compact 类改动
     manager.update_messages(stripped)
 
     assert _ids(manager) == old_ids
@@ -51,7 +51,7 @@ def test_explicit_id_wins_over_old(manager):
     """入参显式携带 id 时以入参为准，旧值不覆盖新值。"""
     _seed(manager)
     stripped = manager.load_messages()
-    stripped[0]["id"] = "message-explicit"
+    stripped[0].id = "message-explicit"
     manager.update_messages(stripped)
 
     assert _ids(manager)[0] == "message-explicit"

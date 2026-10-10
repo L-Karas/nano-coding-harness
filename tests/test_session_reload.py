@@ -20,7 +20,7 @@ def test_reload_append_created_session(manager):
     manager.add_message({"role": "assistant", "content": "a1"})
     sid = manager.current_session
 
-    manager.current_session = ""  # 绕过内存短路，强制从文件重读
+    manager.reset()  # 绕过内存短路，强制从文件重读
     reloaded = manager.load_session(sid)
     assert reloaded is not None
     assert [(m.role, m.content) for m in reloaded.messages] == [("user", "u1"), ("assistant", "a1")]

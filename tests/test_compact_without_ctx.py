@@ -70,7 +70,9 @@ def test_compact_history_uses_sub_model_client(monkeypatch):
     result, compacted = asyncio.run(compact_mod.compact_history([{"role": "user", "content": "hi"}],
                                                                 auto_compact=False, sub_model=True))
     assert compacted is True
-    assert result == [{"role": "user", "content": "<compacted_messages>\nsummary\n</compacted_messages>"}]
+    assert len(result) == 1
+    assert result[0].role == "user"
+    assert result[0].content == "<compacted_messages>\nsummary\n</compacted_messages>"
 
 
 def test_find_index_to_split_uses_passed_reserve_budget():

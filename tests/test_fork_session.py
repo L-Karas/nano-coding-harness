@@ -1,13 +1,12 @@
 """fork 链路（/fork 依赖）：load_user_messages 只取用户消息；fork_session 取选中消息之前的
-前缀并落盘（重读不丢历史）、排除选中消息、标题 "[Fork] "+内容（MESSAGE_PREVIEW_CHARS 截断）；
+前缀并落盘（重读不丢历史）、排除选中消息、标题 "[Fork] "+内容（_TITLE_CHARS 截断）；
 选中首条消息（前缀为空）不建会话文件/索引；未知 id 返回 None 且不动当前会话。"""
 import json
 
 import pytest
 
 import core.context.session.session as session_module
-from core.context.session import MESSAGE_PREVIEW_CHARS
-from core.context.session.session import SessionManager
+from core.context.session.session import SessionManager, _TITLE_CHARS as MESSAGE_PREVIEW_CHARS
 
 
 @pytest.fixture
@@ -27,7 +26,7 @@ def _seed(manager, contents):
 
 def _read_back(manager, session_id):
     """清空当前会话指针后 load_session：绕过内存短路，强制从文件重读"""
-    manager.current_session = ""
+    manager.reset()
     return manager.load_session(session_id)
 
 

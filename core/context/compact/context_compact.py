@@ -12,6 +12,7 @@ from functools import wraps
 from core.client import shared_model_client, shared_sub_model_client
 from core.config import TOOL_RESULTS_DIR, CONFIGMANAGER
 from core.context import to_llm_messages
+from core.context.message import Message, message_get, message_set
 from core.context.token import estimate_size
 from core.context.truncate import truncate_tool_output
 from core.log.log import get_logger
@@ -66,7 +67,7 @@ def _tool_names_by_call_id(messages: list) -> dict[str, str]:
     """assistant.tool_calls → {tool_call_id: 工具名}；工具结果消息本身不带工具名字段。"""
     names: dict[str, str] = {}
     for message in messages:
-        for tool_call in message.get("tool_calls") or []:
+        for tool_call in message_get(message, "tool_calls") or []:
             call_id = tool_call.get("id", "")
             name = (tool_call.get("function") or {}).get("name", "")
             if call_id:
@@ -98,17 +99,17 @@ def truncate_large_tool_outputs(messages: list) -> list:
     """
     tool_names = _tool_names_by_call_id(messages)
     for message in messages:
-        if message.get("role", "") != "tool":
+        if message_get(message, "role", "") != "tool":
             continue
-        content = message.get("content", "")
+        content = message_get(message, "content", "")
         if _is_persisted_output(content):
             continue
-        if tool_names.get(message.get("tool_call_id", "")) == READ_FILE_TOOL_NAME:
+        if tool_names.get(message_get(message, "tool_call_id", "")) == READ_FILE_TOOL_NAME:
             continue
         truncated_output, was_truncated = truncate_tool_output(content)
         if was_truncated:
-            message["content"] = persist_tool_output(message.get("tool_call_id", ""), content,
-                                                     preview=truncated_output)
+            message_set(message, "content", persist_tool_output(message_get(message, "tool_call_id", ""), content,
+                                                                preview=truncated_output))
 
     return messages
 
@@ -126,7 +127,7 @@ def find_index_to_split(messages: list, reserve_threshold: int) -> int:
     for i in range(n - 1, -1, -1):
         total += estimate_size(messages[i:i + 1])
         suffix_tokens[i] = total
-        if messages[i]["role"] == "user":
+        if message_get(messages[i], "role") == "user":
             user_index.append(i)
     user_index.reverse()
 
@@ -137,7 +138,7 @@ def find_index_to_split(messages: list, reserve_threshold: int) -> int:
     # 任意单个 turn 均大于 reserve_threshold：从最后一个 turn 开始找可切分的 assistant 下标
     end = user_index[-1] if user_index else 0
     while end < n:
-        if suffix_tokens[end] <= reserve_threshold and messages[end]["role"] == "assistant":
+        if suffix_tokens[end] <= reserve_threshold and message_get(messages[end], "role") == "assistant":
             return end
         end += 1
 
@@ -203,7 +204,7 @@ async def compact_history(messages: list, ctx=None, auto_compact: bool = True,
     else:
         summary = await summarize_history(messages, ctx, sub_model)
     compacted_messages = [
-        {"role": "user", "content": f"<compacted_messages>\n{summary}\n</compacted_messages>"}
+        Message(role="user", content=f"<compacted_messages>\n{summary}\n</compacted_messages>")
     ] + (messages[split_index:] if auto_compact else [])
     return compacted_messages, True
 

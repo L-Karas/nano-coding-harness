@@ -199,7 +199,7 @@ class _CommandFlow:
             self._run_compact()
         elif cmd == "/new":
             if self._manager is not None:
-                self._manager.current_session = ""  # 延迟建会话：下条消息到达时自动创建
+                self._manager.reset()  # 延迟建会话：下条消息到达时自动创建
             self._clear_cards()
         else:
             self._send_user_query(query)
@@ -257,7 +257,7 @@ class _CommandFlow:
     # ---------- 手动压缩（/compact） ----------
 
     def _run_compact(self) -> None:
-        """后台线程持 AGENT_LOCK 调 AgentRuntime.compact（与 agent 回合串行）。"""
+        """后台线程调 AgentRuntime.run_compact（与 agent 回合串行）。"""
         if self._runtime is None:
             render_background_notification("AgentRuntime not connected — /compact unavailable",
                                            title="⚠️ Compact")
@@ -273,17 +273,15 @@ class _CommandFlow:
         self._spawn_worker(lambda: self._compact_worker(self._runtime), "agent-compact", "⚠️ Compact Error")
 
     def _compact_worker(self, runtime: Any) -> None:
-        """压缩线程主体：AGENT_LOCK 在协程外取（协程内取会阻塞事件循环，与持锁等待该循环的
-        cron 线程死等）；submit 阻塞至完成。Esc 可中断：中断则不落会话，历史保持原样。
+        """压缩线程主体：run_compact() 在锁内提交并在 runtime 事件循环上跑完（阻塞）。
+        Esc 可中断：中断则不落会话，历史保持原样。
         compact 返回 False（低于阈值 / 未选模型）时只提示未压缩，不重放历史。"""
-        from core.loop_with_interrupt import AGENT_LOCK  # 延迟导入：离线/冒烟环境未装 openai
-        with AGENT_LOCK:
-            try:
-                compacted = runtime.submit(runtime.compact())
-            except AgentInterrupted:  # submit 把 ctx/task 两路取消统一成 AgentInterrupted
-                render_background_notification("Compaction interrupted — history unchanged.",
-                                               title="⏹ Compact")
-                return
+        try:
+            compacted = runtime.run_compact()
+        except AgentInterrupted:  # 取消统一成 AgentInterrupted
+            render_background_notification("Compaction interrupted — history unchanged.",
+                                           title="⏹ Compact")
+            return
         if not compacted:
             render_background_notification("Nothing to compact — session is below the compaction "
                                            "threshold (or no model is selected).", title="🗜 Compact")

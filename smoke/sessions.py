@@ -21,6 +21,9 @@ async def run(app, pilot) -> None:
             self.created += 1
             self.current_session = f"session-new-{self.created}.jsonl"
 
+        def reset(self):
+            self.current_session = ""
+
     fake = _FakeMgr()
     app._manager = fake
     prompt.text = "/new"

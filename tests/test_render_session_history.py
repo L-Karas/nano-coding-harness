@@ -1,6 +1,7 @@
 """render_session_history 回放顺序：一条助手消息的多个 tool_call 应与各自 tool 结果交错渲染。"""
 import core.tui.render as render
-from core.context.session.session import Message, Session
+from core.context.message import Message
+from core.context.session.session import Session
 
 
 def _capture(monkeypatch):

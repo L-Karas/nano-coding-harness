@@ -38,8 +38,8 @@ def test_usage_survives_rewrite(manager):
     """prepare_messages / compact 类回写：micro_compact 改动正文后统计不得清零。"""
     _seed(manager)
     messages = manager.load_messages()
-    assert messages[1]["usage"] == USAGE
-    messages[-1]["content"] = "[Old tool result content cleared. Re-run if needed.]"  # micro_compact 行为
+    assert messages[1].usage == USAGE
+    messages[-1].content = "[Old tool result content cleared. Re-run if needed.]"  # micro_compact 行为
     manager.update_messages(messages)
 
     assert _assistant_usage(manager) == USAGE
@@ -50,7 +50,7 @@ def test_explicit_usage_wins_over_old(manager):
     """入参显式携带 usage 时以入参为准。"""
     _seed(manager)
     messages = manager.load_messages()
-    messages[1]["usage"] = USAGE | {"prompt_tokens": 999}
+    messages[1].usage = USAGE | {"prompt_tokens": 999}
     manager.update_messages(messages)
 
     assert _assistant_usage(manager)["prompt_tokens"] == 999

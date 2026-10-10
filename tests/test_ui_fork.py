@@ -1,4 +1,4 @@
-"""新增 /fork 指令：指令表紧跟 /compact；预览/标题截断共用 core.context.session.MESSAGE_PREVIEW_CHARS；
+"""新增 /fork 指令：指令表紧跟 /compact；预览宽度由 TUI 自持、fork 标题由存储侧截断；
 选中用户消息 → fork_session 分叉新会话 + 重放历史 + 原文填回输入栏；
 无 SessionManager / 回合进行中 / 无用户消息时只提示，不弹窗。
 
@@ -9,8 +9,7 @@ from types import SimpleNamespace
 from rich.console import Console
 
 import core.tui.commands as commands
-from core.context.session import MESSAGE_PREVIEW_CHARS
-from core.tui.screens.fork import ForkScreen, _preview
+from core.tui.screens.fork import ForkScreen, _preview, _FORK_PREVIEW_CHARS as MESSAGE_PREVIEW_CHARS
 from core.tui.ui_textual import ChatApp
 from core.tui.utils import SLASH_COMMANDS
 

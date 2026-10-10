@@ -33,8 +33,8 @@ def test_payload_survives_rewrite(manager):
     """compact 类回写：micro_compact 改动正文后 diff 不得丢。"""
     _seed(manager)
     messages = manager.load_messages()  # 模拟 compact / prepare_messages 的入参来源
-    assert messages[-1]["payload"] == [["+", 1, "line"], ["-", 2, "old"]]
-    messages[-1]["content"] = "[Old tool result content cleared. Re-run if needed.]"  # micro_compact 行为
+    assert messages[-1].payload == [["+", 1, "line"], ["-", 2, "old"]]
+    messages[-1].content = "[Old tool result content cleared. Re-run if needed.]"  # micro_compact 行为
     manager.update_messages(messages)
 
     persisted = manager.load_session(manager.current_session)
