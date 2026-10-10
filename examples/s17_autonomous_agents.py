@@ -161,8 +161,14 @@ def get_system_prompt(context: dict) -> str:
 # ── MessageBus (from s15) ──
 
 class MessageBus:
-    def send(self, from_agent: str, to_agent: str, content: str,
-             msg_type: str = "message", metadata: dict = None):
+    def send(
+        self,
+        from_agent: str,
+        to_agent: str,
+        content: str,
+        msg_type: str = "message",
+        metadata: dict = None,
+    ):
         msg = {
             "from_agent": from_agent,
             "to_agent": to_agent,
@@ -261,11 +267,22 @@ def _teammate_submit_plan(from_agent: str, plan: str) -> str:
         status="pending",
         payload=plan,
     )
-    BUS.send(from_agent, "lead", plan, "plan_approval_request", {"request_id": request_id})
+    BUS.send(
+        from_agent,
+        "lead",
+        plan,
+        "plan_approval_request",
+        {"request_id": request_id},
+    )
     return f"Plan submitted ({request_id}). Waiting for approval..."
 
 
-def idle_poll(agent_name: str, messages: list[dict], name: str, role: str) -> str:
+def idle_poll(
+    agent_name: str,
+    messages: list[dict],
+    name: str,
+    role: str,
+) -> str:
     """Poll for 60s, Return 'work', 'shutdown', or 'timeout'."""
     for _ in range(IDLE_TIMEOUT // IDLE_POLL_INTERVAL_SECS):
         time.sleep(IDLE_POLL_INTERVAL_SECS)
@@ -278,8 +295,11 @@ def idle_poll(agent_name: str, messages: list[dict], name: str, role: str) -> st
                 if msg.get("msg_type") == "shutdown_request":
                     request_id = msg.get("metadata", {}).get("request_id", "")
                     BUS.send(
-                        name, "lead", "Shutting down gracefully.",
-                        "shutdown_response", {"request_id": request_id, "approve": True}
+                        name,
+                        "lead",
+                        "Shutting down gracefully.",
+                        "shutdown_response",
+                        {"request_id": request_id, "approve": True},
                     )
                     print(f"  \033[35m[Protocol] {name} approved shutdown in idle ({request_id})\033[0m")
                     return "shutdown"
@@ -331,8 +351,13 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         request_id = metadata.get("request_id", "")
 
         if msg_type == "shutdown_request":
-            BUS.send(name, "lead", "Shutting down gracefully.",
-                     "shutdown_response", {"request_id": request_id, "approve": True})
+            BUS.send(
+                name,
+                "lead",
+                "Shutting down gracefully.",
+                "shutdown_response",
+                {"request_id": request_id, "approve": True},
+            )
             print(f"  \033[35m[Protocol] {name} approved shutdown ({request_id})\033[0m")
             return True
 
@@ -524,7 +549,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                 break
 
             # IDLE phase
-            idle_result = idle_poll(name, messages, name, role)
+            idle_result = idle_poll(
+                name,
+                messages,
+                name,
+                role,
+            )
             if idle_result == "shutdown":
                 break
             if idle_result == "timeout":
@@ -536,7 +566,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             if msg["role"] == "assistant" and msg.get("content"):
                 summary = msg["content"]
                 break
-        BUS.send(name, "lead", summary, msg_type="result")
+        BUS.send(
+            name,
+            "lead",
+            summary,
+            msg_type="result",
+        )
         _activate_teammates.pop(name)
         print(f"  \033[32m[Teammate] {name} finished\033[0m")
 
@@ -557,8 +592,13 @@ def run_request_shutdown(teammate: str) -> str:
         status="pending",
         payload=""
     )
-    BUS.send("lead", teammate, "Please shut down gracefully.",
-             "shutdown_request", {"request_id": request_id})
+    BUS.send(
+        "lead",
+        teammate,
+        "Please shut down gracefully.",
+        "shutdown_request",
+        {"request_id": request_id},
+    )
     print(f"  \033[35m[Protocol] shutdown_request → {teammate} "
           f"({request_id})\033[0m")
     return f"Shutdown request sent to {teammate} ({request_id})."
@@ -579,8 +619,13 @@ def run_review_plan(request_id: str, approve: bool, feedback: str = "") -> str:
         return f"Request id {request_id} already {state.status}."
 
     state.status = "approved" if approve else "rejected"
-    BUS.send("lead", state.sender, feedback or ("Approved" if approve else "Rejected"),
-             "plan_approval_request", {"request_id": request_id, "approve": approve})
+    BUS.send(
+        "lead",
+        state.sender,
+        feedback or ("Approved" if approve else "Rejected"),
+        "plan_approval_request",
+        {"request_id": request_id, "approve": approve},
+    )
     icon = "✓" if approve else "✗"
     print(f"  \033[32m[Protocol] plan {icon} ({request_id})\033[0m")
     return f"Plan {'approved' if approve else 'rejected'} ({request_id})."

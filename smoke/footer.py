@@ -16,7 +16,12 @@ async def run(app, pilot) -> None:
             return self._tokens
 
     class _FakeModelState:
-        def __init__(self, provider: str, model: str, level: str):
+        def __init__(
+            self,
+            provider: str,
+            model: str,
+            level: str,
+        ):
             self.current_provider = provider
             self.current_model = model
             self.current_thinking_level = level

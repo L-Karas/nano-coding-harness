@@ -9,7 +9,12 @@ from mcp.client.session_group import SseServerParameters, StreamableHttpParamete
 import core.mcp.mcp_client as mcp_client
 
 
-def _configure(monkeypatch, tmp_path, name, config):
+def _configure(
+    monkeypatch,
+    tmp_path,
+    name,
+    config,
+):
     config_file = tmp_path / ".mcp.json"
     config_file.write_text('{"mcpServers": {}}', encoding="utf-8")
     monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", config_file)
@@ -23,7 +28,12 @@ def test_configure_accepts_stdio_and_url_transports(monkeypatch, tmp_path):
     for name, config in (("stdio", {"command": "npx", "args": ["-y", "pkg"]}),
                          ("sse", {"type": "sse", "url": "http://x"}),
                          ("http", {"type": "streamable_http", "url": "http://x"})):
-        ok, message, written = _configure(monkeypatch, tmp_path, name, config)
+        ok, message, written = _configure(
+            monkeypatch,
+            tmp_path,
+            name,
+            config,
+        )
         assert ok, (name, message)
         assert written["mcpServers"][name] == config
 
@@ -37,7 +47,12 @@ def test_configure_accepts_optional_transport_keys(monkeypatch, tmp_path):
                              "headers": {"Authorization": "Bearer t"}, "timeout": 7.5}),
             ("http-headers", {"type": "streamable_http", "url": "http://x",
                               "headers": {"Authorization": "Bearer t"}, "timeout": 12})):
-        ok, message, written = _configure(monkeypatch, tmp_path, name, config)
+        ok, message, written = _configure(
+            monkeypatch,
+            tmp_path,
+            name,
+            config,
+        )
         assert ok, (name, message)
         assert written["mcpServers"][name] == config
 
@@ -66,6 +81,11 @@ def test_configure_rejects_invalid_shape_without_writing(monkeypatch, tmp_path):
                          ("bad-type", {"type": "stdio", "url": "http://x"}),
                          ("unhashable-type", {"type": [], "url": "http://x"}),
                          ("extra-key", {"type": "sse", "url": "http://x", "x": 1})):
-        ok, message, written = _configure(monkeypatch, tmp_path, name, config)
+        ok, message, written = _configure(
+            monkeypatch,
+            tmp_path,
+            name,
+            config,
+        )
         assert not ok and message == "MCP server config invalid", (name, message)
         assert name not in written["mcpServers"], "非法配置不应落盘"

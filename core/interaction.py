@@ -29,14 +29,17 @@ def register_interaction(*, ask_permission: Callable[[str], str] | None = None,
         _ask_clarify = ask_clarify
 
 
-def register_render(*, stream_assistant_response: Callable[[str], None] | None = None,
-                    render_tool_call: Callable[[str, Any], None] | None = None,
-                    render_tool_result: Callable[[str, bool], None] | None = None,
-                    render_tool_result_diff: Callable[[list], None] | None = None,
-                    render_background_notification: Callable[[str, str], None] | None = None,
-                    render_thinking_status: Callable[[str], ContextManager] | None = None,
-                    render_working_status: Callable[[str], ContextManager] | None = None,
-                    render_scope: Callable[[], ContextManager] | None = None) -> None:
+def register_render(
+    *,
+    stream_assistant_response: Callable[[str], None] | None = None,
+    render_tool_call: Callable[[str, Any], None] | None = None,
+    render_tool_result: Callable[[str, bool], None] | None = None,
+    render_tool_result_diff: Callable[[list], None] | None = None,
+    render_background_notification: Callable[[str, str], None] | None = None,
+    render_thinking_status: Callable[[str], ContextManager] | None = None,
+    render_working_status: Callable[[str], ContextManager] | None = None,
+    render_scope: Callable[[], ContextManager] | None = None,
+) -> None:
     """TUI 注入渲染实现；只覆盖传入的项，重复注册幂等。"""
     global _stream_assistant_response, _render_tool_call, _render_tool_result, _render_tool_result_diff
     global _render_background_notification, _render_thinking_status, _render_working_status, _render_scope

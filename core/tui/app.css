@@ -349,10 +349,10 @@ ModalScreen {
 
 /* ── /login 弹窗：菜单 / 注销列表随内容收缩高度（同 #effort-picker 思路）；注册表单逐行字段 ──
    定宽 = 最宽行（提示行）cell 数 + padding 4 + border 2，文案写死在 screens/login.py，
-   改动时同步此常量：#login-picker 41→47；注册表单 48→54；注销列表 46→52 */
-#login-picker { width: 47; height: auto; max-height: 100%; }
+   改动时同步此常量：#login-picker 47→53；注册表单 48→54；注销列表 48→54 */
+#login-picker { width: 53; height: auto; max-height: 100%; }
 #reg-provider-picker, #reg-model-picker { width: 54; height: auto; max-height: 100%; }
-#unreg-provider-picker, #unreg-model-picker { width: 52; height: auto; max-height: 100%; }
+#unreg-provider-picker, #unreg-model-picker { width: 54; height: auto; max-height: 100%; }
 #login-list, #unreg-provider-list, #unreg-model-list { border: none; background: transparent; margin-top: 1; }
 .field-row { margin-top: 1; }
 /* 下拉浮层：圆角边框 + 背景同弹窗底色（视觉透明又不透出下层字段文字）；
@@ -437,11 +437,11 @@ ModalScreen {
 }
 
 /* ── /effort 弹窗：仅标题 + 标签排 + 提示行，故比通用 .picker 小一圈 ──
-   定宽 46 = 最宽行（提示行）40 + padding 4 + border 2；文案写死在 screens/model.py
+   定宽 48 = 最宽行（提示行）42 + padding 4 + border 2；文案写死在 screens/model.py
    的 EffortScreen.compose，
    改动时同步此常量（smoke 有宽度断言）。居中同样由 CSS 承担：Tabs 内部默认
    min-width:100% 会撑满父宽，需逐级改回内容自适应，再由 #tabs-scroll 居中 */
-#effort-picker { width: 46; height: auto; max-height: 100%; }
+#effort-picker { width: 48; height: auto; max-height: 100%; }
 #effort-tabs { margin-top: 1; }
 #effort-tabs #tabs-scroll { align: center middle; }
 #effort-tabs #tabs-list-bar,

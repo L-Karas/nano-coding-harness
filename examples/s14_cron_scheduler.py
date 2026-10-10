@@ -219,7 +219,12 @@ _last_context_key, _last_prompt = None, None
 def get_system_prompt(context: dict) -> str:
     global _last_context_key, _last_prompt
 
-    key = json.dumps(context, sort_keys=True, ensure_ascii=False, default=str)
+    key = json.dumps(
+        context,
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
 
     if key == _last_context_key and _last_prompt:
         return _last_prompt
@@ -500,8 +505,12 @@ def load_durable_jobs():
         pass
 
 
-def schedule_job(cron_expression: str, prompt: str, recurring: bool = True,
-                 durable: bool = False) -> Optional[CronJob]:
+def schedule_job(
+    cron_expression: str,
+    prompt: str,
+    recurring: bool = True,
+    durable: bool = False,
+) -> Optional[CronJob]:
     """Register a new cron job. Returns CronJob or error string."""
     err = validate_cron(cron_expression)
     if err:
@@ -587,8 +596,18 @@ print("  \033[35m[cron] Scheduler thread started\033[0m")
 
 
 # ---- Cron Tools ----
-def run_schedule_cron(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> str:
-    result = schedule_job(cron_expression, prompt, recurring, durable)
+def run_schedule_cron(
+    cron_expression: str,
+    prompt: str,
+    recurring: bool = True,
+    durable: bool = True,
+) -> str:
+    result = schedule_job(
+        cron_expression,
+        prompt,
+        recurring,
+        durable,
+    )
     if isinstance(result, str):
         return f"[Error] {result}"
 

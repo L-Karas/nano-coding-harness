@@ -12,8 +12,12 @@ def test_login_model_saves_context_length_and_max_output(tmp_path, monkeypatch):
     monkeypatch.setitem(model._PROVIDER_AUTH, "smoke-provider", {"api_key": ""})
     monkeypatch.setitem(model._MODEL_LIST, "smoke-provider", {"base_url": "", "model_list": {}})
 
-    assert model.login_model("smoke-provider", "smoke-model",
-                             context_length=128000, max_output=32000)
+    assert model.login_model(
+        "smoke-provider",
+        "smoke-model",
+        context_length=128000,
+        max_output=32000,
+    )
 
     stored = json.loads(custom_file.read_text(encoding="utf-8"))
     assert stored["smoke-provider"]["model_list"]["smoke-model"]["context_length"] == 128000

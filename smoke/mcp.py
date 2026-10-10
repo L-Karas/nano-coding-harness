@@ -25,7 +25,7 @@ async def run(app, pilot) -> None:
     prompt = prompt_of(app)
 
     # /mcp：MCPServersScreen 列 server 名（● 绿色加粗）；Enter 再开 MCPToolsScreen 看该 server
-    # 工具（行格式同 /skills）；Insert 弹表单配置窗；Delete 原地确认后删除；无 server 时开空窗+Insert 引导
+    # 工具（行格式同 /skills）；Insert 弹表单配置窗；Delete 原地确认后删除；无 server 时开空窗（提示行含 Insert 入口），不弹通知
     import core.mcp.mcp_client as _mcp_mod
     _mcp_orig = _mcp_mod.get_mcp_server_list  # 打桩取数，不真连 server
     _mcp_servers = {
@@ -291,11 +291,8 @@ async def run(app, pilot) -> None:
     assert isinstance(app.screen_stack[-1], MCPServersScreen), "无 server 时应开空窗（可在窗内 Insert 配置）"
     empty_lst = app.screen_stack[-1].query_one("#mcp-list", OptionList)
     assert empty_lst.option_count == 0, "空 server 列表不应有行"
-    assert any("No MCP servers" in n.message for n in app._notifications), \
-        [n.message for n in app._notifications]  # 空态走 Toast，不挤提示行
-    empty_toasts = [n.message for n in app._notifications if "No MCP servers" in n.message]
-    # 本次开窗只弹一次（on_mount 的 MRO 派发 + 显式 super 曾重复；删空时的那次已计入基线）
-    assert len(empty_toasts) - no_server_toasts_before == 1, empty_toasts
+    assert sum("No MCP servers" in n.message for n in app._notifications) == no_server_toasts_before, \
+        [n.message for n in app._notifications]  # 空窗不弹通知（Insert 入口已在提示行）
     # 空窗里 Insert 照样能配 server：弹配置窗，Esc 回列表，再 Esc 关闭
     await pilot.press("insert")
     await settle(pilot, 10)
@@ -307,4 +304,4 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert not isinstance(app.screen_stack[-1], MCPServersScreen), "Esc 未关闭 MCPServersScreen"
     _mcp_mod.get_mcp_server_list = _mcp_orig  # 复原
-    print("[smoke] /mcp OK: server list (content-sized), tools list, config form (args/headers & type scrollbars match /sessions & /settings), Delete confirms then unconfigures (window stays open when emptied), empty list configurable window")
+    print("[smoke] /mcp OK: server list (content-sized), tools list, config form (args/headers & type scrollbars match /sessions & /settings), Delete confirms then unconfigures (window stays open when emptied), empty list configurable window (no notification)")

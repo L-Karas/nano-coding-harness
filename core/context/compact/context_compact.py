@@ -181,8 +181,12 @@ async def summarize_history(messages: list, ctx=None, sub_model: bool = False) -
 
 
 @log_compact_step
-async def compact_history(messages: list, ctx=None, auto_compact: bool = True,
-                          sub_model: bool = False) -> tuple[list, bool]:
+async def compact_history(
+    messages: list,
+    ctx=None,
+    auto_compact: bool = True,
+    sub_model: bool = False,
+) -> tuple[list, bool]:
     """压缩历史消息；阈值/保留预算随当前模型（主代理或子代理）动态解析。
 
     Returns:

@@ -108,7 +108,13 @@ class MemoryManager:
 
         return "\n".join(sections)
 
-    def save_memory(self, name: str, description: str, mem_type: str, content: str) -> str:
+    def save_memory(
+        self,
+        name: str,
+        description: str,
+        mem_type: str,
+        content: str,
+    ) -> str:
         """
         Save a memory to disk and update the index.
         Args:
@@ -364,8 +370,18 @@ class DreamConsolidator:
 memory_manager = MemoryManager()
 
 
-def run_save_memory(name: str, description: str, mem_type: str, content: str) -> str:
-    return memory_manager.save_memory(name, description, mem_type, content)
+def run_save_memory(
+    name: str,
+    description: str,
+    mem_type: str,
+    content: str,
+) -> str:
+    return memory_manager.save_memory(
+        name,
+        description,
+        mem_type,
+        content,
+    )
 
 
 TOOL_HANDLERS = BASE_TOOL_HANDLERS | {

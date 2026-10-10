@@ -74,7 +74,12 @@ def _streamer(responses):
     return fake_stream
 
 
-def _prepare_runtime(monkeypatch, mgr, responses, execute):
+def _prepare_runtime(
+    monkeypatch,
+    mgr,
+    responses,
+    execute,
+):
     """responses 为 (content, reasoning, tool_calls, finish_reason, usage) 列表。"""
     calls = {"llm": [], "tools": []}
 
@@ -102,7 +107,12 @@ def _prepare_runtime(monkeypatch, mgr, responses, execute):
 
 def test_before_llm_abort_ends_turn_without_model_call(monkeypatch):
     mgr = _Mgr()
-    runtime, calls = _prepare_runtime(monkeypatch, mgr, [], "unused")
+    runtime, calls = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [],
+        "unused",
+    )
     add_hook("before_llm", lambda ctx: ctx.abort("policy"), "test")
     runtime.run_turn()
     assert calls["llm"] == []
@@ -111,7 +121,12 @@ def test_before_llm_abort_ends_turn_without_model_call(monkeypatch):
 
 def test_before_llm_mutation_reaches_model(monkeypatch):
     mgr = _Mgr()
-    runtime, calls = _prepare_runtime(monkeypatch, mgr, [("answer", "", [], "stop", None)], "unused")
+    runtime, calls = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [("answer", "", [], "stop", None)],
+        "unused",
+    )
     add_hook("before_llm", lambda ctx: ctx.messages.append({"role": "user", "content": "injected"}), "test")
     runtime.run_turn()
     assert any(m["content"] == "injected" for m in calls["llm"][0]["messages"])
@@ -119,7 +134,12 @@ def test_before_llm_mutation_reaches_model(monkeypatch):
 
 def test_after_llm_rewrites_content_and_injects(monkeypatch):
     mgr = _Mgr()
-    runtime, _ = _prepare_runtime(monkeypatch, mgr, [("original", "", [], "stop", None)], "unused")
+    runtime, _ = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [("original", "", [], "stop", None)],
+        "unused",
+    )
 
     def hook(ctx):
         ctx.content = "rewritten"
@@ -133,9 +153,13 @@ def test_after_llm_rewrites_content_and_injects(monkeypatch):
 
 def test_before_tool_block_writes_result_and_skips_execution(monkeypatch):
     mgr = _Mgr()
-    runtime, calls = _prepare_runtime(monkeypatch, mgr,
-                                      [("", "", [TOOL_CALL], "tool_calls", None),
-                                       ("done", "", [], "stop", None)], "unused")
+    runtime, calls = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [("", "", [TOOL_CALL], "tool_calls", None),
+                                       ("done", "", [], "stop", None)],
+        "unused",
+    )
     add_hook("before_tool", lambda ctx: ctx.block("no shell"), "test")
     runtime.run_turn()
     assert calls["tools"] == []
@@ -145,9 +169,13 @@ def test_before_tool_block_writes_result_and_skips_execution(monkeypatch):
 
 def test_before_tool_args_mutation_reaches_executor_and_permission(monkeypatch):
     mgr = _Mgr()
-    runtime, calls = _prepare_runtime(monkeypatch, mgr,
-                                      [("", "", [TOOL_CALL], "tool_calls", None),
-                                       ("done", "", [], "stop", None)], "raw")
+    runtime, calls = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [("", "", [TOOL_CALL], "tool_calls", None),
+                                       ("done", "", [], "stop", None)],
+        "raw",
+    )
     seen = []
     monkeypatch.setattr(step_mod, "trigger_hooks", lambda event, tool_call: seen.append(tool_call) or None)
     add_hook("before_tool", lambda ctx: ctx.args.update({"command": "ls -la"}), "test")
@@ -158,9 +186,13 @@ def test_before_tool_args_mutation_reaches_executor_and_permission(monkeypatch):
 
 def test_after_tool_result_rewrite_and_inject(monkeypatch):
     mgr = _Mgr()
-    runtime, _ = _prepare_runtime(monkeypatch, mgr,
-                                  [("", "", [TOOL_CALL], "tool_calls", None),
-                                   ("done", "", [], "stop", None)], "raw")
+    runtime, _ = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [("", "", [TOOL_CALL], "tool_calls", None),
+                                   ("done", "", [], "stop", None)],
+        "raw",
+    )
 
     def hook(ctx):
         ctx.result = "processed"
@@ -176,9 +208,13 @@ def test_after_tool_result_rewrite_and_inject(monkeypatch):
 
 def test_after_llm_clear_tool_calls_ends_turn(monkeypatch):
     mgr = _Mgr()
-    runtime, calls = _prepare_runtime(monkeypatch, mgr,
-                                      [("", "", [TOOL_CALL], "tool_calls", None),
-                                       ("done", "", [], "stop", None)], "unused")
+    runtime, calls = _prepare_runtime(
+        monkeypatch,
+        mgr,
+        [("", "", [TOOL_CALL], "tool_calls", None),
+                                       ("done", "", [], "stop", None)],
+        "unused",
+    )
     add_hook("after_llm", lambda ctx: setattr(ctx, "tool_calls", []), "test")
     runtime.run_turn()
     assert len(calls["llm"]) == 1

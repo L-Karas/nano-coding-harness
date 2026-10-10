@@ -131,7 +131,7 @@ async def run(app, pilot) -> None:
             assert not token_input.has_class("-editing") and token_input.selection.is_empty
             cursor = token_input.get_component_styles("input--cursor")
             assert cursor.background.a == 0, "锁定态光标应不可见"
-            await pilot.press("tab")  # 锁定输入框不拦 Tab：仍能切字段
+            await pilot.press("tab")  # Tab 保留：仍能切字段
             await settle(pilot)
             assert form.focused.id == "set-escalated_max_tokens", form.focused.id
             await pilot.press("shift+tab")
@@ -144,7 +144,13 @@ async def run(app, pilot) -> None:
             assert token_input.styles.background.hex.lower() == "#334155", token_input.styles.background
             cursor = token_input.get_component_styles("input--cursor")
             assert cursor.background.hex.lower() == "#f8fafc", cursor.background
-            await pilot.press("1", "6", "0", "0", "0")  # 全选状态下直接输入替换
+            await pilot.press(
+                "1",
+                "6",
+                "0",
+                "0",
+                "0",
+            )  # 全选状态下直接输入替换
             await settle(pilot)
             assert token_input.value == "16000", token_input.value
             await pilot.press("enter")  # 编辑态第二次 Enter：保存
@@ -201,6 +207,30 @@ async def run(app, pilot) -> None:
             assert config_mod.AgentConfigManager.load_config().config.default_max_tokens == 16000
             assert config_mod.CONFIGMANAGER.config.default_max_tokens == 16000, "保存后运行时单例未刷新"
             assert isinstance(app.screen_stack[-1], SettingsScreen), "保存后不应关窗"
+            # 鼠标：点开关直接切换并落盘
+            exp = form.query_one("#set-enable_experimental_tools", Switch)
+            exp.scroll_visible()
+            await settle(pilot)
+            before = exp.value
+            await pilot.click("#set-enable_experimental_tools")
+            await settle(pilot)
+            assert exp.value is not before, "单击开关应切换"
+            saved = json.loads(setting_file.read_text(encoding="utf-8"))
+            assert saved["enable_experimental_tools"] is exp.value, "单击开关应落盘"
+            # 鼠标：点锁定输入框进入编辑态（全选），输入后 Enter 落盘
+            summary = form.query_one("#set-summary_max_tokens", Input)
+            summary.scroll_visible()
+            await settle(pilot)
+            await pilot.click("#set-summary_max_tokens")
+            await settle(pilot)
+            assert summary.has_class("-editing"), "单击锁定输入框应进入编辑态"
+            await pilot.press("9", "9", "9")  # 全选后直接输入替换
+            await pilot.press("enter")
+            await settle(pilot)
+            assert json.loads(setting_file.read_text(encoding="utf-8"))["summary_max_tokens"] == 999, \
+                "鼠标编辑后 Enter 应落盘"
+            assert isinstance(app.screen_stack[-1], SettingsScreen), "保存后不应关窗"
+            saved = json.loads(setting_file.read_text(encoding="utf-8"))  # 非法值断言以当前盘面为基准
             # 非法值（compact_threshold=0 违反 gt=0）：第二次 Enter 保存失败，留在窗内且不写盘
             compact = form.query_one("#set-compact_threshold", Input)
             compact.value = "0"
@@ -214,7 +244,7 @@ async def run(app, pilot) -> None:
             await pilot.press("escape")
             await settle(pilot)
             assert not isinstance(app.screen_stack[-1], SettingsScreen), "Esc 未关闭设置窗"
-            print("[smoke] /settings OK: prefill, two-step Enter edit/save, switch toggle+save, Esc closes")
+            print("[smoke] /settings OK: prefill, two-step Enter, Tab/↑/↓ browse, mouse click save/edit, Esc closes")
         finally:
             config_mod.HARNESS_SETTING_FILE = orig
             config_mod.CONFIGMANAGER.config = orig_cfg

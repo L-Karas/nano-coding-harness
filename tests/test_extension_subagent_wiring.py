@@ -50,7 +50,12 @@ def _patch(monkeypatch, responses, execute):
         def schemas(self):
             return []
 
-        async def execute(self, name, args, tctx=None):
+        async def execute(
+            self,
+            name,
+            args,
+            tctx=None,
+        ):
             calls["args"].append(args)
             return ToolResult(content=execute)
 

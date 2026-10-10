@@ -66,10 +66,12 @@ def scan_skills() -> None:
             meta, _ = _parse_frontmatter(raw, skill_directory)
             name = meta.get("name", skill_directory.name)
             description = meta.get("description", "")
-            SKILL_REGISTRY[name] = Skill(name=name,
-                                         description=description,
-                                         content=raw,
-                                         skill_type=skill_type)
+            SKILL_REGISTRY[name] = Skill(
+                name=name,
+                description=description,
+                content=raw,
+                skill_type=skill_type,
+            )
             _LOGGER.info(f"[Skill] Load {skill_type} skill {skill_directory} success")
 
 

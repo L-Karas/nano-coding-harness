@@ -205,12 +205,12 @@ def login_provider(provider: str, base_url: str, api_key: str = "") -> bool:
 
 
 def login_model(
-        provider: str,
-        model: str,
-        thinking: bool = True,
-        vision: bool = True,
-        context_length: int = 0,
-        max_output: Optional[int] = None,
+    provider: str,
+    model: str,
+    thinking: bool = True,
+    vision: bool = True,
+    context_length: int = 0,
+    max_output: Optional[int] = None,
 ) -> bool:
     """在已注册的自定义 provider 下注册模型并落盘。context_length 必须为正（压缩/预算的真源）。"""
     if provider not in _CUSTOM_PROVIDER_AUTH:
@@ -380,7 +380,12 @@ class ModelClient:
         self.current_thinking_level = thinking_level if supported else ""
         self.current_model_thinking = model_cfg["thinking"]
 
-    def set_model_client(self, provider: str, model: str, thinking_level: str = "max") -> None:
+    def set_model_client(
+        self,
+        provider: str,
+        model: str,
+        thinking_level: str = "max",
+    ) -> None:
         """只切换当前会话的内存 client；默认模型 / 提供方 / 思考档位仅 /settings 能改，不落盘。"""
         self.current_provider = provider
         self.current_model = model

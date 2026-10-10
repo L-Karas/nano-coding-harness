@@ -115,7 +115,7 @@ async def run(app, pilot) -> None:
         await settle(pilot)
         assert _dels == [] and app._exception is None, f"取消确认不应删除: {_dels}"
         assert str(phint.render()) == \
-            "  ↑/↓ browse    Enter set API Key    Delete remove config    Esc close", \
+            "  ↑/↓ browse    Enter/click set API Key    Delete remove config    Esc close", \
             "撤销确认后应恢复原提示行"
         await pilot.press("delete")
         await settle(pilot)

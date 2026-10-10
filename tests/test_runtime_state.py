@@ -49,7 +49,12 @@ def test_subagent_lifecycle():
     state.register_subagent(sa_id, "explore")
     state.update_subagent(sa_id, "tool", "read_file")
     assert state.snapshot().subagents == [
-        SubagentEntry(id=sa_id, phase="tool", detail="read_file", description="explore")]
+        SubagentEntry(
+            id=sa_id,
+            phase="tool",
+            detail="read_file",
+            description="explore",
+        )]
     state.remove_subagent(sa_id)
     assert state.snapshot().subagents == []
 

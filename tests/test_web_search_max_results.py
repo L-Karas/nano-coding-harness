@@ -40,7 +40,13 @@ def _patch_httpx(monkeypatch, response):
         async def __aexit__(self, *exc):
             return False
 
-        async def post(self, *, url, headers=None, json=None):
+        async def post(
+            self,
+            *,
+            url,
+            headers=None,
+            json=None,
+        ):
             captured["payload"] = json
             return response
 

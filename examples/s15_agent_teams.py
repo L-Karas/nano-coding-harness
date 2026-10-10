@@ -44,7 +44,13 @@ class MessageBus:
     Teaching version: no file locking; real CC uses proper-lockfile.
     """
 
-    def send(self, from_agent: str, to_agent: str, message: str, message_type: str = "message"):
+    def send(
+        self,
+        from_agent: str,
+        to_agent: str,
+        message: str,
+        message_type: str = "message",
+    ):
         msg = {"from_agent": from_agent, "to_agent": to_agent,
                "message": message, "message_type": message_type, "timestamp": time.time()}
         inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
@@ -162,7 +168,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         summary = "Done."
         if messages[-1]["role"] == "assistant":
             summary = messages[-1]["content"]
-        MESSAGE_BUS.send(name, "lead", summary, "result")
+        MESSAGE_BUS.send(
+            name,
+            "lead",
+            summary,
+            "result",
+        )
         activate_teammates.pop(name, None)
         print(f"  \033[32m[Teammate] {name} finished\033[0m")
 

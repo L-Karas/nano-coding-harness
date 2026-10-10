@@ -5,9 +5,9 @@
 打开时按当前配置预填。交互约定（见 SettingsScreen）：
 - 浏览态字段锁定：打字 / 空格不生效，↑/↓ 或 Tab 切字段；
 - Enter 进入编辑态（输入框解锁全选、下拉展开）；编辑后再次 Enter 校验全部字段并写盘，成功后留在窗内；
-- 下拉在浮层里确认选项的那个 Enter 即第二次 Enter（确认 + 落盘），无需再按一次；
-- 开关例外：Enter 直接切换并写盘；焦点移开即退出编辑态（未保存输入回退到编辑前值），
-  下个字段第一次 Enter 重新进入编辑态。
+- 下拉在浮层里确认选项的那个 Enter 即第二次 Enter（确认 + 落盘）；鼠标点选项同路径即时落盘；
+- 开关例外：Enter / 鼠标点击直接切换并写盘；鼠标点锁定输入框即进入编辑态；
+  焦点移开即退出编辑态（未保存输入回退到编辑前值），下个字段第一次 Enter 重新进入编辑态。
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
 
     两段式 Enter：浏览态字段只读，Enter 进入编辑态（输入框解锁并全选、下拉展开），
     再次 Enter 校验全部字段并落盘（不关窗）；下拉在浮层里确认选项的 Enter 即第二次；
-    开关例外，Enter 直接切换并落盘。
+    开关例外，Enter / 鼠标点击直接切换并落盘；鼠标点锁定输入框进入编辑态、点下拉选项即选中落盘。
     焦点移到别的字段即退出编辑态，未保存的输入回退到编辑前值（下次 Enter 重新进入编辑态）。
     值非法 / 写盘失败 notify 留在窗内；Esc 关窗（未保存的改动丢弃）。
     未在表单中的参数（如 compact_type）保存时原样保留。"""
@@ -104,6 +104,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
 
     _editing: Widget | None = None  # 当前处于编辑态的字段（None = 浏览态）
     _pre_edit: tuple[_LockedInput, str] | None = None  # 编辑前值：未保存就切走焦点时回退
+    _baseline: dict[str, Any] = {}  # 上次预填 / 落盘时的 Select / Switch 控件值
 
     def compose(self) -> ComposeResult:
         # 模型下拉以 prompt 作占位（未选择态即空值，保存为空串），on_mount 再 set_options
@@ -114,16 +115,18 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
                                                 allow_blank=False, id=_FIELD_ID.format(name)))
                     for name in _THINKING_FIELDS]
         # 数字字段留空 = 回退默认值，占位即该默认值；整数 / 小数控件由解析类型决定
-        widgets += [_labeled_field(name, _LockedInput(placeholder=str(AgentConfig.model_fields[name].default),
-                                                      select_on_focus=False,
-                                                      type="integer" if cast is int else "number",
-                                                      id=_FIELD_ID.format(name)))
+        widgets += [_labeled_field(name, _LockedInput(
+            placeholder=str(AgentConfig.model_fields[name].default),
+            select_on_focus=False,
+            type="integer" if cast is int else "number",
+            id=_FIELD_ID.format(name),
+        ))
                     for name, cast in _NUMBER_FIELDS.items()]
         widgets += [Horizontal(Static(label, classes="switch-label"),
                                Switch(value=False, id=_FIELD_ID.format(name)),
                                classes="switch-row")
                     for name, label in _BOOL_FIELDS]
-        widgets.append(Static("  Tab next field    Enter edit / save    Esc close",
+        widgets.append(Static("  Tab/click field    Enter edit / save    Esc close",
                               classes="picker-hint"))
         picker = Vertical(*widgets, classes="picker", id="settings-picker")
         picker.border_title = "Settings"
@@ -139,7 +142,13 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             self.query_one(f"#{_FIELD_ID.format(name)}", Input).value = str(getattr(self._config, name))
         for name, _ in _BOOL_FIELDS:
             self.query_one(f"#{_FIELD_ID.format(name)}", Switch).value = bool(getattr(self._config, name))
+        self._snapshot_baseline()
         self.query_one(f"#{_FIELD_ID.format(_MODEL_FIELDS[0])}", Select).focus()
+
+    def _snapshot_baseline(self) -> None:
+        """记录 Select / Switch 当前值：预填（含中间值）与落盘后的 Changed 回显据此跳过。"""
+        self._baseline = {widget.id: widget.value for widget in self.query(Select)}
+        self._baseline.update({widget.id: widget.value for widget in self.query(Switch)})
 
     def _fill_model_selects(self) -> None:
         """模型下拉选项取自 get_model_list；取数失败提示并留空（不影响其他字段）。
@@ -211,12 +220,28 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         self._handle_enter(self.focused)
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """下拉浮层里 Enter 确认选项后即落盘：确认键就是第二次 Enter。"""
-        if self._editing is event.select:
+        """下拉值变化即落盘：键盘浮层确认与鼠标点选项同一路径；预填 / 落盘回显（当前值未变）跳过。"""
+        if event.select.value != self._baseline.get(event.select.id):
             self._save()
 
-    def set_focus(self, widget: Widget | None, scroll_visible: bool = True,
-                  from_app_focus: bool = False) -> None:
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """开关切换即落盘（鼠标点击路径；键盘 Enter 在 _handle_enter 已落盘）；回显跳过。"""
+        if event.switch.value != self._baseline.get(event.switch.id):
+            self._save()
+
+    def on_click(self, event: events.Click) -> None:
+        """点中锁定输入框即进入编辑态（等同第一次 Enter），全选后可直接输入替换。"""
+        target = event.widget
+        if isinstance(target, _LockedInput) and target is not self._editing:
+            event.stop()
+            self._activate(target)
+
+    def set_focus(
+        self,
+        widget: Widget | None,
+        scroll_visible: bool = True,
+        from_app_focus: bool = False,
+    ) -> None:
         """焦点移出编辑字段即退出编辑态（下拉浮层内部焦点切换不算移出）。"""
         if (self._editing is not None and widget is not None
                 and not self._inside_editing(widget)):
@@ -228,7 +253,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         if focused is None:
             return
         if isinstance(focused, Switch):
-            focused.toggle()
+            focused.toggle()  # 切换后立即落盘；Changed 回显由 _baseline 识别为无变化
             self._save()
         elif focused is self._editing:
             self._save()
@@ -274,6 +299,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             return
         self._config = config
         self._deactivate(restore=False)  # 已落盘：保留刚输入的值
+        self._snapshot_baseline()  # 落盘后的 Changed 回显不再重复保存
         self.app.notify("Settings saved", title="✅ Settings")
 
     def action_cancel(self) -> None:

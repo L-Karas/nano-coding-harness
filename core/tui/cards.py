@@ -23,7 +23,13 @@ class _CappedCardBody(Static):
     行数取自 get_content_height（按渲染宽度换行后的视觉行，长行折出的行同样计入）；
     reserved 为固定头行数，不参与折叠；-expandable 类随宽度变化在 on_resize 中同步。"""
 
-    def __init__(self, content: Any, cap: int, reserved: int = 0, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        content: Any,
+        cap: int,
+        reserved: int = 0,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(content, **kwargs)
         self._cap = cap
         self._reserved = reserved
@@ -34,7 +40,12 @@ class _CappedCardBody(Static):
     def _truncated(self) -> bool:
         return self._full_height - self._reserved > self._cap
 
-    def get_content_height(self, container: Size, viewport: Size, width: int) -> int:
+    def get_content_height(
+        self,
+        container: Size,
+        viewport: Size,
+        width: int,
+    ) -> int:
         full = super().get_content_height(container, viewport, width)
         self._full_height = full
         body = max(0, full - self._reserved)  # 扣除固定头行后的正文行数
@@ -62,4 +73,9 @@ class _CappedCardBody(Static):
     def _hint_strip(self, text: str) -> Strip:
         content = Content.from_rich_text(Text(text, style=_HINT_STYLE), console=self.app.console)
         options = RenderOptions(self._get_style, self.styles)
-        return content.render_strips(self.size.width, 1, self.visual_style, options)[0]
+        return content.render_strips(
+            self.size.width,
+            1,
+            self.visual_style,
+            options,
+        )[0]

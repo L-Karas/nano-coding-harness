@@ -15,7 +15,12 @@ from core.tui.utils import SLASH_COMMANDS
 
 
 class _Message:
-    def __init__(self, mid, content, timestamp="2026-01-02 03:04:05"):
+    def __init__(
+        self,
+        mid,
+        content,
+        timestamp="2026-01-02 03:04:05",
+    ):
         self.id = mid
         self.content = content
         self.timestamp = timestamp

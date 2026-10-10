@@ -56,13 +56,22 @@ def _dim_body(text: str) -> Text:
     return Text(text, style=_DIM)
 
 
-def _add_capped_card(kind: str, body: Text, max_lines: int = DEFAULT_MAX_LINES,
-                     head: Optional[Text] = None) -> None:
+def _add_capped_card(
+    kind: str,
+    body: Text,
+    max_lines: int = DEFAULT_MAX_LINES,
+    head: Optional[Text] = None,
+) -> None:
     """追加卡片：正文超 max_lines 折叠为前 max_lines 行 + 提示行，点击切换展开；
     head 为固定首行，不计入行数与折叠。"""
     head = head if head is not None else Text()
     reserved = head.plain.count("\n")  # head 占用的固定行数
-    _exec(lambda app: app._add_card(kind, head + body, cap=max_lines, reserved=reserved))
+    _exec(lambda app: app._add_card(
+        kind,
+        head + body,
+        cap=max_lines,
+        reserved=reserved,
+    ))
 
 
 def render_user_input(user_text: str) -> None:
@@ -83,7 +92,12 @@ def _format_args(tool_args: Any) -> str:
 def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
     """工具调用卡片：参数缩进 JSON，超出折叠。"""
     head = Text.assemble(("Tool Call: ", "bold #fde68a"), (tool_name, "bold white"), "\n")
-    _add_capped_card("tool", _dim_body(_format_args(tool_args)), max_lines, head=head)
+    _add_capped_card(
+        "tool",
+        _dim_body(_format_args(tool_args)),
+        max_lines,
+        head=head,
+    )
 
 
 def render_tool_result(output: Any, is_error: bool | None = None, max_lines: int = DEFAULT_MAX_LINES) -> None:

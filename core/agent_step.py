@@ -75,9 +75,17 @@ class StepOutcome:
     halted: bool = False
 
 
-async def run_agent_step(history: list[dict], system_prompt: str, *, client, pool: ToolPool,
-                         tctx: ToolContext, max_tokens: int, policy: StepPolicy = StepPolicy(),
-                         renderer: StepRenderer = StepRenderer()) -> StepOutcome:
+async def run_agent_step(
+    history: list[dict],
+    system_prompt: str,
+    *,
+    client,
+    pool: ToolPool,
+    tctx: ToolContext,
+    max_tokens: int,
+    policy: StepPolicy = StepPolicy(),
+    renderer: StepRenderer = StepRenderer(),
+) -> StepOutcome:
     """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展 → hooks → 执行 → 扩展）。"""
     tools = pool.schemas()
     messages = [{"role": "system", "content": system_prompt}] + to_llm_messages(history)
@@ -86,9 +94,15 @@ async def run_agent_step(history: list[dict], system_prompt: str, *, client, poo
     if policy.use_extensions:
         await dispatch("before_llm", llm_ctx)
         if llm_ctx.aborted:
-            return StepOutcome(assistant_message={}, followup_messages=[], tool_calls=[],
-                               finish_reason="", usage={}, aborted=True,
-                               abort_reason=llm_ctx.abort_reason)
+            return StepOutcome(
+                assistant_message={},
+                followup_messages=[],
+                tool_calls=[],
+                finish_reason="",
+                usage={},
+                aborted=True,
+                abort_reason=llm_ctx.abort_reason,
+            )
 
     with renderer.working_status():
         stream = await with_retry_async(
@@ -113,31 +127,60 @@ async def run_agent_step(history: list[dict], system_prompt: str, *, client, poo
     }
     injected: list[dict] = []
     if policy.use_extensions:
-        result_ctx = AfterLLMContext(content=content, tool_calls=tool_calls or [],
-                                     finish_reason=finish_reason or "", usage=usage)
+        result_ctx = AfterLLMContext(
+            content=content,
+            tool_calls=tool_calls or [],
+            finish_reason=finish_reason or "",
+            usage=usage,
+        )
         await dispatch("after_llm", result_ctx)
         assistant_message["content"] = result_ctx.content
         tool_calls = result_ctx.tool_calls or []
         injected = list(result_ctx.inject_messages)
 
     if not tool_calls:
-        return StepOutcome(assistant_message=assistant_message, followup_messages=injected,
-                           tool_calls=[], finish_reason=finish_reason or "", usage=usage)
+        return StepOutcome(
+            assistant_message=assistant_message,
+            followup_messages=injected,
+            tool_calls=[],
+            finish_reason=finish_reason or "",
+            usage=usage,
+        )
 
     if finish_reason == "length" and policy.defer_tools_on_length:
-        return StepOutcome(assistant_message=assistant_message, followup_messages=injected,
-                           tool_calls=tool_calls, finish_reason=finish_reason, usage=usage)
+        return StepOutcome(
+            assistant_message=assistant_message,
+            followup_messages=injected,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=usage,
+        )
 
     assistant_message["tool_calls"] = tool_calls
-    tool_messages, tool_injected, halted = await _run_tools(tool_calls, pool, tctx, policy, renderer)
-    return StepOutcome(assistant_message=assistant_message,
-                       followup_messages=injected + tool_messages + tool_injected,
-                       tool_calls=tool_calls, finish_reason=finish_reason or "", usage=usage,
-                       halted=halted)
+    tool_messages, tool_injected, halted = await _run_tools(
+        tool_calls,
+        pool,
+        tctx,
+        policy,
+        renderer,
+    )
+    return StepOutcome(
+        assistant_message=assistant_message,
+        followup_messages=injected + tool_messages + tool_injected,
+        tool_calls=tool_calls,
+        finish_reason=finish_reason or "",
+        usage=usage,
+        halted=halted,
+    )
 
 
-async def _run_tools(tool_calls: list[dict], pool: ToolPool, tctx: ToolContext, policy: StepPolicy,
-                     renderer: StepRenderer) -> tuple[list[dict], list[dict], bool]:
+async def _run_tools(
+    tool_calls: list[dict],
+    pool: ToolPool,
+    tctx: ToolContext,
+    policy: StepPolicy,
+    renderer: StepRenderer,
+) -> tuple[list[dict], list[dict], bool]:
     results: list[dict] = []
     injected: list[dict] = []
     halted = False
@@ -219,8 +262,12 @@ async def _run_tools(tool_calls: list[dict], pool: ToolPool, tctx: ToolContext, 
             output = result.content
             is_error = result.is_error
             if policy.use_extensions:
-                result_ctx = AfterToolContext(tool_name=tool_name, args=tool_args,
-                                              result=output, is_error=is_error)
+                result_ctx = AfterToolContext(
+                    tool_name=tool_name,
+                    args=tool_args,
+                    result=output,
+                    is_error=is_error,
+                )
                 await dispatch("after_tool", result_ctx)
                 output = result_ctx.result
                 injected.extend(result_ctx.inject_messages)

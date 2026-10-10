@@ -4,7 +4,12 @@ import pytest
 from core.skill import skills as skills_mod
 
 
-def _write_skill(root, dir_name: str, name: str, description: str = "") -> None:
+def _write_skill(
+    root,
+    dir_name: str,
+    name: str,
+    description: str = "",
+) -> None:
     skill_dir = root / dir_name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(
@@ -27,9 +32,24 @@ def sources(tmp_path, monkeypatch):
 
 
 def test_scan_skills_loads_three_sources_with_types(sources):
-    _write_skill(sources["global"], "g-dir", "g-skill", "global desc")
-    _write_skill(sources["user"], "u-dir", "u-skill", "user desc")
-    _write_skill(sources["project"], "p-dir", "p-skill", "project desc")
+    _write_skill(
+        sources["global"],
+        "g-dir",
+        "g-skill",
+        "global desc",
+    )
+    _write_skill(
+        sources["user"],
+        "u-dir",
+        "u-skill",
+        "user desc",
+    )
+    _write_skill(
+        sources["project"],
+        "p-dir",
+        "p-skill",
+        "project desc",
+    )
 
     skills_mod.scan_skills()
 
@@ -43,9 +63,24 @@ def test_scan_skills_loads_three_sources_with_types(sources):
 
 def test_scan_same_name_prefers_project_then_user_then_global(sources):
     for kind in ("global", "user", "project"):
-        _write_skill(sources[kind], f"dup-{kind}", "dup", f"{kind} desc")
-    _write_skill(sources["global"], "gu-global", "dup-gu", "global desc")
-    _write_skill(sources["user"], "gu-user", "dup-gu", "user desc")
+        _write_skill(
+            sources[kind],
+            f"dup-{kind}",
+            "dup",
+            f"{kind} desc",
+        )
+    _write_skill(
+        sources["global"],
+        "gu-global",
+        "dup-gu",
+        "global desc",
+    )
+    _write_skill(
+        sources["user"],
+        "gu-user",
+        "dup-gu",
+        "user desc",
+    )
 
     skills_mod.scan_skills()
 
@@ -64,7 +99,12 @@ def test_scan_skills_skips_missing_sources(sources):
 
 
 def test_load_skill_returns_manifest_content(sources):
-    _write_skill(sources["user"], "u-dir", "u-skill", "user desc")
+    _write_skill(
+        sources["user"],
+        "u-dir",
+        "u-skill",
+        "user desc",
+    )
 
     skills_mod.scan_skills()
 
@@ -78,7 +118,12 @@ def test_load_skills_returns_registry_of_skill_objects(sources):
     skills_mod.scan_skills()
     assert skills_mod.load_skills() is None
 
-    _write_skill(sources["project"], "p-dir", "p-skill", "project desc")
+    _write_skill(
+        sources["project"],
+        "p-dir",
+        "p-skill",
+        "project desc",
+    )
     skills_mod.scan_skills()
 
     loaded = skills_mod.load_skills()

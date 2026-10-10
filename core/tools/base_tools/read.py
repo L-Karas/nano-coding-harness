@@ -51,5 +51,10 @@ class ReadFile(BaseTool):
 
 def _slice_content(lines: list[str], limit: Optional[int], offset: Optional[int]) -> str:
     """薄包装：保留模块级 MAX_OUTPUT_BYTES 供测试 / 调用方调整，逻辑在 core.context.truncate。"""
-    text, _ = truncate_lines(lines, limit, offset, MAX_OUTPUT_BYTES)
+    text, _ = truncate_lines(
+        lines,
+        limit,
+        offset,
+        MAX_OUTPUT_BYTES,
+    )
     return text

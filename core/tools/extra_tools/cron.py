@@ -18,7 +18,12 @@ class ScheduleCron(BaseTool):
     agent_type: set = {"main"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        return cron_scheduler.run_schedule_cron(self.cron_expression, self.prompt, self.recurring, self.durable)
+        return cron_scheduler.run_schedule_cron(
+            self.cron_expression,
+            self.prompt,
+            self.recurring,
+            self.durable,
+        )
 
 
 class ListCrons(BaseTool):

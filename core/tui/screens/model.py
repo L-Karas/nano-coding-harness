@@ -27,7 +27,7 @@ class ModelPickerScreen(_ListPickerScreen):
     失败 notify 留在窗内重试。rows 来自 core.client.get_model_list()。"""
 
     TITLE = "Select a model"
-    HINT = "  ↑/↓ browse    Enter switch model    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click switch model    Esc close"
     LIST_ID = "model-list"
     SEARCH_PLACEHOLDER = "Search models…"
 
@@ -70,7 +70,7 @@ class EffortScreen(ModalScreen[None]):
     """思考深度设置弹窗（/effort）：Tabs 五档（←/→ 或点击，首尾循环）；Enter 经
     set_thinking_level 生效并关窗，失败留在窗内；Esc 关闭。current 空/未知时留在默认首档。
 
-    布局纯 CSS（#effort-picker 定宽 46）：auto 宽度容器里 align 不生效，故宽度写死。"""
+    布局纯 CSS（#effort-picker 定宽 48）：auto 宽度容器里 align 不生效，故宽度写死。"""
 
     BINDINGS = [
         ("escape", "cancel", "Cancel"),
@@ -84,7 +84,7 @@ class EffortScreen(ModalScreen[None]):
     def compose(self) -> ComposeResult:
         picker = Vertical(
             _InstantTabs(*(Tab(level, id=level) for level in _EFFORT_LEVELS), id="effort-tabs"),
-            Static("  ←/→ switch   Enter apply   Esc close", classes="picker-hint"),
+            Static("  ←/→ or click    Enter apply    Esc close", classes="picker-hint"),
             classes="picker",
             id="effort-picker",
         )

@@ -36,7 +36,12 @@ _register_tools()
 class _McpEntry:
     """MCP 工具的 pool 条目：schema + 同步 / 异步 handler，由装配处适配。"""
 
-    def __init__(self, schema: dict, sync_handler, async_handler):
+    def __init__(
+        self,
+        schema: dict,
+        sync_handler,
+        async_handler,
+    ):
         self.schema = schema
         self._sync_handler = sync_handler
         self._async_handler = async_handler
@@ -73,7 +78,12 @@ class ToolPool:
             return True
         return entry.arun is not BaseTool.arun
 
-    async def execute(self, name: str, args: dict, tctx: ToolContext | None = None) -> ToolResult:
+    async def execute(
+        self,
+        name: str,
+        args: dict,
+        tctx: ToolContext | None = None,
+    ) -> ToolResult:
         entry = self._entries.get(name)
         if entry is None:
             return ToolResult.unknown(name)
@@ -87,7 +97,12 @@ class ToolPool:
         except Exception as e:  # AgentInterrupted 是 CancelledError（BaseException），不会被这里吃掉
             return ToolResult.error(str(e))
 
-    def execute_sync(self, name: str, args: dict, tctx: ToolContext | None = None) -> ToolResult:
+    def execute_sync(
+        self,
+        name: str,
+        args: dict,
+        tctx: ToolContext | None = None,
+    ) -> ToolResult:
         entry = self._entries.get(name)
         if entry is None:
             return ToolResult.unknown(name)

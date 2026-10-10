@@ -15,12 +15,17 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
     (session id 或 None, 列表是否已删空)。删除当前会话经 on_delete_current 立即清空聊板。"""
 
     TITLE = "Select a session"
-    HINT = "  ↑/↓ browse    Enter switch    Delete remove    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click switch    Delete remove    Esc close"
     LIST_ID = "sess-list"
     SEARCH_PLACEHOLDER = "Search sessions…"
     CONFIRM = True
     # priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
-    BINDINGS = [Binding("delete", "remove_selected", "Delete", priority=True)]
+    BINDINGS = [Binding(
+        "delete",
+        "remove_selected",
+        "Delete",
+        priority=True,
+    )]
 
     def __init__(self, manager: Any, on_delete_current: Optional[Callable[[], None]] = None) -> None:
         super().__init__()

@@ -3,7 +3,12 @@ import core.client.model as model
 import core.config as config_mod
 
 
-def _client(monkeypatch, registry_ctx: int, registry_out, config: config_mod.AgentConfig):
+def _client(
+    monkeypatch,
+    registry_ctx: int,
+    registry_out,
+    config: config_mod.AgentConfig,
+):
     """构造仅带 provider/model 的 client，并把注册表与全局配置换成测试值。"""
     monkeypatch.setattr(model, "CONFIGMANAGER", config_mod.AgentConfigManager(config))
     monkeypatch.setitem(model._MODEL_LIST, "TestProvider", {
@@ -18,7 +23,12 @@ def _client(monkeypatch, registry_ctx: int, registry_out, config: config_mod.Age
 
 def test_budgets_follow_current_model(monkeypatch):
     cfg = config_mod.AgentConfig(compact_threshold=0.5, reserve_threshold=0.2)
-    client = _client(monkeypatch, 262_144, 52_000, cfg)
+    client = _client(
+        monkeypatch,
+        262_144,
+        52_000,
+        cfg,
+    )
     assert client.load_context_length() == 262_144
     assert client.load_max_output() == 52_000
     assert client.compact_threshold() == 131_072  # 0.5 * 262144
@@ -28,7 +38,12 @@ def test_budgets_follow_current_model(monkeypatch):
 def test_null_max_output_disables_clamping_and_reserves_escalated_headroom(monkeypatch):
     """注册表 max_output 为空 = 无固定输出上限：不钳制；压缩上限用 上下文 - escalated_max_tokens。"""
     cfg = config_mod.AgentConfig(compact_threshold=500_000, escalated_max_tokens=32_000)
-    client = _client(monkeypatch, 262_144, None, cfg)
+    client = _client(
+        monkeypatch,
+        262_144,
+        None,
+        cfg,
+    )
     assert client.load_max_output() is None
     assert client.clamp_max_tokens(200_000) == 200_000
     assert client.compact_threshold() == 230_144  # 262144 - 32000
@@ -46,6 +61,11 @@ def test_unselected_model_has_no_budget(monkeypatch):
 
 
 def test_clamp_max_tokens_uses_current_model_output_limit(monkeypatch):
-    client = _client(monkeypatch, 1_000_000, 128_000, config_mod.AgentConfig())
+    client = _client(
+        monkeypatch,
+        1_000_000,
+        128_000,
+        config_mod.AgentConfig(),
+    )
     assert client.clamp_max_tokens(200_000) == 128_000
     assert client.clamp_max_tokens(12_000) == 12_000

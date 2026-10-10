@@ -232,7 +232,12 @@ def run_bash(command: str, tool_call_id: str) -> str:
     return persist_large_output(tool_call_id, output)
 
 
-def run_read(path: str, tool_use_id: str, state: CompactState, limit: Optional[int] = None) -> str:
+def run_read(
+    path: str,
+    tool_use_id: str,
+    state: CompactState,
+    limit: Optional[int] = None,
+) -> str:
     try:
         track_recent_file(state, path)
         lines = safe_path(path).read_text().splitlines()

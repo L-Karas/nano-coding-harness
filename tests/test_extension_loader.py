@@ -20,7 +20,15 @@ def _clean():
     reset_extensions()
 
 
-def _make_extension(root: Path, name: str, body: str = "", *, enabled=True, manifest=True, entry=True):
+def _make_extension(
+    root: Path,
+    name: str,
+    body: str = "",
+    *,
+    enabled=True,
+    manifest=True,
+    entry=True,
+):
     folder = root / name
     folder.mkdir(parents=True)
     if manifest:
@@ -59,13 +67,23 @@ def test_register_failure_does_not_log_success(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("value", [False, "true", 1, None])
 def test_not_exactly_true_is_disabled(tmp_path, value):
-    _make_extension(tmp_path, "demo", REGISTER_LLM, enabled=value)
+    _make_extension(
+        tmp_path,
+        "demo",
+        REGISTER_LLM,
+        enabled=value,
+    )
     load_extensions(tmp_path)
     assert _count("before_llm") == 0
 
 
 def test_missing_or_invalid_manifest_isolated(tmp_path):
-    _make_extension(tmp_path, "no_manifest", REGISTER_LLM, manifest=False)
+    _make_extension(
+        tmp_path,
+        "no_manifest",
+        REGISTER_LLM,
+        manifest=False,
+    )
     bad = _make_extension(tmp_path, "bad", REGISTER_LLM)
     (bad / "extension.json").write_text("{not json", encoding="utf-8")
     _make_extension(tmp_path, "good", REGISTER_LLM)

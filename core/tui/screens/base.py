@@ -57,7 +57,7 @@ def _field(widget: Widget) -> Horizontal:
 
 
 class _ArrowNav:
-    """表单窗键盘导航 mixin：↑/↓ 切换字段（等效 Tab）；下拉浮层展开时（Enter 打开）不拦截，
+    """表单窗键盘导航 mixin：↑/↓ / Tab 切换字段；下拉浮层展开时（Enter 打开）不拦截 ↑/↓，
     让浮层用 ↑/↓ 选选项、Enter 确认——即未打开下拉时 ↑/↓ 不会展开下拉。文本区聚焦时
     ↑/↓ 留给 TextArea 移光标（表单里的 args / headers 多行输入区）。"""
 
@@ -162,7 +162,12 @@ class _SessionRow:
     _TS_STYLE = "#94a3b8"
     _MARK_TEXT = "  (current session)"
 
-    def __init__(self, title: str, current: bool, timestamp: str) -> None:
+    def __init__(
+        self,
+        title: str,
+        current: bool,
+        timestamp: str,
+    ) -> None:
         self._title = title
         self._current = current
         self._timestamp = timestamp
@@ -260,7 +265,7 @@ class _ListPickerScreen(ModalScreen[Any]):
         self._list().action_select()
 
     def on_key(self, event: events.Key) -> None:
-        """搜索栏聚焦时 ↑/↓ 仍移动列表高亮（输入框自身不消费方向键）。"""
+        """搜索栏聚焦时 ↑/↓ 仍移动列表高亮（输入框自身不消费方向键）；Tab 切焦点不受影响。"""
         if (self.SEARCH_PLACEHOLDER and event.key in ("up", "down")
                 and self._search().has_focus):
             event.stop()

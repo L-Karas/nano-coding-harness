@@ -10,7 +10,12 @@ _NPX = "E:/nodejs/npx.CMD"
 
 
 class _FakeProcess:
-    def __init__(self, stdout=b"", stderr=b"", returncode=0):
+    def __init__(
+        self,
+        stdout=b"",
+        stderr=b"",
+        returncode=0,
+    ):
         self.stdout = stdout
         self.stderr = stderr
         self.returncode = returncode

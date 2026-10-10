@@ -48,14 +48,19 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
     connecting 轮播。"""
 
     TITLE = "MCP Servers"
-    HINT = "  ↑/↓ browse    Enter tools    Insert configure    Delete remove    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click tools    Insert configure    Delete remove    Esc close"
     LIST_ID = "mcp-list"
     PICKER_ID = "mcp-picker"
     SEARCH_PLACEHOLDER = "Search servers…"
     CONFIRM = True
     # delete 加 priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
     BINDINGS = [("insert", "configure", "Configure"),
-                Binding("delete", "remove_selected", "Delete", priority=True)]
+                Binding(
+                    "delete",
+                    "remove_selected",
+                    "Delete",
+                    priority=True,
+                )]
 
     def __init__(self, servers: dict[str, dict]) -> None:
         super().__init__()
@@ -65,7 +70,7 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
 
     def on_mount(self) -> None:
         # 不调 super().on_mount()：Textual 按 MRO 自动派发各级 on_mount（_ListPickerScreen 的
-        # _reload/focus 也会被调到），显式再调会 _reload 两次（空列表时双 Toast）
+        # _reload/focus 也会被调到），显式再调会 _reload 两次
         self.set_interval(1.0, self._poll_status)
 
     def _refresh(self) -> None:
@@ -89,8 +94,6 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
                 for server, info in self._servers.items()
                 if self._match(server)]
         _rebuild_options(self._list(), rows)
-        if not self._servers:  # 无 server（而非搜索无匹配）：Toast 提示去 Insert 配
-            self.app.notify("No MCP servers configured: press Insert to add one", title="⚠️ MCP Servers")
         self._sync_anim()
 
     def _sync_anim(self) -> None:
@@ -140,7 +143,7 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
             return
         self.app.notify(message, title="✅ MCP")
         self._servers.pop(server, None)
-        self._reload()  # 删空也不关窗：空列表保留 Insert 入口（空态提示由 _reload 给出）
+        self._reload()  # 删空也不关窗：空列表保留 Insert 入口（提示行仍可用）
 
     def action_configure(self) -> None:
         """Insert：弹表单配置窗；保存成功后本窗保持打开并就地刷新。"""
@@ -154,7 +157,7 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
 class MCPToolsScreen(_NamedListScreen):
     """某 MCP server 的工具列表（行格式同 /skills）；Enter/点击 / Esc 关本层窗。"""
 
-    HINT = "  ↑/↓ browse    Enter/Esc close"
+    HINT = "  ↑/↓ browse    Enter/click/Esc close"
     LIST_ID = "mcp-tools-list"
     SEARCH_PLACEHOLDER = "Search tools…"
 
@@ -179,8 +182,14 @@ def _parse_headers(text: str) -> dict[str, str]:
     return headers
 
 
-def _build_mcp_config(name: str, transport: str | None, command: str, args_text: str,
-                      url: str, headers_text: str) -> dict:
+def _build_mcp_config(
+    name: str,
+    transport: str | None,
+    command: str,
+    args_text: str,
+    url: str,
+    headers_text: str,
+) -> dict:
     """把配置表单值组装成 configure_mcp_server 接受的 {"mcpServers": {name: config}}。
 
     表单单行值已由调用方 strip；args / headers 多行文本在此解析。必填缺失或 headers

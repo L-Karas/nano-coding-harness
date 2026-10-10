@@ -23,7 +23,12 @@ def test_calls_interleave_with_results(monkeypatch):
             {"id": "b", "function": {"name": "terminal", "arguments": "{}"}},
         ]),
         Message(role="tool", tool_call_id="b", content="B"),  # 结果乱序也应各归其位
-        Message(role="tool", tool_call_id="a", content="A", payload=[("-", 1, "x")]),
+        Message(
+            role="tool",
+            tool_call_id="a",
+            content="A",
+            payload=[("-", 1, "x")],
+        ),
         Message(role="assistant", content="done"),
     ])
     render.render_session_history(session)

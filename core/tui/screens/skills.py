@@ -11,7 +11,7 @@ class SkillsScreen(_NamedListScreen):
     发送 "Invoke skill '<name>'"；Esc 关闭。skills 来自 core.skill.SKILL_REGISTRY。"""
 
     TITLE = "Available Skills"
-    HINT = "  ↑/↓ browse    Enter invoke    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click invoke    Esc close"
     LIST_ID = "skills-list"
     SEARCH_PLACEHOLDER = "Search skills…"
 

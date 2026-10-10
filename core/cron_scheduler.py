@@ -143,7 +143,12 @@ def load_durable_jobs():
         _LOGGER.warning(f"[Cron] load durable jobs failed: {e}")
 
 
-def schedule_job(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> CronJob | str:
+def schedule_job(
+    cron_expression: str,
+    prompt: str,
+    recurring: bool = True,
+    durable: bool = True,
+) -> CronJob | str:
     err = validate_cron(cron_expression)
     if err:
         return err
@@ -203,8 +208,18 @@ def consume_cron_queue() -> list[CronJob]:
     return fired_jobs
 
 
-def run_schedule_cron(cron_expression: str, prompt: str, recurring: bool = True, durable: bool = True) -> str:
-    result = schedule_job(cron_expression, prompt, recurring, durable)
+def run_schedule_cron(
+    cron_expression: str,
+    prompt: str,
+    recurring: bool = True,
+    durable: bool = True,
+) -> str:
+    result = schedule_job(
+        cron_expression,
+        prompt,
+        recurring,
+        durable,
+    )
     if isinstance(result, str):
         raise Exception(result)
 

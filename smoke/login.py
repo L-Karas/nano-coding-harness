@@ -82,7 +82,14 @@ async def run(app, pilot) -> None:
     _orig_get_providers6 = _cm5.get_provider_list
     _orig_login_model6 = _cm5.login_model
 
-    def _fake_login_model(p, m, thinking=True, vision=True, context_length=0, max_output=None):
+    def _fake_login_model(
+        p,
+        m,
+        thinking=True,
+        vision=True,
+        context_length=0,
+        max_output=None,
+    ):
         _calls6.append((p, m, thinking, vision, context_length, max_output))
         return True
 

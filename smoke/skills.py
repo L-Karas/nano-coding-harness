@@ -16,10 +16,18 @@ async def run(app, pilot) -> None:
 
     _skills_orig = dict(_skills_mod.SKILL_REGISTRY)
     _skills_mod.SKILL_REGISTRY.update({
-        "smoke-skill-a": Skill(name="smoke-skill-a", description="writes smoke checks",
-                               content="", skill_type="user"),
-        "smoke-skill-b": Skill(name="smoke-skill-b", description="example skill description",
-                               content="", skill_type="user"),
+        "smoke-skill-a": Skill(
+            name="smoke-skill-a",
+            description="writes smoke checks",
+            content="",
+            skill_type="user",
+        ),
+        "smoke-skill-b": Skill(
+            name="smoke-skill-b",
+            description="example skill description",
+            content="",
+            skill_type="user",
+        ),
     })
 
     # /skills：SkillsScreen（OptionList 弹窗，同会话 /provider /model 弹窗组件）

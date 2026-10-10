@@ -98,7 +98,12 @@ class ClientManager:
         except Exception as e:
             return str(e)
 
-    async def tool_call_async(self, tool_name: str, ctx=None, tool_args: dict | None = None) -> str:
+    async def tool_call_async(
+        self,
+        tool_name: str,
+        ctx=None,
+        tool_args: dict | None = None,
+    ) -> str:
         if tool_name not in self.tool_handlers:
             return f"Tool '{tool_name}' not found"
 
@@ -164,8 +169,13 @@ class ClientManager:
             _LOGGER.error(f"[MCP] disconnect {server_name} failed: {e!r}")
         self._refresh_tools()
 
-    async def _manage_server(self, server_name: str, config: dict, commands: asyncio.Queue,
-                             ready: asyncio.Event) -> None:
+    async def _manage_server(
+        self,
+        server_name: str,
+        config: dict,
+        commands: asyncio.Queue,
+        ready: asyncio.Event,
+    ) -> None:
         """该 server 的常驻 task：它的 connect / disconnect 只在本 task 内执行。
 
         ready 在首个连接结果（成功或失败）落地后置位，供 init 判断"首次尝试已结束"。
@@ -205,7 +215,12 @@ class ClientManager:
         self._server_commands[server_name] = commands
         self.status[server_name] = "connecting"
         self._server_tasks[server_name] = asyncio.create_task(
-            self._manage_server(server_name, config, commands, ready))
+            self._manage_server(
+                server_name,
+                config,
+                commands,
+                ready,
+            ))
         return ready
 
     async def _connect_all_servers(self) -> None:

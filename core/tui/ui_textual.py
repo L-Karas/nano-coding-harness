@@ -37,7 +37,12 @@ from core.tui.widgets import _CommandInput
 class _ChatScreen(Screen):
     """主屏：焦点变更一律改道输入栏（权限/澄清作答、输入栏禁用时除外）。"""
 
-    def set_focus(self, widget, scroll_visible=True, from_app_focus=False) -> None:
+    def set_focus(
+        self,
+        widget,
+        scroll_visible=True,
+        from_app_focus=False,
+    ) -> None:
         if widget is not None and self.app.screen is self and not self.app._perm_pending \
                 and not self.app._clarify_pending:
             try:
@@ -81,12 +86,15 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
                 ("space", "toggle_clarify", "Toggle clarify selection"),
                 ("ctrl+c", "copy_or_ignore", "Ignore")]
 
-    def __init__(self, handle_query: Optional[Callable[[str], None]] = None,
-                 session_manager: Optional[SessionManager] = None,
-                 banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
-                 on_interrupt: Optional[Callable[[], None]] = None,
-                 runtime: Any = None,
-                 runtime_state: RuntimeState = RUNTIME_STATE) -> None:
+    def __init__(
+        self,
+        handle_query: Optional[Callable[[str], None]] = None,
+        session_manager: Optional[SessionManager] = None,
+        banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
+        on_interrupt: Optional[Callable[[], None]] = None,
+        runtime: Any = None,
+        runtime_state: RuntimeState = RUNTIME_STATE,
+    ) -> None:
         super().__init__(ansi_color=True)  # 按终端调色板显示 ANSI 色，避免与终端主题不一致
         if handle_query is None:
             handle_query, on_interrupt, runtime = _default_agent_turn()
@@ -296,11 +304,13 @@ def _default_agent_turn() -> tuple[Callable[[str], None], Callable[[], None], An
     return make_agent_turn(runtime), runtime.interrupt, runtime
 
 
-def run(handle_query: Optional[Callable[[str], None]] = None,
-        session_manager: Any = None,
-        banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
-        on_interrupt: Optional[Callable[[], None]] = None,
-        runtime: Any = None) -> None:
+def run(
+    handle_query: Optional[Callable[[str], None]] = None,
+    session_manager: Any = None,
+    banner: tuple[str, str] = (DEFAULT_TITLE, DEFAULT_SUBTITLE),
+    on_interrupt: Optional[Callable[[], None]] = None,
+    runtime: Any = None,
+) -> None:
     """启动 Textual 对话界面（阻塞直到退出）。
 
     不传 handle_query 时用真实 agent 回合（需已配置模型；离线演示见 smoke.demo）。
@@ -309,8 +319,13 @@ def run(handle_query: Optional[Callable[[str], None]] = None,
     from core.bootstrap import bootstrap
     bootstrap()
 
-    app = ChatApp(handle_query=handle_query, session_manager=session_manager, banner=banner,
-                  on_interrupt=on_interrupt, runtime=runtime)
+    app = ChatApp(
+        handle_query=handle_query,
+        session_manager=session_manager,
+        banner=banner,
+        on_interrupt=on_interrupt,
+        runtime=runtime,
+    )
     _render._APP = app  # run 期间渲染 API（core.tui.render）经此全局桥接进事件循环
     old_sigint = None
     try:

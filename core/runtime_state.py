@@ -118,10 +118,19 @@ class RuntimeState:
 
     def register_subagent(self, agent_id: str, description: str) -> None:
         with self._lock:
-            self._subagents[agent_id] = SubagentEntry(id=agent_id, phase="thinking", detail="",
-                                                      description=description)
+            self._subagents[agent_id] = SubagentEntry(
+                id=agent_id,
+                phase="thinking",
+                detail="",
+                description=description,
+            )
 
-    def update_subagent(self, agent_id: str, phase: str, detail: str = "") -> None:
+    def update_subagent(
+        self,
+        agent_id: str,
+        phase: str,
+        detail: str = "",
+    ) -> None:
         with self._lock:
             entry = self._subagents.get(agent_id)
             if entry is not None:

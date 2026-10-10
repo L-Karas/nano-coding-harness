@@ -49,7 +49,12 @@ def _patch(monkeypatch, rounds, execute_tool):
         def schemas(self):
             return []
 
-        async def execute(self, name, args, tctx=None):
+        async def execute(
+            self,
+            name,
+            args,
+            tctx=None,
+        ):
             entry = state.snapshot().subagents[0]
             seen.append((entry.phase, entry.detail))
             return ToolResult(content=await execute_tool())

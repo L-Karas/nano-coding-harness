@@ -33,9 +33,15 @@ def test_step_clamps_max_tokens_to_current_model(monkeypatch):
             return create
 
     _stream(monkeypatch)
-    asyncio.run(run_agent_step([], "sys", client=_Client(), pool=ToolPool({}), tctx=ToolContext(),
-                               max_tokens=24_000,
-                               policy=StepPolicy(use_extensions=False, permission_hooks=False)))
+    asyncio.run(run_agent_step(
+        [],
+        "sys",
+        client=_Client(),
+        pool=ToolPool({}),
+        tctx=ToolContext(),
+        max_tokens=24_000,
+        policy=StepPolicy(use_extensions=False, permission_hooks=False),
+    ))
     assert captured["max_tokens"] == 8_000
 
 

@@ -65,7 +65,12 @@ class _DockInteractions:
 
     # ---------- clarify ----------
 
-    def _begin_clarify(self, questions: list[str], multi_select: bool, future: Future[str]) -> None:
+    def _begin_clarify(
+        self,
+        questions: list[str],
+        multi_select: bool,
+        future: Future[str],
+    ) -> None:
         """弹选项列表（末尾 Other）并聚焦：单选 Enter/点击作答，多选 Space 勾选、Enter 提交。"""
         self._clarify_future = future
         self._clarify_pending = True

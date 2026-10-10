@@ -27,7 +27,12 @@ def test_line_limit_stops_first(tmp_path):
 
 
 def test_byte_limit_stops_at_line_boundary(tmp_path, monkeypatch):
-    monkeypatch.setattr(read_mod, "MAX_OUTPUT_BYTES", 2 * KB, raising=False)
+    monkeypatch.setattr(
+        read_mod,
+        "MAX_OUTPUT_BYTES",
+        2 * KB,
+        raising=False,
+    )
     line = "a" * (KB - 1)  # 每行 1 KB（含换行）
     path = _write(tmp_path, "\n".join([line] * 4) + "\n")
     assert _read(path, limit=None) == (
@@ -36,7 +41,12 @@ def test_byte_limit_stops_at_line_boundary(tmp_path, monkeypatch):
 
 
 def test_byte_limit_cuts_line_and_continues(tmp_path, monkeypatch):
-    monkeypatch.setattr(read_mod, "MAX_OUTPUT_BYTES", 2 * KB, raising=False)
+    monkeypatch.setattr(
+        read_mod,
+        "MAX_OUTPUT_BYTES",
+        2 * KB,
+        raising=False,
+    )
     first, second = "a" * (KB - 1), "b" * (2 * KB - 1)
     path = _write(tmp_path, f"{first}\n{second}\nc\n")
     assert _read(path, limit=None) == (
@@ -46,14 +56,24 @@ def test_byte_limit_cuts_line_and_continues(tmp_path, monkeypatch):
 
 
 def test_overlong_line_is_cut_on_utf8_boundary(tmp_path, monkeypatch):
-    monkeypatch.setattr(read_mod, "MAX_OUTPUT_BYTES", KB, raising=False)
+    monkeypatch.setattr(
+        read_mod,
+        "MAX_OUTPUT_BYTES",
+        KB,
+        raising=False,
+    )
     path = _write(tmp_path, "é" * 700)  # 单个 1400 字节的长行
     assert _read(path) == (
         "é" * 512 + "\n[Truncated: line 1 cut at 1 KB, 1 KB omitted.]")
 
 
 def test_async_uses_the_same_limits(tmp_path, monkeypatch):
-    monkeypatch.setattr(read_mod, "MAX_OUTPUT_BYTES", 2 * KB, raising=False)
+    monkeypatch.setattr(
+        read_mod,
+        "MAX_OUTPUT_BYTES",
+        2 * KB,
+        raising=False,
+    )
     line = "a" * (KB - 1)
     path = _write(tmp_path, "\n".join([line] * 4) + "\n")
     assert asyncio.run(_read_async(path, limit=None)) == (

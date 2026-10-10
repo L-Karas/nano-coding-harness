@@ -172,7 +172,12 @@ _last_context_key, _last_prompt = None, None
 def get_system_prompt(context: dict) -> str:
     global _last_context_key, _last_prompt
 
-    key = json.dumps(context, sort_keys=True, ensure_ascii=False, default=str)
+    key = json.dumps(
+        context,
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
 
     if key == _last_context_key and _last_prompt:
         return _last_prompt

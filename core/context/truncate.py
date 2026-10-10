@@ -12,10 +12,10 @@ MAX_OUTPUT_LINES = 2000  # 默认行数上限
 
 
 def truncate_lines(
-        lines: list[str],
-        limit: Optional[int],
-        offset: Optional[int],
-        max_bytes: int = MAX_OUTPUT_BYTES
+    lines: list[str],
+    limit: Optional[int],
+    offset: Optional[int],
+    max_bytes: int = MAX_OUTPUT_BYTES,
 ) -> tuple[str, bool]:
     """行数 / 字节上限，任一先到即停；停处附截断提示，offset 指向下一条未完整返回的行。
 
@@ -56,10 +56,15 @@ def truncate_lines(
 
 
 def truncate_tool_output(
-        text: str,
-        limit: Optional[int] = MAX_OUTPUT_LINES,
-        offset: Optional[int] = 1,
-        max_bytes: int = MAX_OUTPUT_BYTES
+    text: str,
+    limit: Optional[int] = MAX_OUTPUT_LINES,
+    offset: Optional[int] = 1,
+    max_bytes: int = MAX_OUTPUT_BYTES,
 ) -> tuple[str, bool]:
     """通用工具输出截断入口：按行数 / 字节上限截断，返回 (文本, 是否截断)。"""
-    return truncate_lines(text.splitlines(), limit, offset, max_bytes)
+    return truncate_lines(
+        text.splitlines(),
+        limit,
+        offset,
+        max_bytes,
+    )

@@ -212,7 +212,12 @@ class PermissionManager:
             "reason": f"No rule matched for {tool_name}, asking user"
         }
 
-    def _matchs(self, rule: dict, tool_name: str, tool_input: dict) -> bool:
+    def _matchs(
+        self,
+        rule: dict,
+        tool_name: str,
+        tool_input: dict,
+    ) -> bool:
         """Check if a rule matches the tool call."""
         # Tool name match
         # 工具名匹配，当规则工具名存在、不为任意工具，且工具名匹配成功时，进行下一步工具执行路径匹配

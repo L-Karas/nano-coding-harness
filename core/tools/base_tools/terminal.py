@@ -44,9 +44,13 @@ class Terminal(BaseTool):
         # kills that thread and communicate() returns stdout=None. Capture bytes, decode here.
         # stdin=DEVNULL：子进程不得继承终端 stdin，否则交互命令会提示并抢读控制台；WSL bash 用 stdin 传脚本。
         args = build_command_invocation(self.command)
-        run_kwargs = dict(shell=args.use_shell, capture_output=True,
-                          cwd=tctx.cwd if tctx and tctx.cwd else WORKDIR, timeout=120,
-                          **hidden_console_kwargs())
+        run_kwargs = dict(
+            shell=args.use_shell,
+            capture_output=True,
+            cwd=tctx.cwd if tctx and tctx.cwd else WORKDIR,
+            timeout=120,
+            **hidden_console_kwargs(),
+        )
         if args.stdin_script is None:
             run_kwargs["stdin"] = subprocess.DEVNULL
         else:

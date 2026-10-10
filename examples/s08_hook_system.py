@@ -116,8 +116,13 @@ class HookManager:
 
             try:
                 output = subprocess.run(
-                    command, shell=True, cwd=WORKDIR, env=env,
-                    capture_output=True, text=True, timeout=HOOK_TIMEOUT
+                    command,
+                    shell=True,
+                    cwd=WORKDIR,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=HOOK_TIMEOUT,
                 )
 
                 if output.returncode == 0:

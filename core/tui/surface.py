@@ -54,11 +54,22 @@ class _RenderSurface:
 
     # ---------- 卡片 ----------
 
-    def _add_card(self, kind: str, body: Any, cap: Optional[int] = None,
-                  reserved: int = 0) -> Static:
+    def _add_card(
+        self,
+        kind: str,
+        body: Any,
+        cap: Optional[int] = None,
+        reserved: int = 0,
+    ) -> Static:
         """追加卡片并返回正文 Static；cap 非 None 时按视觉行折叠（reserved = 固定头行数）。"""
         self._set_welcome(False)
-        body_w = (_CappedCardBody(body, cap, reserved, classes="card-body", markup=False)
+        body_w = (_CappedCardBody(
+            body,
+            cap,
+            reserved,
+            classes="card-body",
+            markup=False,
+        )
                   if cap is not None else Static(body, classes="card-body", markup=False))
         self._chat().mount(Vertical(body_w, classes=f"card {kind}"))
         return body_w

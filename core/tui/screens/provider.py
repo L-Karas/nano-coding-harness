@@ -29,12 +29,17 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
     """
 
     TITLE = "Model Providers"
-    HINT = "  ↑/↓ browse    Enter set API Key    Delete remove config    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click set API Key    Delete remove config    Esc close"
     LIST_ID = "provider-list"
     SEARCH_PLACEHOLDER = "Search providers…"
     CONFIRM = True
     # priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
-    BINDINGS = [Binding("delete", "remove_selected", "Delete", priority=True)]
+    BINDINGS = [Binding(
+        "delete",
+        "remove_selected",
+        "Delete",
+        priority=True,
+    )]
 
     _NAME_STYLE = "#f8fafc"
     _UNCONFIGURED_STYLE = "#94a3b8"  # 灰：未配置

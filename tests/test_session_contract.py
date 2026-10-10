@@ -49,10 +49,15 @@ def test_update_messages_normalizes_and_keeps_objects(manager):
 
 
 def test_message_roundtrip_preserves_all_fields(manager):
-    manager.add_message(Message(role="assistant", content="a", reasoning_content="r",
-                                tool_calls=[{"id": "c1", "type": "function",
+    manager.add_message(Message(
+        role="assistant",
+        content="a",
+        reasoning_content="r",
+        tool_calls=[{"id": "c1", "type": "function",
                                              "function": {"name": "read_file", "arguments": "{}"}}],
-                                usage={"total_tokens": 5}, payload={"k": "v"}))
+        usage={"total_tokens": 5},
+        payload={"k": "v"},
+    ))
     manager.reset()
     reloaded = manager.load_session(manager.session_map and next(iter(manager.session_map)))
     assert reloaded is not None

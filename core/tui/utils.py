@@ -67,8 +67,12 @@ def list_project_files(root: str | None = None) -> list[str]:
 def current_git_branch() -> str:
     """当前 git 分支名；非仓库 / 无 git / 分离头指针时返回空串。"""
     try:
-        proc = subprocess.run(["git", "branch", "--show-current"], capture_output=True,
-                              text=True, timeout=3)
+        proc = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
         return proc.stdout.strip() if proc.returncode == 0 else ""
     except Exception:
         return ""

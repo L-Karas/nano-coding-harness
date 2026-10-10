@@ -22,7 +22,7 @@ class ForkScreen(_ListPickerScreen):
     """用户消息分叉弹窗（/fork）：Enter 回传选中消息 id，Esc 关闭。"""
 
     TITLE = "Fork from a user message"
-    HINT = "  ↑/↓ browse    Enter fork from this message    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click fork from this message    Esc close"
     LIST_ID = "fork-list"
 
     def __init__(self, messages: list[Any]) -> None:

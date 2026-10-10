@@ -247,7 +247,12 @@ class ClarifyConfirmed(Message):
 class _ClarifyList(OptionList):
     """clarify 选项列表：Enter 发 ClarifyConfirmed；Space 勾选由 App 的 space 绑定处理。"""
 
-    BINDINGS = [Binding("enter", "confirm", "Confirm", show=False)]
+    BINDINGS = [Binding(
+        "enter",
+        "confirm",
+        "Confirm",
+        show=False,
+    )]
 
     def action_confirm(self) -> None:
         self.post_message(ClarifyConfirmed())

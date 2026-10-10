@@ -46,7 +46,14 @@ class MessageBus:
     Teaching version: no file locking; real CC uses proper-lockfile.
     """
 
-    def send(self, from_agent: str, to_agent: str, content: str, msg_type: str = "message", metadata: dict = None):
+    def send(
+        self,
+        from_agent: str,
+        to_agent: str,
+        content: str,
+        msg_type: str = "message",
+        metadata: dict = None,
+    ):
         msg = {"from_agent": from_agent, "to_agent": to_agent,
                "content": content, "msg_type": msg_type, "metadata": metadata or {}, "ts": time.time()}
         inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
@@ -171,8 +178,13 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         req_id = meta.get("request_id", "")
 
         if msg_type == "shutdown_request":
-            BUS.send(name, "lead", "Shutting down gracefully.",
-                     "shutdown_response", {"request_id": req_id, "approve": True})
+            BUS.send(
+                name,
+                "lead",
+                "Shutting down gracefully.",
+                "shutdown_response",
+                {"request_id": req_id, "approve": True},
+            )
             print(f"  \033[35m[Protocol] {name} approved shutdown ({req_id})\033[0m")
             return True
 
@@ -319,7 +331,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         summary = "Done."
         if messages[-1]["role"] == "assistant":
             summary = messages[-1]["content"]
-        BUS.send(name, "lead", summary, "result")
+        BUS.send(
+            name,
+            "lead",
+            summary,
+            "result",
+        )
         activate_teammates.pop(name, None)
         print(f"  \033[32m[Teammate] {name} finished\033[0m")
 
@@ -349,7 +366,13 @@ def _teammate_submit_plan(from_agent: str, plan: str) -> str:
         status="pending",
         payload=plan,
     )
-    BUS.send(from_agent, "lead", plan, "plan_approval_request", {"request_id": req_id})
+    BUS.send(
+        from_agent,
+        "lead",
+        plan,
+        "plan_approval_request",
+        {"request_id": req_id},
+    )
     return f"Plan submitted ({req_id}). Waiting for approval..."
 
 
@@ -364,8 +387,13 @@ def run_request_shutdown(teammate: str) -> str:
         status="pending",
         payload="",
     )
-    BUS.send("lead", teammate, "Please shut down gracefully.",
-             "shutdown_request", {"request_id": req_id})
+    BUS.send(
+        "lead",
+        teammate,
+        "Please shut down gracefully.",
+        "shutdown_request",
+        {"request_id": req_id},
+    )
     print(f"  \033[35m[Protocol] shutdown_request → {teammate} ({req_id})\033[0m")
     return f"Shutdown request sent to {teammate} (request_id={req_id})."
 
@@ -385,8 +413,13 @@ def run_review_plan(request_id: str, approve: bool, feedback: str = "") -> str:
         return f"Request {request_id} already {state.status}."
 
     state.status = "approved" if approve else "rejected"
-    BUS.send("lead", state.sender, feedback or ("Approved" if approve else "Rejected"),
-             "plan_approval_response", {"request_id": request_id, "approved": approve})
+    BUS.send(
+        "lead",
+        state.sender,
+        feedback or ("Approved" if approve else "Rejected"),
+        "plan_approval_response",
+        {"request_id": request_id, "approved": approve},
+    )
     icon = "✓" if approve else "✗"
     print(f"  \033[32m[Protocol] plan {icon} ({request_id})\033[0m")
     return f"Plan {'approved' if approve else 'rejected'} ({request_id})."

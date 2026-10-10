@@ -42,14 +42,24 @@ def _tool_call(name="echo", args='{"value": "x"}', call_id="t1"):
     return {"id": call_id, "type": "function", "function": {"name": name, "arguments": args}}
 
 
-def _run(monkeypatch, responses, *, client=None, history=None, pool=None, policy=None,
-         renderer=None, tctx=None):
+def _run(
+    monkeypatch,
+    responses,
+    *,
+    client=None,
+    history=None,
+    pool=None,
+    policy=None,
+    renderer=None,
+    tctx=None,
+):
     async def fake_stream(stream, on_text=None):
         return responses.pop(0)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
     return asyncio.run(run_agent_step(
-        history or [], "sys",
+        history or [],
+        "sys",
         client=client or _Client(),
         pool=pool or ToolPool({"echo": Echo}),
         tctx=tctx or ToolContext(agent_run=AgentRunContext()),
@@ -120,7 +130,12 @@ def test_after_llm_and_after_tool_injections_keep_order(monkeypatch):
 def test_before_llm_abort_returns_outcome_without_request(monkeypatch):
     client = _Client()
     add_hook("before_llm", lambda ctx: ctx.abort("policy"), "test")
-    outcome = _run(monkeypatch, [], client=client, policy=StepPolicy(use_extensions=True))
+    outcome = _run(
+        monkeypatch,
+        [],
+        client=client,
+        policy=StepPolicy(use_extensions=True),
+    )
     assert outcome.aborted is True
     assert outcome.abort_reason == "policy"
     assert client.kwargs is None

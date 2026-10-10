@@ -47,7 +47,7 @@ class LoginScreen(_ListPickerScreen):
     行 = 序号（暗灰）+ 动作文本（注册绿 / 注销红）；关闭子窗后回到本菜单，Esc 逐层关闭。"""
 
     TITLE = "Custom providers & models"
-    HINT = "  ↑/↓ browse    Enter select    Esc close"
+    HINT = "  ↑/↓ browse    Enter/click select    Esc close"
     LIST_ID = "login-list"
     PICKER_ID = "login-picker"
 
@@ -63,7 +63,12 @@ class LoginScreen(_ListPickerScreen):
         ("unreg-model", "Unregister custom model", False),
     )
 
-    def _option_row(self, num: int, label: str, register: bool) -> Text:
+    def _option_row(
+        self,
+        num: int,
+        label: str,
+        register: bool,
+    ) -> Text:
         style = self._REGISTER_STYLE if register else self._UNREGISTER_STYLE
         return Text.assemble((f"{num}. ", self._NUM_STYLE), (label, style))
 
@@ -188,8 +193,14 @@ class RegisterModelScreen(_ArrowNav, ModalScreen[None]):
             return
         try:
             from core.client import login_model
-            ok = login_model(provider, model, thinking=thinking, vision=vision,
-                             context_length=context_length, max_output=max_output)
+            ok = login_model(
+                provider,
+                model,
+                thinking=thinking,
+                vision=vision,
+                context_length=context_length,
+                max_output=max_output,
+            )
         except Exception as exc:
             self.app.notify(f"Failed to register {model}: {_error_text(exc)}",
                             title="⚠️ Login", severity="error")
@@ -209,7 +220,7 @@ class UnregisterProviderScreen(_InlineConfirm, _ListPickerScreen):
     成功后刷新列表留在窗内（可连续注销）；列表为空时窗内提示。"""
 
     TITLE = "Unregister a custom provider"
-    HINT = "  ↑/↓ browse    Delete unregister    Esc close"
+    HINT = "  ↑/↓ or click    Delete unregister    Esc close"
     LIST_ID = "unreg-provider-list"
     PICKER_ID = "unreg-provider-picker"
     CONFIRM = True
@@ -251,7 +262,7 @@ class UnregisterModelScreen(_InlineConfirm, _ListPickerScreen):
     logout_model 注销，成功后刷新列表留在窗内；列表为空时窗内提示。"""
 
     TITLE = "Unregister a custom model"
-    HINT = "  ↑/↓ browse    Delete unregister    Esc close"
+    HINT = "  ↑/↓ or click    Delete unregister    Esc close"
     LIST_ID = "unreg-model-list"
     PICKER_ID = "unreg-model-picker"
     CONFIRM = True

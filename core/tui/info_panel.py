@@ -27,7 +27,12 @@ class _InfoRow(Static):
 
     _CLIP = {"todos": 72, "bg": 48, "subagents": 48}  # 折叠摘要单行字符上限
 
-    def __init__(self, kind: str, data: dict, cursor: int) -> None:
+    def __init__(
+        self,
+        kind: str,
+        data: dict,
+        cursor: int,
+    ) -> None:
         super().__init__(markup=False, classes="info-row -expandable")
         self._kind = kind
         self._data = data
@@ -86,8 +91,12 @@ class _InfoPanel(Vertical):
     SECTIONS = {"todos": "Todos", "bg": "Background Tasks", "subagents": "Subagents"}  # 顺序即上下顺序
     EMPTY = "(Empty)"  # 空分区占位行（各分区同一文案）
 
-    def __init__(self, state: RuntimeState = RUNTIME_STATE,
-                 on_sections_changed: Callable[[bool], None] | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        state: RuntimeState = RUNTIME_STATE,
+        on_sections_changed: Callable[[bool], None] | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self._state = state  # 读侧只在 snapshot() 上取数，不 import 三个写入方
         self._on_sections_changed = on_sections_changed  # 三区活动状态回传（驱动 App 自动展开/收回）

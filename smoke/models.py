@@ -53,7 +53,12 @@ async def run(app, pilot) -> None:
         _calls = []
 
         class _FakeClient:  # 拦 shared_model_client：记录 set_model_client 调用
-            def set_model_client(self, provider, model, thinking_level="max"):
+            def set_model_client(
+                self,
+                provider,
+                model,
+                thinking_level="max",
+            ):
                 _calls.append((provider, model, thinking_level))
 
         _fake = _FakeClient()
@@ -77,11 +82,24 @@ async def run(app, pilot) -> None:
         assert _calls == [("deepseek", "deepseek-chat", "max"),
                           ("qwen", "qwen-max", "max")], f"过滤后 Enter 选错模型: {_calls}"
         print("[smoke] /model filtered Enter OK: picks the row behind the option id")
+        # 鼠标单击行 = Enter：点第二行应切换第二行模型并关窗
+        app.push_screen(ModelPickerScreen([("deepseek-chat", "deepseek"),
+                                           ("qwen-max", "qwen")]))
+        await settle(pilot)
+        await pilot.click("#model-list", offset=(2, 1))  # 行 1 = qwen-max
+        await settle(pilot)
+        assert _calls == [("deepseek", "deepseek-chat", "max"),
+                          ("qwen", "qwen-max", "max"),
+                          ("qwen", "qwen-max", "max")], f"点击行未切换模型: {_calls}"
+        assert not isinstance(app.screen_stack[-1], ModelPickerScreen), \
+            "点击选中后弹窗应关闭"
+        print("[smoke] /model click OK: click row equals Enter")
         app.push_screen(ModelPickerScreen([("qwen-max", "qwen")]))
         await settle(pilot)
         await pilot.press("escape")  # Esc 取消：不触发切换
         await settle(pilot)
         assert _calls == [("deepseek", "deepseek-chat", "max"),
+                          ("qwen", "qwen-max", "max"),
                           ("qwen", "qwen-max", "max")], \
             f"Esc 取消不应触发切换: {_calls}"
         print("[smoke] /model Esc cancels without switching")
@@ -124,11 +142,11 @@ async def run(app, pilot) -> None:
     tab_ids = [t.id for t in et.query("#tabs-list > Tab")]
     assert tab_ids == ["minimal", "low", "medium", "high", "max"], tab_ids
     assert [t.label_text for t in et.query("#tabs-list > Tab")] == tab_ids
-    # 弹窗比通用 .picker（60%×60%）小：定宽 46 = 内容最宽行（提示行）40 + padding 4 + border 2
+    # 弹窗比通用 .picker（60%×60%）小：定宽 48 = 内容最宽行（提示行）42 + padding 4 + border 2
     # （app.css #effort-picker 常量；改文案须同步该常量）；高度随内容收缩
     et_picker = app.screen_stack[-1].query_one("#effort-picker", Vertical)
-    assert et_picker.region.width == 46, \
-        f"effort 弹窗宽度应定宽 46: {et_picker.region.width}"
+    assert et_picker.region.width == 48, \
+        f"effort 弹窗宽度应定宽 48: {et_picker.region.width}"
     assert et_picker.region.height < app.size.height * 0.6, \
         f"effort 弹窗高度未收缩: {et_picker.region.height}"
     # 档位色带：冷→暖（灰/绿/黄/橙/红）随思考深度低→高，各标签颜色一一对应

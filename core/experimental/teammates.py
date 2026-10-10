@@ -51,8 +51,13 @@ def idle_poll(
             for message in inbox_messages:
                 if message.get("msg_type") == "shutdown_request":
                     request_id = message.get("metadata", {}).get("request_id", "")
-                    message_bus.MESSAGE_BUS.send(agent_name, "lead", "Shutting down.", "shutdown_response",
-                                                 {"request_id": request_id, "approve": True})
+                    message_bus.MESSAGE_BUS.send(
+                        agent_name,
+                        "lead",
+                        "Shutting down.",
+                        "shutdown_response",
+                        {"request_id": request_id, "approve": True},
+                    )
                     return "shutdown"
 
             # todo：优化信息注入
@@ -97,7 +102,11 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         request_id = metadata.get("request_id", "")
         if msg_type == "shutdown_request":
             message_bus.MESSAGE_BUS.send(
-                name, "lead", "Shutting down.", "shutdown_response", {"request_id": request_id, "approve": True}
+                name,
+                "lead",
+                "Shutting down.",
+                "shutdown_response",
+                {"request_id": request_id, "approve": True},
             )
             return True
 
@@ -131,8 +140,13 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             protocol_ctx["waiting_plan"] = match.group(1) if match else result.content
             return True
 
-        policy = StepPolicy(use_extensions=True, permission_hooks=False, background=False,
-                            diff_preview=False, should_halt=_halt_after)
+        policy = StepPolicy(
+            use_extensions=True,
+            permission_hooks=False,
+            background=False,
+            diff_preview=False,
+            should_halt=_halt_after,
+        )
         renderer = StepRenderer(
             on_tool_call=lambda tool, args: _LOGGER.info(f">   [Call tool] (Teammate: {name}) {tool} {args}"),
             on_tool_result=lambda text, err: _LOGGER.info(f">   [Tool result] (Teammate: {name}) {text[:100]}"),
@@ -173,7 +187,8 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                     prepared = await prepare_messages(history[:], None, sub_model=True)
                     history[:] = prepared
                     return await run_agent_step(
-                        history, system_prompt,
+                        history,
+                        system_prompt,
                         client=shared_model_client(),
                         pool=pool,
                         tctx=tctx,
@@ -214,7 +229,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                 summary = msg["content"]
                 break
 
-        message_bus.MESSAGE_BUS.send(name, "lead", summary, "result")
+        message_bus.MESSAGE_BUS.send(
+            name,
+            "lead",
+            summary,
+            "result",
+        )
         ACTIVATE_TEAMMATES.pop(name)
 
     ACTIVATE_TEAMMATES[name] = True

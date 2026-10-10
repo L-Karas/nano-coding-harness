@@ -25,9 +25,21 @@ class Message:
 
 
 class MessageBus:
-    def send(self, from_agent: str, to_agent: str, content: str,
-             msg_type: str = "message", metadata: dict = None):
-        msg = Message(from_agent, to_agent, content, msg_type, metadata or {})
+    def send(
+        self,
+        from_agent: str,
+        to_agent: str,
+        content: str,
+        msg_type: str = "message",
+        metadata: dict = None,
+    ):
+        msg = Message(
+            from_agent,
+            to_agent,
+            content,
+            msg_type,
+            metadata or {},
+        )
 
         inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
         with inbox.open("a", encoding="utf-8") as f:

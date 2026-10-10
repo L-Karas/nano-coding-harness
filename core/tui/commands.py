@@ -225,7 +225,12 @@ class _CommandFlow:
                 render_background_notification(f"保存会话消息失败：{exc}", title="⚠️ Session Error")
         self._handle(query)
 
-    def _spawn_worker(self, work: Callable[[], None], name: str, title: str) -> threading.Thread:
+    def _spawn_worker(
+        self,
+        work: Callable[[], None],
+        name: str,
+        title: str,
+    ) -> threading.Thread:
         """后台线程跑 work：线程内异常上屏，收尾回 App 线程复位忙碌态（App 已退出则忽略）。"""
 
         def _run() -> None:

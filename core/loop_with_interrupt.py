@@ -31,8 +31,13 @@ from core.turn_runtime import TurnRunner
 
 _LOGGER = get_logger(__name__)
 
-MAIN_STEP_POLICY = StepPolicy(use_extensions=True, permission_hooks=True, background=True,
-                              diff_preview=True, defer_tools_on_length=True)
+MAIN_STEP_POLICY = StepPolicy(
+    use_extensions=True,
+    permission_hooks=True,
+    background=True,
+    diff_preview=True,
+    defer_tools_on_length=True,
+)
 
 
 def _main_renderer() -> StepRenderer:
@@ -256,7 +261,12 @@ def start_agent_runtime() -> AgentRuntime:
 
     # 后台线程预热 MCP 连接（阻塞至就绪或失败），避免首个 agent 轮次被慢建连卡住
     threading.Thread(target=_warmup, name="mcp-warmup", daemon=True).start()
-    threading.Thread(target=auto_loop, args=(runtime,), name="auto-loop", daemon=True).start()
+    threading.Thread(
+        target=auto_loop,
+        args=(runtime,),
+        name="auto-loop",
+        daemon=True,
+    ).start()
     return runtime
 
 

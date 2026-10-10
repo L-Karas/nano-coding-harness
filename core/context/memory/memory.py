@@ -31,9 +31,18 @@ class MemoryManager:
     def _get_id():
         return f"memory-{uuid.uuid4().hex[:8]}"
 
-    def create_memory(self, title: str, content: str,
-                      mem_type: Literal["user", "feedback", "project", "reference"]) -> str:
-        memory = Memory(id=self._get_id(), title=title, content=content, mem_type=mem_type)
+    def create_memory(
+        self,
+        title: str,
+        content: str,
+        mem_type: Literal["user", "feedback", "project", "reference"],
+    ) -> str:
+        memory = Memory(
+            id=self._get_id(),
+            title=title,
+            content=content,
+            mem_type=mem_type,
+        )
         self.memories[memory.id] = memory
         return self._save_memory(memory), memory.id
 

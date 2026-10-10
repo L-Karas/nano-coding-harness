@@ -46,7 +46,12 @@ def preview_write(path: str, content: str, cwd: Optional[Path] = None) -> list[t
     return _diff_rows(_read_old(_resolve(path, cwd)), content)
 
 
-def preview_edit(path: str, old_text: str, new_text: str, cwd: Optional[Path] = None) -> list[tuple[str, int, str]]:
+def preview_edit(
+    path: str,
+    old_text: str,
+    new_text: str,
+    cwd: Optional[Path] = None,
+) -> list[tuple[str, int, str]]:
     """执行前计算 edit 将产生的变化行；old_text 不存在时返回空列表"""
     text = _read_old(_resolve(path, cwd))
     if old_text not in text:

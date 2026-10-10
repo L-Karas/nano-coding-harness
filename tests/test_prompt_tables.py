@@ -32,8 +32,18 @@ def test_build_tools_table_empty():
 
 def test_build_memories_table_renders_rows(monkeypatch):
     memories = [
-        Memory(id="m1", title="语言", content="用中文回复", mem_type="user"),
-        Memory(id="m2", title="环境", content="Windows", mem_type="project"),
+        Memory(
+            id="m1",
+            title="语言",
+            content="用中文回复",
+            mem_type="user",
+        ),
+        Memory(
+            id="m2",
+            title="环境",
+            content="Windows",
+            mem_type="project",
+        ),
     ]
     monkeypatch.setattr(prompt.MEMORY_MANAGER, "load_memories", lambda: memories)
     assert prompt.build_memories_table() == (
@@ -49,7 +59,12 @@ def test_build_memories_table_empty(monkeypatch):
 
 def test_build_skills_table_renders_rows(monkeypatch):
     monkeypatch.setattr(prompt, "load_skills", lambda: {
-        "review": Skill(name="review", description="Review code", content="raw", skill_type="user"),
+        "review": Skill(
+            name="review",
+            description="Review code",
+            content="raw",
+            skill_type="user",
+        ),
     })
     assert prompt.build_skills_table() == (
         "|Skill name|Skill description|\n|---|---|\n|review|Review code|"
@@ -98,10 +113,19 @@ def test_build_guidelines_builds_once(monkeypatch):
 
 def test_build_system_prompt_main_includes_all_tables(monkeypatch):
     monkeypatch.setattr(prompt.MEMORY_MANAGER, "load_memories",
-                        lambda: [Memory(id="m1", title="t", content="c", mem_type="user")])
+                        lambda: [Memory(
+                            id="m1",
+                            title="t",
+                            content="c",
+                            mem_type="user",
+                        )])
     monkeypatch.setattr(prompt, "load_skills",
-                        lambda: {"s": Skill(name="s", description="d", content="raw",
-                                            skill_type="project")})
+                        lambda: {"s": Skill(
+                            name="s",
+                            description="d",
+                            content="raw",
+                            skill_type="project",
+                        )})
     text = prompt.build_system_prompt("main", [_tool("read", "Read a file")])
     assert "|`read`|Read a file|" in text
     assert "|t|c|user|" in text

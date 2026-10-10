@@ -65,8 +65,12 @@ def _bg_interrupted(tctx: ToolContext | None) -> bool:
     return bool(tctx and tctx.agent_run and tctx.agent_run.interrupted)
 
 
-def start_background_task(tool_call: ChatCompletionMessageToolCallUnion, pool: ToolPool,
-                         tctx: ToolContext | None = None, loop=None) -> str:
+def start_background_task(
+    tool_call: ChatCompletionMessageToolCallUnion,
+    pool: ToolPool,
+    tctx: ToolContext | None = None,
+    loop=None,
+) -> str:
     bg_id = RUNTIME_STATE.allocate_background_id()
     tool_args = json.loads(tool_call.function.arguments)
     tool_call_str = f"{tool_call.function.name}({', '.join(f'{k}={v}' for k, v in tool_args.items())})"

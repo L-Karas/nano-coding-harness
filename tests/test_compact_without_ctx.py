@@ -55,10 +55,12 @@ def test_compact_history_uses_sub_model_client(monkeypatch):
     async def _create(**kwargs):
         return _FakeStream([_chunk("summary")])
 
-    fake_client = SimpleNamespace(get_model_client=lambda async_client=False: _create,
-                                  compact_threshold=lambda: 1,
-                                  reserve_threshold=lambda: 0,
-                                  clamp_max_tokens=lambda requested: requested)
+    fake_client = SimpleNamespace(
+        get_model_client=lambda async_client=False: _create,
+        compact_threshold=lambda: 1,
+        reserve_threshold=lambda: 0,
+        clamp_max_tokens=lambda requested: requested,
+    )
 
     def fail():
         raise AssertionError("应使用子代理 client，而非主 client")

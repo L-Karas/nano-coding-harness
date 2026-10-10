@@ -71,7 +71,13 @@ class RequestShutdown(BaseTool):
             status="pending",
             payload="",
         )
-        message_bus.MESSAGE_BUS.send("lead", self.teammate, "Shut down.", "shutdown_request", {"request_id": req_id})
+        message_bus.MESSAGE_BUS.send(
+            "lead",
+            self.teammate,
+            "Shut down.",
+            "shutdown_request",
+            {"request_id": req_id},
+        )
         return f"Shutdown request sent to {self.teammate}."
 
 
@@ -84,7 +90,12 @@ class RequestPlan(BaseTool):
     experimental: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        message_bus.MESSAGE_BUS.send("lead", self.teammate, f"Submit plan for: {self.task}.", "message")
+        message_bus.MESSAGE_BUS.send(
+            "lead",
+            self.teammate,
+            f"Submit plan for: {self.task}.",
+            "message",
+        )
         return f"Asked {self.teammate} to submit a plan."
 
 
@@ -133,5 +144,11 @@ class SubmitPlan(BaseTool):
             status="pending",
             payload=self.plan,
         )
-        message_bus.MESSAGE_BUS.send(from_agent, "lead", self.plan, "plan_approval_request", {"request_id": req_id})
+        message_bus.MESSAGE_BUS.send(
+            from_agent,
+            "lead",
+            self.plan,
+            "plan_approval_request",
+            {"request_id": req_id},
+        )
         return f"Plan submitted ({req_id})"

@@ -70,7 +70,12 @@ _last_context_key, _last_prompt = None, None
 def get_sys_prompt(context: dict) -> str:
     global _last_prompt, _last_context_key
 
-    key = json.dumps(context, sort_keys=True, ensure_ascii=False, default=str)
+    key = json.dumps(
+        context,
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
     if key == _last_context_key and _last_prompt:
         print(" \033[90m[cache hit] system prompt unchanged\033[0m")
         return _last_prompt
