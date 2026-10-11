@@ -1,7 +1,7 @@
 """扩展注册 API：register(api) 内缓冲注册，正常返回后由加载器一次性提交。"""
 from typing import Callable
 
-EVENTS: tuple[str, ...] = ("before_llm", "after_llm", "before_tool", "after_tool")
+EVENTS: tuple[str, ...] = ("before_llm", "after_llm", "before_tool", "tool_execute", "after_tool")
 
 
 class ExtensionAPI:

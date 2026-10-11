@@ -2,6 +2,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.runtime_context import ToolContext
+
 
 @dataclass
 class BeforeLLMContext:
@@ -44,3 +46,19 @@ class AfterToolContext:
     result: str
     is_error: bool = False
     inject_messages: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class ToolExecuteContext:
+    tool_name: str
+    args: dict
+    tctx: ToolContext | None = None
+    handled: bool = False
+    result: str = ""
+    is_error: bool = False
+
+    def handle(self, result, is_error: bool = False) -> None:
+        """声明接管本次执行；结果取代内置执行（只写 result 不算接管）。"""
+        self.handled = True
+        self.result = str(result)
+        self.is_error = bool(is_error)

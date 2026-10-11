@@ -3,7 +3,7 @@ import pytest
 
 from core.extension.api import EVENTS, ExtensionAPI
 from core.extension.context import (
-    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext,
+    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext, ToolExecuteContext,
 )
 
 
@@ -23,8 +23,8 @@ def test_on_rejects_unknown_event_and_non_callable():
         api.on("before_llm", "not-callable")
 
 
-def test_four_events_are_declared():
-    assert EVENTS == ("before_llm", "after_llm", "before_tool", "after_tool")
+def test_five_events_are_declared():
+    assert EVENTS == ("before_llm", "after_llm", "before_tool", "tool_execute", "after_tool")
 
 
 def test_abort_and_block_helpers_capture_state():
@@ -40,3 +40,21 @@ def test_abort_and_block_helpers_capture_state():
 def test_after_contexts_start_with_empty_inject_messages():
     assert AfterLLMContext(content=None, tool_calls=[]).inject_messages == []
     assert AfterToolContext(tool_name="terminal", args={}, result="out").inject_messages == []
+
+
+def test_tool_execute_handle_captures_state_and_normalizes():
+    ctx = ToolExecuteContext(tool_name="web_search", args={"query": "x"})
+    assert (ctx.handled, ctx.result, ctx.is_error) == (False, "", False)
+    ctx.handle(42, is_error=1)
+    assert (ctx.handled, ctx.result, ctx.is_error) == (True, "42", True)
+
+
+def test_tool_execute_result_without_handle_is_not_takeover():
+    ctx = ToolExecuteContext(tool_name="web_search", args={})
+    ctx.result = "ignored"
+    assert ctx.handled is False
+
+
+def test_tool_execute_context_is_exported_from_package():
+    from core.extension import ToolExecuteContext as Exported
+    assert Exported is ToolExecuteContext
