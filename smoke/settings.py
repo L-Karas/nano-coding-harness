@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 import core.config as config_mod
-from textual.widgets import Input, Select, Switch
+from textual.widgets import Input, Select, Static, Switch
 
 from core.tui.screens import SettingsScreen
 from smoke._util import prompt_of, settle, type_query
@@ -44,8 +44,8 @@ async def run(app, pilot) -> None:
             # 缺省键取 AgentConfig 当前默认值（不写死，避免默认值调整后冒烟失真）
             assert form.query_one("#set-default_max_tokens", Input).value == \
                 str(config_mod.AgentConfig.model_fields["default_max_tokens"].default)
-            assert form.query_one("#set-compact_threshold", Input).value == \
-                str(config_mod.AgentConfig.model_fields["compact_threshold"].default)
+            assert form.query_one("#set-compact_trigger_tokens", Input).value == \
+                str(config_mod.AgentConfig.model_fields["compact_trigger_tokens"].default)
             assert form.query_one("#set-auto_compact", Switch).value is True
             # 未设置：空值 → 占位显示 prompt 提示（选项表首项为占位行，值为 Select.NULL）
             assert msel.is_blank() and msel.prompt == "Select a model", (msel.value, msel.prompt)
@@ -103,13 +103,26 @@ async def run(app, pilot) -> None:
             # 字段行无下划线（高 1 行），输入控件自身也无边框
             assert all(not r.styles.border_top[0] and not r.styles.border_bottom[0]
                        and r.styles.height.value == 1 for r in rows), "字段行不应有下划线"
-            # 每行左侧显示对应参数名
-            labels = [str(w.render()) for w in form.query(".field-label")]
-            assert labels == ["default_model", "default_sub_model", "default_fallback_model",
-                              "default_thinking_level", "default_sub_model_thinking_level",
-                              "default_max_tokens", "escalated_max_tokens",
-                              "summary_max_tokens", "compact_threshold",
-                              "reserve_threshold"], labels
+            # 每行左侧显示人类可读参数名（与开关行标签同一展示风格，而非字段名）
+            field_labels = list(form.query(".field-label"))
+            labels = [str(w.render()) for w in field_labels]
+            assert labels == ["Default model", "Default sub model", "Default fallback model",
+                              "Default thinking level", "Sub model thinking level",
+                              "Default max tokens", "Escalated max tokens",
+                              "Summary max tokens", "Compact trigger tokens",
+                              "Compact reserve tokens"], labels
+            # 字段标签与开关标签同色（此时焦点在 default_model 行，末行标签必为非聚焦态）
+            switch_label = form.query_one(".switch-label", Static)
+            assert field_labels[-1].styles.color == switch_label.styles.color, \
+                (field_labels[-1].styles.color, switch_label.styles.color)
+            # 参数名与开关名左对齐；控件右缘与开关右缘对齐（行内边距一致）
+            assert field_labels[-1].region.x == switch_label.region.x, \
+                (field_labels[-1].region.x, switch_label.region.x)
+            input_widget = form.query_one("#set-default_max_tokens", Input)
+            switch_widget = form.query_one("#set-auto_compact", Switch)
+            assert (input_widget.region.x + input_widget.region.width
+                    == switch_widget.region.x + switch_widget.region.width), \
+                (input_widget.region, switch_widget.region)
             assert all(not i.styles.border_top[0] and not i.styles.border_left[0]
                        for i in form.query("#settings-picker Input")), "输入框应无自身边框"
             # 开关同注册模型窗：去边框 + 透明底（否则 tall 边框变厚、滑块加粗）
@@ -231,8 +244,8 @@ async def run(app, pilot) -> None:
                 "鼠标编辑后 Enter 应落盘"
             assert isinstance(app.screen_stack[-1], SettingsScreen), "保存后不应关窗"
             saved = json.loads(setting_file.read_text(encoding="utf-8"))  # 非法值断言以当前盘面为基准
-            # 非法值（compact_threshold=0 违反 gt=0）：第二次 Enter 保存失败，留在窗内且不写盘
-            compact = form.query_one("#set-compact_threshold", Input)
+            # 非法值（compact_trigger_tokens=0 违反 gt=0）：第二次 Enter 保存失败，留在窗内且不写盘
+            compact = form.query_one("#set-compact_trigger_tokens", Input)
             compact.value = "0"
             compact.focus()
             await pilot.press("enter")  # 进入编辑态

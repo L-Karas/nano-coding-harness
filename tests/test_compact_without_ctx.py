@@ -51,14 +51,14 @@ def test_summarize_history_clamps_max_tokens(monkeypatch):
 
 def test_compact_history_uses_sub_model_client(monkeypatch):
     """子代理压缩（sub_model=True）必须用子代理 client 总结（与对话同模型，缓存命中），不得回退主 client；
-    且触发阈值/保留预算取自该 client 的当前模型，而不是配置里的参考值。"""
+    且触发阈值/保留预算使用该 client 当前模型解析出的预算。"""
     async def _create(**kwargs):
         return _FakeStream([_chunk("summary")])
 
     fake_client = SimpleNamespace(
         get_model_client=lambda async_client=False: _create,
-        compact_threshold=lambda: 1,
-        reserve_threshold=lambda: 0,
+        compact_trigger_tokens=lambda: 1,
+        compact_reserve_tokens=lambda: 0,
         clamp_max_tokens=lambda requested: requested,
     )
 
@@ -82,5 +82,5 @@ def test_find_index_to_split_uses_passed_reserve_budget():
     messages = [{"role": "user", "content": "a" * 40},
                 {"role": "user", "content": "b" * 40},
                 {"role": "user", "content": "c" * 40}]
-    assert compact_mod.find_index_to_split(messages, reserve_threshold=0) == len(messages)
-    assert compact_mod.find_index_to_split(messages, reserve_threshold=10**9) == 0
+    assert compact_mod.find_index_to_split(messages, reserve_tokens=0) == len(messages)
+    assert compact_mod.find_index_to_split(messages, reserve_tokens=10**9) == 0

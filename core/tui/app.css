@@ -381,11 +381,14 @@ ModalScreen {
 .switch-row:focus-within { background: transparent; }
 .switch-row:focus-within .switch-label { color: #7287fd; }
 
-/* ── /settings 弹窗：字段行 = 左侧参数名 + 无边框输入（无下划线，靠光标与标签变色指示焦点）；
+/* ── /settings 弹窗：字段行 = 左侧参数显示名 + 无边框输入（无下划线，靠光标与标签变色指示焦点）；
    开关样式同注册模型窗的 Supports thinking mode（去边框 → 滑块变薄）；字段多，封顶后可滚 ── */
 #settings-picker { width: 60%; height: auto; max-height: 80%; overflow-y: auto; }
-#settings-picker .field-row { border: none; height: 1; }  /* id 选择器压过 .field-row 的 2 行下边框 */
-.field-row .field-label { width: 33; height: 1; padding-right: 1; color: #94a3b8; }
+/* id 选择器压过 .field-row 的 2 行下边框；padding 清零盖掉其借自注册表单行的 `padding: 0 1`
+   （否则参数名比开关名右偏 1 列、控件右缘比开关短 1 列） */
+#settings-picker .field-row { border: none; height: 1; padding: 0; }
+/* 参数名与开关标签同一展示样式：不另设颜色（正常前景），聚焦行变紫见下一条 */
+.field-row .field-label { width: 33; height: 1; padding-right: 1; }
 .field-row:focus-within .field-label { color: #7287fd; }
 #settings-picker Switch { border: none; background: transparent; }
 #settings-picker Input,

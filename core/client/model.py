@@ -319,15 +319,14 @@ class ModelClient:
             return None
         return self._model_config().get("max_output") or None
 
-    def compact_threshold(self) -> int:
-        """当前模型的上下文压缩触发阈值（随模型切换自动变化）。"""
-        return CONFIGMANAGER.config.resolve_compact_threshold(
+    def compact_trigger_tokens(self) -> int:
+        """当前模型的上下文压缩触发阈值（绝对 token 预算，按模型窗口封顶）。"""
+        return CONFIGMANAGER.config.resolve_compact_trigger_tokens(
             self.load_context_length(), self.load_max_output())
 
-    def reserve_threshold(self) -> int:
-        """压缩后保留的最近消息 token 预算（按当前上下文长度解析，封顶压缩阈值）。"""
-        return CONFIGMANAGER.config.resolve_reserve_threshold(
-            self.load_context_length(), self.compact_threshold())
+    def compact_reserve_tokens(self) -> int:
+        """压缩后保留的最近消息 token 预算（绝对值，封顶压缩阈值）。"""
+        return CONFIGMANAGER.config.resolve_compact_reserve_tokens(self.compact_trigger_tokens())
 
     def clamp_max_tokens(self, requested: int) -> int:
         """把单次调用的 max_tokens 钳制到当前模型固定最大输出；无固定上限时不钳制。"""

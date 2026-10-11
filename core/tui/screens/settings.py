@@ -1,6 +1,6 @@
 """设置弹窗（/settings）：编辑 AgentConfig 参数；Enter 两段式（先编辑，再保存），Esc 关闭。
 
-表单格式照注册弹窗：.field-row（左侧参数名 + 无边框控件）+ 开关行 + 提示行。
+表单格式照注册弹窗：.field-row（左侧参数显示名 + 无边框控件）+ 开关行 + 提示行。
 模型字段为下拉框（选项来自 core.client.get_model_list，值为 'provider:model'）；
 打开时按当前配置预填。交互约定（见 SettingsScreen）：
 - 浏览态字段锁定：打字 / 空格不生效，↑/↓ 或 Tab 切字段；
@@ -26,23 +26,35 @@ from core.config import AgentConfig, AgentConfigManager
 from core.tui.screens.base import _ArrowNav, _error_text, _model_row_text
 from core.tui.screens.model import _EFFORT_LEVELS
 
-# 模型下拉字段（值为 'provider:model'）与其余字段名（即左侧标签）；分组顺序即表单顺序
+# 模型下拉字段（值为 'provider:model'）；分组顺序即表单顺序
 _MODEL_FIELDS = ("default_model", "default_sub_model", "default_fallback_model")
 _THINKING_FIELDS = ("default_thinking_level", "default_sub_model_thinking_level")
-# 数字字段 → 解析类型（int/float）：顺序即表单顺序，控件 type= 与保存转换都由它决定
+# 数字字段 → 解析类型：顺序即表单顺序，控件 type= 与保存转换都由它决定
 _NUMBER_FIELDS: dict[str, type] = {
     "default_max_tokens": int,
     "escalated_max_tokens": int,
     "summary_max_tokens": int,
-    "compact_threshold": float,
-    "reserve_threshold": float,
+    "compact_trigger_tokens": int,
+    "compact_reserve_tokens": int,
 }
-_BOOL_FIELDS = (
-    ("auto_compact", "Auto compact context"),
-    ("enable_experimental_tools", "Enable experimental tools"),
-    ("enable_defer_tools", "Enable deferred tool loading"),
-    ("enable_defer_skills", "Enable deferred skill loading"),
-)
+_BOOL_FIELDS = ("auto_compact", "enable_experimental_tools", "enable_defer_tools", "enable_defer_skills")
+# 字段名 → 窗口左侧显示短语（与开关行标签同一展示风格）；控件 id 与存储仍用字段名
+_FIELD_LABELS: dict[str, str] = {
+    "default_model": "Default model",
+    "default_sub_model": "Default sub model",
+    "default_fallback_model": "Default fallback model",
+    "default_thinking_level": "Default thinking level",
+    "default_sub_model_thinking_level": "Sub model thinking level",
+    "default_max_tokens": "Default max tokens",
+    "escalated_max_tokens": "Escalated max tokens",
+    "summary_max_tokens": "Summary max tokens",
+    "compact_trigger_tokens": "Compact trigger tokens",
+    "compact_reserve_tokens": "Compact reserve tokens",
+    "auto_compact": "Auto compact context",
+    "enable_experimental_tools": "Enable experimental tools",
+    "enable_defer_tools": "Enable deferred tool loading",
+    "enable_defer_skills": "Enable deferred skill loading",
+}
 
 _FIELD_ID = "set-{}"  # 控件 id：字段名（下划线原样）→ #set-default_max_tokens
 
@@ -56,8 +68,8 @@ def _model_options(rows: list[tuple[str, str]]) -> list[tuple[Text, tuple[str, s
 
 
 def _labeled_field(name: str, widget: Widget) -> Horizontal:
-    """字段行：左侧参数名（定宽对齐，app.css .field-label）+ 右侧控件；无下划线。"""
-    return Horizontal(Static(name, classes="field-label"), widget, classes="field-row")
+    """字段行：左侧参数显示名（定宽对齐，app.css .field-label）+ 右侧控件；无下划线。"""
+    return Horizontal(Static(_FIELD_LABELS[name], classes="field-label"), widget, classes="field-row")
 
 
 class _LockedInput(Input):
@@ -122,10 +134,10 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             id=_FIELD_ID.format(name),
         ))
                     for name, cast in _NUMBER_FIELDS.items()]
-        widgets += [Horizontal(Static(label, classes="switch-label"),
+        widgets += [Horizontal(Static(_FIELD_LABELS[name], classes="switch-label"),
                                Switch(value=False, id=_FIELD_ID.format(name)),
                                classes="switch-row")
-                    for name, label in _BOOL_FIELDS]
+                    for name in _BOOL_FIELDS]
         widgets.append(Static("  Tab/click field    Enter edit / save    Esc close",
                               classes="picker-hint"))
         picker = Vertical(*widgets, classes="picker", id="settings-picker")
@@ -140,7 +152,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             self.query_one(f"#{_FIELD_ID.format(name)}", Select).value = getattr(self._config, name)
         for name in _NUMBER_FIELDS:
             self.query_one(f"#{_FIELD_ID.format(name)}", Input).value = str(getattr(self._config, name))
-        for name, _ in _BOOL_FIELDS:
+        for name in _BOOL_FIELDS:
             self.query_one(f"#{_FIELD_ID.format(name)}", Switch).value = bool(getattr(self._config, name))
         self._snapshot_baseline()
         self.query_one(f"#{_FIELD_ID.format(_MODEL_FIELDS[0])}", Select).focus()
@@ -198,7 +210,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             text = self.query_one(f"#{_FIELD_ID.format(name)}", Input).value.strip()
             values[name] = cast(text) if text else AgentConfig.model_fields[name].default
         values.update({name: self.query_one(f"#{_FIELD_ID.format(name)}", Switch).value
-                       for name, _ in _BOOL_FIELDS})
+                       for name in _BOOL_FIELDS})
         return values
 
     # ---------- 两段式 Enter：编辑 → 保存 ----------

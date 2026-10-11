@@ -34,7 +34,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 模型的视觉 / 思考档位声明与注册表细节见 [`docs/configuration.md`](docs/configuration.md)。
 
 - `/provider`：填/删 API Key（写入 `.harness/.auth.json`）
-- `/model`：切换模型（写入 `.harness/.settings.json`）
+- `/model`：从已配置 provider 的模型列表中切换当前会话模型（只改内存 client，不落盘；默认模型在 `/settings` 修改）
 - `/effort`：切换思考档位（`minimal` / `low` / `medium` / `high` / `max`）
 - `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型
 
@@ -79,7 +79,8 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | [`docs/architecture.md`](docs/architecture.md) | core/ 模块地图、Agent 主循环、两层上下文压缩、健壮性设计 |
 | [`docs/tools.md`](docs/tools.md) | 工具系统与内置工具清单、后台任务 |
 | [`docs/tui.md`](docs/tui.md) | TUI 布局与界面模块 |
-| [`docs/configuration.md`](docs/configuration.md) | 模型注册表、`.harness/` 目录、压缩与运行参数 |
+| [`docs/configuration.md`](docs/configuration.md) | 模型注册表、`.harness/` 目录、`/settings` 参数与压缩运行参数 |
+| [`docs/context-compaction.md`](docs/context-compaction.md) | 两层上下文压缩：触发 / 保留预算、切分与摘要、模型切换行为 |
 | [`docs/features.md`](docs/features.md) | MCP、Skills、Memory、Cron 调度 |
 | [`docs/permissions.md`](docs/permissions.md) | 权限与 Hook 策略 |
 | [`docs/teams.md`](docs/teams.md) | 子代理 / 队友 / 任务板 / Worktree |

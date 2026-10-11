@@ -2,8 +2,8 @@
 Context Compaction
 
 # Compaction is layered: first shrink oversized tool results, then trim old
-# message ranges, and only call the model for a summary when the context is
-# still too large or the user explicitly runs /compact.
+# message ranges, and call the model for a summary only when the context is
+# still over the trigger threshold (automatic turns and /compact alike).
 """
 import inspect
 import uuid
@@ -114,11 +114,11 @@ def truncate_large_tool_outputs(messages: list) -> list:
     return messages
 
 
-def find_index_to_split(messages: list, reserve_threshold: int) -> int:
-    # 1. 优先按 turn（user 消息分界）切：从最早的 user 开始，保留部分不超过 reserve_threshold
+def find_index_to_split(messages: list, reserve_tokens: int) -> int:
+    # 1. 优先按 turn（user 消息分界）切：从最早的 user 开始，保留部分不超过 reserve_tokens
     # 2. 单个 turn 就超预算时，退化为按 assistant 消息切：尽量多地保留 assistant - tool 组
     #    （tool_calls 与其对应的 tool 结果不得被拆开）
-    # reserve_threshold 由调用方按当前模型解析（见 ModelClient.reserve_threshold）。
+    # reserve_tokens 由调用方按当前模型封顶（见 ModelClient.compact_reserve_tokens）。
     n = len(messages)
     # suffix_tokens[i] = messages[i:] 的 token 总数；user_index 按出现顺序记录 user 消息下标
     suffix_tokens = [0] * n
@@ -132,13 +132,13 @@ def find_index_to_split(messages: list, reserve_threshold: int) -> int:
     user_index.reverse()
 
     for index in user_index:
-        if suffix_tokens[index] <= reserve_threshold:
+        if suffix_tokens[index] <= reserve_tokens:
             return index
 
-    # 任意单个 turn 均大于 reserve_threshold：从最后一个 turn 开始找可切分的 assistant 下标
+    # 任意单个 turn 均大于 reserve_tokens：从最后一个 turn 开始找可切分的 assistant 下标
     end = user_index[-1] if user_index else 0
     while end < n:
-        if suffix_tokens[end] <= reserve_threshold and message_get(messages[end], "role") == "assistant":
+        if suffix_tokens[end] <= reserve_tokens and message_get(messages[end], "role") == "assistant":
             return end
         end += 1
 
@@ -187,7 +187,7 @@ async def compact_history(
     auto_compact: bool = True,
     sub_model: bool = False,
 ) -> tuple[list, bool]:
-    """压缩历史消息；阈值/保留预算随当前模型（主代理或子代理）动态解析。
+    """压缩历史消息；阈值/保留预算按当前模型（主代理或子代理）窗口封顶。
 
     Returns:
         (messages, compacted)：未触发压缩（低于阈值 / 无可用上下文窗口）时返回原 list 且
@@ -197,13 +197,13 @@ async def compact_history(
         return [], False
     client = shared_sub_model_client() if sub_model else shared_model_client()
     # threshold <= 0：当前模型没有可用上下文窗口（未选择模型）→ 无法压缩，原样返回
-    threshold = client.compact_threshold()
+    threshold = client.compact_trigger_tokens()
     if threshold <= 0 or estimate_size(messages) < threshold:
         return messages, False
 
     split_index = -1
     if auto_compact:
-        split_index = find_index_to_split(messages, client.reserve_threshold())
+        split_index = find_index_to_split(messages, client.compact_reserve_tokens())
         summary = await summarize_history(messages[:split_index], ctx, sub_model)
     else:
         summary = await summarize_history(messages, ctx, sub_model)

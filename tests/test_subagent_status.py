@@ -20,10 +20,10 @@ class _FakeModelClient:
             return object()  # 假 stream，真解析见 fake_streaming_message
         return create
 
-    def compact_threshold(self) -> int:
+    def compact_trigger_tokens(self) -> int:
         return 10**9  # 测试消息量远小于此：预算管线不触发压缩
 
-    def reserve_threshold(self) -> int:
+    def compact_reserve_tokens(self) -> int:
         return 0
 
     def clamp_max_tokens(self, requested: int) -> int:

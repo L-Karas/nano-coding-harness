@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -31,9 +32,27 @@ GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
 
 
-def _scale_tokens(value: float | int, base: int) -> int:
-    """运行时 token 解析：值 <= 1 视为 base 的比例，否则视为绝对值；绝对值超界时封顶（不抛错）。"""
-    return int(value * base) if value <= 1 else min(int(value), base)
+_LEGACY_SETTING_KEYS = {
+    "compact_threshold": "compact_trigger_tokens",
+    "reserve_threshold": "compact_reserve_tokens",
+}
+_LEGACY_RATIO_BASE = 1_000_000  # 旧比例值折算基准：注册表主流模型为 1M 上下文
+
+
+def _upgrade_legacy_settings(raw: dict) -> bool:
+    """就地迁移旧配置：字段改名 + 旧比例值（<=1）折算成绝对 token 数；返回是否发生迁移。"""
+    migrated = False
+    for old_key, new_key in _LEGACY_SETTING_KEYS.items():
+        if old_key not in raw:
+            continue
+        value = raw.pop(old_key)
+        migrated = True
+        if new_key in raw:  # 新旧 key 并存：以新 key 为准，旧 key 仅移除
+            continue
+        if isinstance(value, (int, float)):  # 非数字原样保留，交给 pydantic 报错
+            value = round(value * _LEGACY_RATIO_BASE) if value <= 1 else int(value)
+        raw[new_key] = value
+    return migrated
 
 
 class AgentConfig(BaseModel):
@@ -50,7 +69,7 @@ class AgentConfig(BaseModel):
 
     default_max_tokens: int = Field(default=16_000, description="Max tokens per default model call")
     escalated_max_tokens: int = Field(default=32_000,
-                                      description="Max tokens for escalated calls when the default limit is insufficient; also the output headroom kept by compaction when the model declares no fixed max output")
+                                      description="Max tokens for escalated calls when the default limit is insufficient; also the tokens compaction reserves for output when the model declares no fixed max output")
 
     max_retries: int = Field(default=3, description="Max retries for a failed model call")
     max_recovery_retries: int = Field(default=3,
@@ -60,28 +79,29 @@ class AgentConfig(BaseModel):
 
     auto_compact: bool = Field(default=True, description="Enable automatic context compaction")
     compact_type: str = Field(default="summary", description="Context compaction method")
-    compact_threshold: float | int = Field(default=0.5,
-                                           description="Context usage that triggers compaction, resolved per current model at runtime. Values <= 1 are a fraction of the current context length; larger values are absolute token counts, capped to leave room for max output",
-                                           gt=0)
-    reserve_threshold: float | int = Field(default=0.1,
-                                           description="Recent message tokens kept after compaction. Values <= 1 are a fraction of the current context length; larger values are absolute token counts",
-                                           ge=0)
-    summary_max_tokens: int = Field(default=20_000, description="Max tokens for the summary produced during compaction")
+    compact_trigger_tokens: int = Field(default=500_000,
+                                        description="Absolute token count of the context that triggers compaction; capped per model to leave room for max output",
+                                        gt=0)
+    compact_reserve_tokens: int = Field(default=50_000,
+                                        description="Absolute token budget of recent messages kept after compaction; capped by the effective trigger threshold",
+                                        ge=0)
+    summary_max_tokens: int = Field(default=20_000, description="Max tokens generated for the compaction summary")
 
     enable_experimental_tools: bool = Field(default=False, description="Enable experimental features and tools")
     enable_defer_tools: bool = Field(default=False, description="Enable deferred tool loading")
     enable_defer_skills: bool = Field(default=False, description="Enable deferred skill loading")
 
-    def resolve_compact_threshold(self, context_length: int, max_output: Optional[int]) -> int:
-        """有效压缩阈值：<=1 按当前上下文长度比例解析 / 绝对值；上限给单次输出留空间——
+    def resolve_compact_trigger_tokens(self, context_length: int, max_output: Optional[int]) -> int:
+        """有效压缩阈值（绝对 token 数）；无可用上下文窗口（0）时返回 0；上限给单次输出留空间——
         max_output 为空（无固定输出上限）时用 escalated_max_tokens，保证 输入 + 输出 < 上下文长度。"""
-        headroom = max_output if max_output is not None else self.escalated_max_tokens
-        return min(_scale_tokens(self.compact_threshold, context_length),
-                   max(1, context_length - headroom))
+        if context_length <= 0:
+            return 0
+        output_reserve_tokens = max_output if max_output is not None else self.escalated_max_tokens
+        return min(self.compact_trigger_tokens, max(1, context_length - output_reserve_tokens))
 
-    def resolve_reserve_threshold(self, context_length: int, compact_threshold: int) -> int:
-        """有效保留预算：<=1 按当前上下文长度比例解析 / 绝对值，封顶有效压缩阈值。"""
-        return min(_scale_tokens(self.reserve_threshold, context_length), compact_threshold)
+    def resolve_compact_reserve_tokens(self, compact_trigger_tokens: int) -> int:
+        """有效保留预算（绝对 token 数），封顶有效压缩阈值。"""
+        return min(self.compact_reserve_tokens, compact_trigger_tokens)
 
     def clamp_max_tokens(self, requested: int, max_output: Optional[int]) -> int:
         """单次调用 max_tokens 钳制到模型固定最大输出；max_output 为空时不钳制（由 输入+输出<上下文 约束）。"""
@@ -102,7 +122,12 @@ class AgentConfigManager:
         if not HARNESS_SETTING_FILE.exists():
             return cls(config=AgentConfig())
 
-        config = AgentConfig.model_validate_json(HARNESS_SETTING_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(HARNESS_SETTING_FILE.read_text(encoding="utf-8"))
+        migrated = _upgrade_legacy_settings(raw)
+        config = AgentConfig.model_validate(raw)
+        if migrated:  # 一次性回写；不走 save_config：模块初始化时 CONFIGMANAGER 尚未绑定
+            HARNESS_SETTING_FILE.write_text(
+                config.model_dump_json(ensure_ascii=False, indent=4), encoding="utf-8")
         return cls(config=config)
 
 

@@ -7,7 +7,7 @@ import core.context.compact.context_compact as compact_mod
 
 
 def _fake_client():
-    return SimpleNamespace(compact_threshold=lambda: 0, reserve_threshold=lambda: 0)
+    return SimpleNamespace(compact_trigger_tokens=lambda: 0, compact_reserve_tokens=lambda: 0)
 
 
 def test_compact_history_noops_without_context_window(monkeypatch):
