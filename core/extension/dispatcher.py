@@ -33,7 +33,8 @@ async def dispatch(event: str, ctx: Any) -> None:
             continue
         _LOGGER.debug(
             f"[Extension] {module_name}:{_callback_name(callback)} 执行成功 at {event}")
-        if getattr(ctx, "blocked", False) or getattr(ctx, "aborted", False):
+        if (getattr(ctx, "blocked", False) or getattr(ctx, "aborted", False)
+                or getattr(ctx, "handled", False)):
             break
     _normalize(ctx)
 

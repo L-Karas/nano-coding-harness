@@ -5,7 +5,9 @@ from unittest.mock import MagicMock
 import pytest
 
 import core.extension.dispatcher as dispatcher
-from core.extension.context import AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext
+from core.extension.context import (
+    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext, ToolExecuteContext,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -144,3 +146,26 @@ def test_result_is_normalized_and_none_content_preserved():
     llm_ctx = AfterLLMContext(content="x", tool_calls=[])
     _run("after_llm", llm_ctx)
     assert llm_ctx.content is None
+
+
+def test_handled_short_circuits_remaining_hooks():
+    calls = []
+
+    def handles(ctx):
+        ctx.handle("taken")
+
+    dispatcher.add("tool_execute", handles, "ext_a")
+    dispatcher.add("tool_execute", lambda ctx: calls.append("later"), "ext_a")
+    ctx = ToolExecuteContext(tool_name="terminal", args={})
+    _run("tool_execute", ctx)
+    assert ctx.handled is True
+    assert calls == []
+
+
+def test_unhandled_runs_later_hooks():
+    calls = []
+
+    dispatcher.add("tool_execute", lambda ctx: None, "ext_a")
+    dispatcher.add("tool_execute", lambda ctx: calls.append("later"), "ext_a")
+    _run("tool_execute", ToolExecuteContext(tool_name="terminal", args={}))
+    assert calls == ["later"]
