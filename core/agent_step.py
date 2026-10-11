@@ -14,7 +14,12 @@ from openai.types.chat import ChatCompletionMessageToolCall
 from core.background_task import should_run_background, start_background_task
 from core.context import to_llm_messages
 from core.extension import (
-    AfterLLMContext, AfterToolContext, BeforeLLMContext, BeforeToolContext, dispatch,
+    AfterLLMContext,
+    AfterToolContext,
+    BeforeLLMContext,
+    BeforeToolContext,
+    ToolExecuteContext,
+    dispatch,
 )
 from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
@@ -225,39 +230,49 @@ async def _run_tools(
                     executed_ids.add(tool_call_id)
                     continue
 
-            if policy.background and should_run_background(tool_name, tool_args):
+            diff = ""
+            extension_result: ToolResult | None = None
+            if policy.use_extensions:
+                exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
+                with renderer.working_status():
+                    await dispatch("tool_execute", exec_ctx)
+                if exec_ctx.handled:
+                    extension_result = ToolResult(content=exec_ctx.result, is_error=exec_ctx.is_error)
+
+            if extension_result is not None:
+                result = extension_result
+            elif policy.background and should_run_background(tool_name, tool_args):
                 bg_id = start_background_task(call, pool, tctx)
                 results.append({"role": "tool", "tool_call_id": tool_call_id,
                                 "content": f"[Background task `{bg_id}` started] "
                                            f"Result will arrive with a `<background-task-notification>` tag."})
                 executed_ids.add(tool_call_id)
                 continue
+            else:
+                with renderer.working_status():
+                    if policy.diff_preview and tool_name in DIFF_TOOLS:
+                        try:
+                            diff = preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file" \
+                                else preview_edit(tool_args["path"], tool_args["old_text"], tool_args["new_text"])
+                        except Exception as e:
+                            _LOGGER.exception(f"[Diff exception] {e}")
 
-            diff = ""
-            with renderer.working_status():
-                if policy.diff_preview and tool_name in DIFF_TOOLS:
+                    task = asyncio.create_task(pool.execute(tool_name, tool_args, tctx))
+                    if tctx.agent_run:
+                        tctx.agent_run.track(task)
                     try:
-                        diff = preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file" \
-                            else preview_edit(tool_args["path"], tool_args["old_text"], tool_args["new_text"])
-                    except Exception as e:
-                        _LOGGER.exception(f"[Diff exception] {e}")
+                        result = await task
+                    except asyncio.CancelledError:
+                        if not (tctx.agent_run and tctx.agent_run.interrupted):
+                            raise
+                        task.cancel()
+                        results.append({"role": "tool", "tool_call_id": tool_call_id,
+                                        "content": USER_INTERRUPT_PROMPT})
+                        executed_ids.add(tool_call_id)
+                        continue
 
-                task = asyncio.create_task(pool.execute(tool_name, tool_args, tctx))
-                if tctx.agent_run:
-                    tctx.agent_run.track(task)
-                try:
-                    result = await task
-                except asyncio.CancelledError:
-                    if not (tctx.agent_run and tctx.agent_run.interrupted):
-                        raise
-                    task.cancel()
-                    results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                    "content": USER_INTERRUPT_PROMPT})
-                    executed_ids.add(tool_call_id)
-                    continue
-
-                if diff and not result.is_error:
-                    renderer.on_diff(diff)
+                    if diff and not result.is_error:
+                        renderer.on_diff(diff)
 
             output = result.content
             is_error = result.is_error
