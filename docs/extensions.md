@@ -1,9 +1,10 @@
 # 自定义 Extension 指南
 
-外部 extension 让你**不修改 harness 源码**，就能在四个关键节点介入 agent 执行：
+外部 extension 让你**不修改 harness 源码**，就能在五个关键节点介入 agent 执行：
 
 - LLM 调用前（`before_llm`）/ 后（`after_llm`）
 - 工具调用前（`before_tool`）/ 后（`after_tool`）
+- 工具执行接管（`tool_execute`）
 
 扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以拦截 LLM 调用或工具执行、注入额外消息。
 
@@ -114,20 +115,21 @@ def register(api):
     api.on(event, callback)   # event ∈ EVENTS，callback 为同步或异步可调用对象
 ```
 
-- `event` 取值：`before_llm` / `after_llm` / `before_tool` / `after_tool`；未知事件名抛 `ValueError`。
+- `event` 取值：`before_llm` / `after_llm` / `before_tool` / `tool_execute` / `after_tool`；未知事件名抛 `ValueError`。
 - `callback` 非 callable 抛 `TypeError`。
 - `register` 内抛出的任何异常（包括上面两种）都会让**整个扩展作废**，因此建议只做注册、把逻辑放在独立函数里。
 - 回调签名固定为一个上下文对象：`def hook(ctx)` 或 `async def hook(ctx)`；返回值会被忽略，只通过修改 `ctx` 生效。
 
 ### 3.2 上下文对象
 
-四个事件各对应一个普通 dataclass。**加粗字段可写**，其余只读：
+五个事件各对应一个普通 dataclass。**加粗字段可写**，其余只读：
 
 | 事件 | 上下文对象（构造参数） | 可写字段 | 控制方法 |
 | --- | --- | --- | --- |
 | `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history)`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
 | `after_llm` | `AfterLLMContext(content, tool_calls, finish_reason="", usage=None)` | **`content`**、**`tool_calls`**、**`inject_messages`** | 无 |
 | `before_tool` | `BeforeToolContext(tool_name, args)` | **`args`** | `ctx.block(reason)` |
+| `tool_execute` | `ToolExecuteContext(tool_name, args, tctx=None)` | **`result`**、**`is_error`** | `ctx.handle(result, is_error=False)` |
 | `after_tool` | `AfterToolContext(tool_name, args, result, is_error=False)` | **`result`**、**`inject_messages`** | 无 |
 
 补充说明：
@@ -135,6 +137,7 @@ def register(api):
 - `messages` / `tool_calls` / `inject_messages` 中的消息是普通 dict（`{"role": ..., "content": ...}`）；`before_llm` 里的消息就是即将发出的请求消息（已裁剪），追加的消息需是 API 可接受的普通 dict，不会再被二次裁剪。
 - `tool_calls` 在无工具调用时为空列表（不会为 `None`）。
 - `abort()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` / `block_reason` 字段可读。
+- `tool_execute` **只有调用 `ctx.handle(result, is_error=False)` 才算接管**（`handled` 置真）；只写 `ctx.result` 不算接管，内置执行照常发生。`tctx` 是只读运行上下文（取消信号 / cwd / agent 身份）。
 - `finish_reason`、`usage`、`tool_name`、`is_error` 为只读信息，供回调判断，不要写入。
 
 ### 3.3 事件触发时机
@@ -144,7 +147,8 @@ def register(api):
 | `before_llm` | 请求视图（system + history 裁剪）构造后、发出前 |
 | `after_llm` | 流式响应解析后、工具执行前；`finish_reason == "length"` 也会触发，扩窗 / 续写恢复由外层决定 |
 | `before_tool` | 工具参数 JSON 解析后、permission hook（`pre_tool_call`）之前 |
-| `after_tool` | 工具真正执行完成后、结果写入消息前 |
+| `tool_execute` | 权限门（`pre_tool_call`）通过后、后台路由与内置执行之前；有人 `handle()` 接管则跳过内置执行 |
+| `after_tool` | 工具真正执行完成后、结果写入消息前（内置执行与扩展接管共用） |
 
 ## 4. 执行语义
 
@@ -164,8 +168,11 @@ def register(api):
 - `ctx.abort(reason)`（`before_llm`）：跳过该事件剩余回调，不再调用 LLM。
   - 主循环：写入一条 `[Extension aborted] <reason>` 的 assistant 消息并结束本回合；
   - 子代理：返回文本 `(subagent aborted by extension: <reason>)`。
+- `ctx.handle(result, is_error=False)`（`tool_execute`）：跳过**该事件剩余回调**、跳过后台路由 / diff 预览 / 内置执行，接管结果作为本次工具结果；`after_tool` 照常触发。
 
 被 `block` 拦截的工具调用**不会**触发 `after_tool`，但下一轮模型会看到 `[Extension blocked] ...` 工具结果。
+
+`tool_execute` 回调异常按 fail-open 处理：记 `dispatcher.log` 后视为**未接管**，继续后续回调；最终无人接管则回退内置执行（接管崩溃不代表内置不执行，扩展需自行 `try/except` 后 `handle(..., is_error=True)` 实现失败闭合）。
 
 ### 4.3 fail-open 与中断
 
@@ -297,6 +304,24 @@ def stop_on_policy(ctx):
 
 主循环会写入 assistant 消息 `[Extension aborted] 内容策略命中` 并结束本回合；子代理则返回 `(subagent aborted by extension: 内容策略命中)`。
 
+### 5.7 接管工具执行（`tool_execute`）
+
+```python
+def register(api):
+    api.on("tool_execute", local_web_search)
+
+
+async def local_web_search(ctx):
+    if ctx.tool_name != "web_search":
+        return                              # 不接管 → 内置执行
+    results = await query_local_index(ctx.args.get("query", ""))
+    ctx.handle("\n---\n".join(results))     # 接管：结果取代内置执行
+```
+
+- 模型照常看到内置工具 schema，替换只发生在执行层；参数是 `before_tool` 改写后的最终值。
+- 跳过后台路由与 diff 预览：接管 `spawn_subagent` / 慢 `terminal` 等不会后台化；接管 `write_file` / `edit_file` 不会生成 diff 预览与 payload。
+- 想失败闭合就自行兜底：`except Exception as e: ctx.handle(f"[my_ext error] {e}", is_error=True)`；否则异常会被 fail-open 视为未接管并回退内置执行。
+
 ## 6. 排错
 
 ### 6.1 日志位置
@@ -316,6 +341,7 @@ def stop_on_policy(ctx):
 6. **写错了目录**：必须是**启动进程时工作目录**下的 `.harness/extensions/`，且只扫描直接子文件夹。
 7. **回调异常被 fail-open 吞掉**：看 `dispatcher.log`；`inject_messages` 写成非 list 也会被丢弃并记 ERROR。
 8. **包内模块用了裸绝对导入**：`import helpers` / `from helpers import x` 不会命中扩展目录（扩展目录不在 `sys.path`），必须写成 `from .helpers import x`；此时扩展整体加载失败，见 `loader.log`。
+9. **`tool_execute` 接管没生效**：只写了 `ctx.result` 没调 `ctx.handle()`；或回调抛异常被 fail-open 吞掉（`dispatcher.log`）后回退执行了内置实现——注意这可能触发内置的真实副作用。
 
 ## 7. 测试扩展
 
@@ -350,7 +376,7 @@ def test_blocks_rm_commands():
 
 想要连加载门槛一起验证（`enabled`、相对导入、原子性），可参考 `tests/test_extension_loader.py` 的做法：把扩展目录复制到临时目录，再调用 `load_extensions(tmp_path)`，用 `dispatcher._HANDLERS` 断言注册数量。
 
-可测试性导出：`core.extension` 提供 `EVENTS`、四个上下文类、`dispatch`、`add`、`load_extensions`、`reset_extensions`。
+可测试性导出：`core.extension` 提供 `EVENTS`、五个上下文类、`dispatch`、`add`、`load_extensions`、`reset_extensions`。
 
 ## 8. 安全与边界
 
@@ -358,11 +384,11 @@ def test_blocks_rm_commands():
 - **无超时**：hook 同步阻塞会阻塞 agent；长耗时的网络 / 磁盘 / 计算请自行异步化或降级为快速操作。
 - **不阻断启动**：单个扩展加载失败只记日志并跳过。
 - **修改需重启**：`enabled` 与扩展代码不支持运行时热切换。
-- **覆盖范围**：主 agent 循环与子代理循环都会触发四个事件。
+- **覆盖范围**：主 agent 循环与子代理循环都会触发五个事件；`tool_execute` 接管时跳过后台路由与 diff 预览，内置 `pool.execute` 不执行。
 - **不在覆盖范围**：
-  - 后台任务的执行结果不触发 `after_tool`（派发时的 `before_tool` 已触发）；
+  - 后台任务的执行结果不触发 `after_tool`（派发时的 `before_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
   - 上下文压缩、标题生成等辅助 LLM 调用不触发 `before_llm` / `after_llm`；
-  - 旧 `.hooks.json` 教学示例与旧事件系统相互独立，不参与加载；工具节点顺序固定为「外部 `before_tool` → 参数回写 → 旧权限门 → 执行 → 外部 `after_tool`」；
+  - 旧 `.hooks.json` 教学示例与旧事件系统相互独立，不参与加载；工具节点顺序固定为「外部 `before_tool` → 参数回写 → 旧权限门 → 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
   - 被扩展 / 权限拦截、后台任务占位、中断占位、参数 JSON 解析失败等路径没有真实执行结果，不触发 `after_tool`。
 
 ## 参考

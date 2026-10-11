@@ -11,7 +11,7 @@
 - **两层上下文压缩**：工具输出统一截断 + 历史摘要，阈值随当前模型动态解析；
 - **健壮性**：Esc 中断、按 provider 分类的错误退避重试、截断自动扩窗与续写恢复、会话逐条落盘；
 - **多代理协作**：子代理、自治队友、任务板依赖、JSONL 邮箱与计划审批、git worktree 隔离；
-- **可扩展**：权限 Hook（危险命令二次确认）+ `.harness/extensions/` 外部扩展四个事件介入。
+- **可扩展**：权限 Hook（危险命令二次确认）+ `.harness/extensions/` 外部扩展五个事件介入。
 
 ## 快速开始
 
@@ -70,7 +70,8 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 ## 扩展系统
 
 外部扩展放在 `.harness/extensions/<name>/`，不改 harness 源码即可在 LLM 调用前/后、工具调用前/后
-介入主流程。加载规则、事件语义、实战配方与排错见 [`docs/extensions.md`](docs/extensions.md)。
+介入主流程，或用 `tool_execute` 接管内置工具执行。加载规则、事件语义、实战配方与排错见
+[`docs/extensions.md`](docs/extensions.md)。
 
 ## 文档索引
 
