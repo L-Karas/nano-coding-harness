@@ -14,7 +14,7 @@
 
 - 事件名固定 `tool_execute`；上下文固定 `ToolExecuteContext(tool_name, args, tctx=None)`；接管唯一入口 `ctx.handle(result, is_error=False)`，只写 `ctx.result` 不生效。
 - 节点顺序固定：`before_tool` → `renderer.on_tool_call` → 权限门 `pre_tool_call` → `tool_execute` → 后台路由 / diff 预览 / `pool.execute` → `after_tool`。
-- 接管时跳过：后台路由、diff 预览、`pool.execute`；`after_tool`、`on_tool_result`、`should_halt` 照常作用于接管结果。
+- 接管时跳过：后台路由、diff 预览、`pool.execute`；`after_tool`、`on_tool_result` 照常作用于接管结果。
 - fail-open：每个回调只 `except Exception`，不得捕获 `CancelledError`/`BaseException`；接管回调异常视为未接管、回退内置执行。
 - 不改 `core/tools/`、`core/hook/hook.py`、`core/background_task.py`；不改现有四节点语义。
 - 提交信息用中文；每个任务结束跑该任务测试与相关回归后提交。

@@ -1,6 +1,5 @@
-"""core 重构回归：实现与意图不符的 6 处（rg 路径 NameError / grep 回退参数错位 /
-list_tasks 三元优先级 / cron 未知 job KeyError / 会话索引写失败 NameError /
-ddgs extract 返回类型不匹配）。"""
+"""core 重构回归：实现与意图不符的 5 处（rg 路径 NameError / grep 回退参数错位 /
+cron 未知 job KeyError / 会话索引写失败 NameError / ddgs extract 返回类型不匹配）。"""
 import asyncio
 import shutil
 import sys
@@ -41,18 +40,6 @@ def test_grep_async_python_fallback_searches(monkeypatch, tmp_path):
     out = asyncio.run(grep_mod.Grep(pattern="needle", path=str(tmp_path)).arun(ToolContext(cwd=tmp_path)))
 
     assert "needle" in out
-
-
-def test_list_tasks_shows_tasks_without_worktree(monkeypatch, tmp_path):
-    import core.experimental.task as task_mod
-    from core.tools.extra_tools import task as task_tool
-
-    monkeypatch.setattr(task_mod, "TASK_DIR", tmp_path)
-    task_tool.CreateTask(subject="write docs", description="desc").run()
-
-    out = task_tool.ListTasks().run()
-
-    assert "write docs" in out and "[pending]" in out
 
 
 def test_cancel_unknown_cron_reports_not_found():

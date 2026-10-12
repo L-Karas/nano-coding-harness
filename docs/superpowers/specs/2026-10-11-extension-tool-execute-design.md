@@ -4,6 +4,7 @@
 - 状态：待评审
 - 关联代码：`core/extension/`、`core/agent_step.py`
 - 前置设计：[`2026-10-08-extension-hooks-design.md`](2026-10-08-extension-hooks-design.md)
+- 后续变更：`teammate` 域与 `StepPolicy.should_halt` 已移除（见 [ADR-0003](../adr/0003-agent-step.md) 注），本文相关表述已同步
 
 ## 1. 背景与目标
 
@@ -21,7 +22,7 @@
 | 节点位置 | 权限门（`pre_tool_call`）之后、后台路由之前 |
 | 接管时跳过 | 后台路由 + diff 预览 + `pool.execute` |
 | 触发范围 | 参数解析成功的每个 tool call，含 MCP 工具与不在 pool 中的名字 |
-| 生效范围 | main / sub-agent / teammate（共用 `run_agent_step`），受 `policy.use_extensions` 门控 |
+| 生效范围 | main / sub-agent（共用 `run_agent_step`），受 `policy.use_extensions` 门控 |
 | 权限门 | 照常先执行；扩展接管不能绕过旧权限检查 |
 | `after_tool` | 两种来源（内置 / 接管）都触发，结果对其它扩展可见 |
 | 后台路径 | 不二次派发；接管即不后台化 |
@@ -146,7 +147,7 @@ before_tool（扩展，可改参 / block）
 | 场景 | 行为 |
 |---|---|
 | 接管成功（`is_error=False`） | 结果写回 tool 消息；触发 `after_tool`、`on_tool_result`；无 `payload` |
-| 接管且 `is_error=True` | 同上，结构标志为失败；触发 `should_halt` 判定 |
+| 接管且 `is_error=True` | 同上，结构标志为失败 |
 | 无人接管 | 后台路由 / diff 预览 / 内置执行全部照旧 |
 | 接管了 `write_file` / `edit_file` | 不生成 diff 预览、不展示 diff（本版决策） |
 | 接管了本会后台化的工具（如 `spawn_subagent`、慢 `terminal`） | 不后台化，接管结果同步返回 |

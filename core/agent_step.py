@@ -1,4 +1,4 @@
-"""Agent step：一次模型调用及其触发的工具派发（main / sub-agent / teammate 共享）。
+"""Agent step：一次模型调用及其触发的工具派发（main / sub-agent 共享）。
 
 step 不改调用方的 messages，不碰 session / cron / 阶段标记 / 协议门控；返回 StepOutcome 由外层决定
 append、落盘与重试。差异经 StepPolicy 与 StepRenderer 显式化（见 docs/adr/0003-agent-step.md）。
@@ -49,7 +49,7 @@ def _tool_message(tool_call_id: str, content: str) -> dict:
 
 @dataclass(frozen=True)
 class StepPolicy:
-    """step 的行为差异：扩展四节点 / permission hooks / 后台路由 / diff 预览 / 工具执行后的 halt。
+    """step 的行为差异：扩展四节点 / permission hooks / 后台路由 / diff 预览。
 
     defer_tools_on_length：finish_reason == "length" 时先不执行工具，把恢复决定留给外层（主循环的
     扩窗与续写重试必须在工具执行前发生）。
@@ -59,7 +59,6 @@ class StepPolicy:
     background: bool = False
     diff_preview: bool = False
     defer_tools_on_length: bool = False
-    should_halt: Callable[[str, ToolResult], bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -83,7 +82,6 @@ class StepOutcome:
     usage: dict
     aborted: bool = False
     abort_reason: str = ""
-    halted: bool = False
 
 
 async def run_agent_step(
@@ -168,7 +166,7 @@ async def run_agent_step(
         )
 
     assistant_message["tool_calls"] = tool_calls
-    tool_messages, tool_injected, halted = await _run_tools(
+    tool_messages, tool_injected = await _run_tools(
         tool_calls,
         pool,
         tctx,
@@ -181,7 +179,6 @@ async def run_agent_step(
         tool_calls=tool_calls,
         finish_reason=finish_reason or "",
         usage=usage,
-        halted=halted,
     )
 
 
@@ -195,8 +192,8 @@ class _PreparedCall:
     tool_call_id: str
     tool_name: str = ""
     tool_args: dict = field(default_factory=dict)
-    final_message: dict | None = None  # 已定型：直接入历史，跳过 after_tool / 渲染 / diff / halt
-    outcome: ToolResult | None = None  # 待收尾：走 after_tool / 渲染 / diff / halt
+    final_message: dict | None = None  # 已定型：直接入历史，跳过 after_tool / 渲染 / diff
+    outcome: ToolResult | None = None  # 待收尾：走 after_tool / 渲染 / diff
     diff: str = ""
     exception: BaseException | None = None
 
@@ -286,15 +283,14 @@ async def _run_tools(
         tctx: ToolContext,
         policy: StepPolicy,
         renderer: StepRenderer,
-) -> tuple[list[dict], list[dict], bool]:
+) -> tuple[list[dict], list[dict]]:
     """按组派发工具：parallel_safe 声明组内用 asyncio.gather，不可并发工具自成一组形成屏障。
 
     每组三段：准备（串行，含扩展 / 权限 / 后台路由）→ 执行（组内并发）→ 收尾（串行，按原调用
-    顺序回填消息、触发 after_tool 与渲染）。中断按占位收尾；halt 命中后本组照常收尾、后续组补占位。
+    顺序回填消息、触发 after_tool 与渲染）。中断按占位收尾。
     """
     results: list[dict] = []
     injected: list[dict] = []
-    halted = False
     executed_ids: set[str] = set()
     try:
         for group in group_parallel_tool_calls(tool_calls, pool):
@@ -372,17 +368,13 @@ async def _run_tools(
                 results.append(message)
                 executed_ids.add(item.tool_call_id)
 
-                if policy.should_halt and policy.should_halt(item.tool_name, outcome):
-                    halted = True
-            if halted:
-                break
     finally:
         # 未执行的 tool call 补占位：消息历史必须给每个 tool_call_id 一个结果
         for tool_call in tool_calls:
             tool_call_id = tool_call.get("id", "")
             if tool_call_id not in executed_ids:
                 results.append(_tool_message(tool_call_id, "[Error] tool call aborted before execution"))
-    return results, injected, halted
+    return results, injected
 
 
 def group_parallel_tool_calls(tool_calls: list[dict], pool: ToolPool) -> list[list[dict]]:

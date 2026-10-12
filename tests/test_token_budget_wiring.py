@@ -68,7 +68,7 @@ def test_subagent_clamps_max_tokens_to_sub_model(monkeypatch):
     monkeypatch.setattr(sa, "prepare_messages", identity)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(sa, "CONFIGMANAGER", SimpleNamespace(
-        config=SimpleNamespace(default_max_tokens=12_000)))
+        config=SimpleNamespace(default_max_tokens=12_000, enable_experimental_tools=False)))
     monkeypatch.setattr(core.tools, "assemble_tool_pool", lambda *a, **k: SimpleNamespace(schemas=lambda: []))
     _stream(monkeypatch)
 

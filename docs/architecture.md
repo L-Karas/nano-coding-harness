@@ -7,7 +7,7 @@
 | `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
 | `core/loop_with_interrupt.py` | Agent 主循环 `AgentRuntime`：外层骨架（cron / 后台注入、预算、会话落盘、长度恢复）、`/compact`；线程契约（loop / 锁 / 中断）委托 `TurnRunner` |
 | `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
-| `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent / teammate 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
+| `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
 | `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑） |
 | `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、hook、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
 | `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
@@ -28,11 +28,10 @@
 | `core/skill/skills.py` | 扫描 global（`~/.agents/skills`）/ user（`.harness/skills`）/ project（`.agents/skills`）三来源的 `SKILL.md`，同名 project > user > global |
 | `core/context/memory/memory.py` | 长期记忆的增删查，注入系统提示词 |
 | `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 30 轮，只回传最终文本 |
-| `core/experimental/` | `teammates.py`（自治队友线程）、`message_bus.py`（JSONL 邮箱）、`protocol_state.py`（请求状态）、`task.py`（任务板：任务 JSON、`blockedBy` 依赖、认领/完成）、`worktree/worktree.py`（git worktree 创建/移除/保留） |
 | `core/tui/` | Textual 界面：App 装配、卡片/流式渲染、指令与弹窗、左栏分区与右栏面板（详见 [`tui.md`](tui.md)） |
 | `smoke/` | TUI 无头冒烟自检（`python -m core.tui.ui_textual --smoke`）与离线演示 agent；不随 `core/` 发布 |
 | `docs/` | 项目文档（见 [README 文档索引](../README.md#文档索引)） |
-| `examples/` | s01–s18 教学脚本（从 agent loop 到 worktree 隔离的演进示例） |
+| `examples/` | s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`） |
 
 ## Agent 主循环
 
@@ -48,9 +47,9 @@
    失败标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
 5. 模型不再请求工具即结束回合。
 
-`run_agent_step()`（`core/agent_step.py`）是三个 agent 共用的唯一实现；子代理与队友各自的外层循环
-（轮次上限 / 阶段标记 / 协议门控 / inbox）只负责 append、调度与结束条件，差异（扩展、permission hooks、
-后台路由、diff 预览、工具执行后的 halt）经 `StepPolicy` 显式化（见 ADR-0003）。
+`run_agent_step()`（`core/agent_step.py`）是 main 与子代理共用的唯一实现；子代理的外层循环
+（轮次上限）只负责 append、调度与结束条件，差异（扩展、permission hooks、后台路由、diff 预览、
+length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 
 健壮性设计：
 
@@ -92,7 +91,5 @@
 ## 已知边界
 
 - 同一轮内的多个工具调用按 `BaseTool.parallel_safe` 声明（分组函数 `group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）分组（ADR-0008）：组内 `asyncio.gather` 并发，写文件 / 终端等未声明工具作为屏障自成一组，组间串行；扩展钩子、权限确认与渲染仍在每组的准备 / 收尾段串行执行；
-- `should_halt` 命中后：本组已并发的调用照常收尾（`after_tool` / 渲染 / 回填结果），后续组不再执行（当前唯一使用方 `submit_plan` 落在单元素屏障组）；
 - 工具结果仅取文本内容，图片/多模态读取未实现；
-- 权限策略为进程内 hook，`.hooks.json` 尚未被代码读取；
-- `request_shutdown` / `request_plan` / `review_plan` 的审批闭环可跑通，但异常路径仍在打磨。
+- 权限策略为进程内 hook，`.hooks.json` 尚未被代码读取。

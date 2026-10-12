@@ -17,7 +17,7 @@ class WebSearch(BaseTool):
     query: str = Field(description="The web query to search for.")
     max_results: int = Field(default=10, ge=1,
                             description="Maximum number of search results to return (default: 10).")
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
     parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:

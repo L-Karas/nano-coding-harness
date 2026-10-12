@@ -12,8 +12,8 @@
 - `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型（写入 `.harness/.custom_providers.json` /
   `.harness/.custom_models.json`）
 
-所有 LLM 调用共用单例 `core.client.shared_model_client()`：主循环、子代理、上下文压缩、
-teammate 走同一份配置，不存在第二处模型来源。
+所有 LLM 调用共用单例 `core.client.shared_model_client()`：主循环、子代理、上下文压缩走同一份配置，
+不存在第二处模型来源。
 
 ## `.harness/` 配置与数据目录
 
@@ -28,10 +28,7 @@ teammate 走同一份配置，不存在第二处模型来源。
 | `~/.agents/skills/<name>/SKILL.md` / `.harness/skills/<name>/SKILL.md` / `.agents/skills/<name>/SKILL.md` | 技能清单三来源（global / user / project，同名 project > user > global；YAML frontmatter + 正文） |
 | `.harness/.memory/*.json` | 长期记忆条目 |
 | `.harness/.session/` | `session-<ts>.jsonl` 会话文件 + `session_index.jsonl` 索引 |
-| `.harness/.tasks/task_*.json` | 任务板数据 |
 | `.harness/.scheduled_tasks.json` | 持久化 cron 任务 |
-| `.harness/.worktrees/` | worktree 目录与 `events.jsonl` 事件日志 |
-| `.harness/.mailboxes/*.jsonl` | 队友消息邮箱（追加写，读取即清空） |
 | `.harness/.task_outputs/tool_results/` | 超长工具输出落盘文件 |
 | `.harness/log/<module>.log` | 各模块日志 |
 
@@ -48,7 +45,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 | 窗口显示名 | 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | Default model | `default_model` | 空 | 主 client 的默认模型（`provider:model`）；空 = 未选择。`/model` 只切换当前会话的内存 client，默认值在此窗口修改才会落盘 |
-| Default sub model | `default_sub_model` | 空 | 子代理（sub-agent / teammate）默认模型；空则回退 `default_model`；支持跨 provider |
+| Default sub model | `default_sub_model` | 空 | 子代理（sub-agent）默认模型；空则回退 `default_model`；支持跨 provider |
 | Default fallback model | `default_fallback_model` | 空 | 预留字段：模型不可用时自动切换的能力尚未接入；目前只在注销 provider / model 时被清空（见 `core/recovery/error_recovery.py` 备注） |
 | Default thinking level | `default_thinking_level` | `max` | 主模型默认思考档位（minimal / low / medium / high / max），按模型 `thinking_level_map` 映射为 `reasoning_effort`；该档位不被模型支持时不发送 |
 | Sub model thinking level | `default_sub_model_thinking_level` | `max` | 子模型思考档位；未设置 `default_sub_model` 时回退 `default_thinking_level` |
@@ -75,7 +72,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 
 | 窗口显示名 | 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| Enable experimental tools | `enable_experimental_tools` | 关 | 设计意图：放开标注 `experimental` 的工具（task / teammate 等）；当前主 / 子代理工具池未读取该配置（teammate 工具池固定启用），暂不生效 |
+| Enable experimental tools | `enable_experimental_tools` | 关 | 放开标注 `experimental` 的工具，预留给后续实验性工具：主 / 子代理装配把它传入 `assemble_tool_pool(enable_experimental=…)`，按 `BaseTool.experimental` 过滤；当前内置工具均未标注，开关开 / 关结果相同 |
 | Enable deferred tool loading | `enable_defer_tools` | 关 | 预留开关：按需（延迟）加载工具 schema；当前无实现，暂不生效 |
 | Enable deferred skill loading | `enable_defer_skills` | 关 | 预留开关：按需（延迟）加载技能清单；当前无实现，暂不生效 |
 

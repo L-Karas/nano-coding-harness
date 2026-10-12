@@ -1,7 +1,7 @@
 # nano-harness
 
 一个用 Python 3.13 + Textual 写的 coding agent harness：全屏 TUI 对话、流式工具调用、
-分层上下文压缩、后台任务、cron 调度，以及子代理 / 自治队友 / 任务板 / git worktree 隔离。
+分层上下文压缩、后台任务、cron 调度与子代理。
 源码即文档，全部实现位于 `core/`。
 
 ## 核心特性
@@ -10,7 +10,7 @@
 - **工具系统**：文件读写编辑、shell（慢命令自动转后台）、glob / grep、clarify、MCP 工具合并；
 - **两层上下文压缩**：工具输出统一截断 + 历史摘要，阈值随当前模型动态解析；
 - **健壮性**：Esc 中断、按 provider 分类的错误退避重试、截断自动扩窗与续写恢复、会话逐条落盘；
-- **多代理协作**：子代理、自治队友、任务板依赖、JSONL 邮箱与计划审批、git worktree 隔离；
+- **子代理**：独立提示词与工具池，后台运行、最多 30 轮，只回传最终文本结论；
 - **可扩展**：权限 Hook（危险命令二次确认）+ `.harness/extensions/` 外部扩展五个事件介入。
 
 ## 快速开始
@@ -84,6 +84,6 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | [`docs/context-compaction.md`](docs/context-compaction.md) | 两层上下文压缩：触发 / 保留预算、切分与摘要、模型切换行为 |
 | [`docs/features.md`](docs/features.md) | MCP、Skills、Memory、Cron 调度 |
 | [`docs/permissions.md`](docs/permissions.md) | 权限与 Hook 策略 |
-| [`docs/teams.md`](docs/teams.md) | 子代理 / 队友 / 任务板 / Worktree |
+| [`docs/teams.md`](docs/teams.md) | 子代理：独立提示词、工具池与轮次上限 |
 | [`docs/extensions.md`](docs/extensions.md) | 外部扩展系统完整指南 |
-| [`examples/`](examples/) | s01–s18 教学脚本（从 agent loop 到 worktree 隔离的演进示例）与扩展示例（`extension_example`、`jev-for-web-search`） |
+| [`examples/`](examples/) | s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`）与扩展示例（`extension_example`、`jev-for-web-search`） |

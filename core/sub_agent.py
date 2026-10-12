@@ -36,7 +36,8 @@ async def spawn_subagent(description: str, ctx=None) -> str:
     RUNTIME_STATE.register_subagent(agent_id, description)
 
     try:
-        pool = assemble_tool_pool("sub-agent")
+        pool = assemble_tool_pool("sub-agent",
+                                  enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
         system_prompt = build_system_prompt("sub-agent", tools=pool.schemas())
         history = [{"role": "user", "content": description}]
         tctx = ToolContext(agent_run=ctx, agent_name="sub-agent")

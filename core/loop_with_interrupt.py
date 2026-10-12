@@ -16,7 +16,6 @@ from core.context.compact import compact_history, prepare_messages
 from core.context.prompt import build_system_prompt
 from core.context.session import SESSION_MANAGER
 from core.cron_scheduler import consume_cron_queue
-from core.experimental.protocol_state import consume_lead_inbox
 from core.log.log import get_logger
 from core.recovery.error_recovery import RecoveryState
 from core.runtime_context import AgentRunContext, AgentInterrupted, ToolContext
@@ -112,7 +111,8 @@ class AgentRuntime:
 
                 messages = await prepare_messages(SESSION_MANAGER.load_messages(), ctx)
                 SESSION_MANAGER.update_messages(messages)
-                pool = assemble_tool_pool("main")
+                pool = assemble_tool_pool("main",
+                                          enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
                 tctx = ToolContext(agent_run=ctx)
 
                 try:
@@ -229,27 +229,6 @@ def auto_loop(agent: AgentRuntime):
             _LOGGER.warning(f"[Auto Loop] run skipped: {type(e).__name__}: {e}")
 
 
-# todo: teammates experimental
-def absorb_lead_inbox() -> None:
-    """把 lead inbox 消息作为一条用户消息注入会话（agent 回合结束后调用）。"""
-    inbox = consume_lead_inbox(route_protocol=True)
-    if not inbox:
-        return
-
-    def _label(message: dict) -> str:
-        request_id = message.get("metadata", {}).get("request_id", "")
-        return f"{message.get('msg_type', 'message')}" + (f"  request_id: {request_id}" if request_id else "")
-
-    inbox_text = "\n".join(
-        f"From {message['from_agent']} [{_label(message)}]: {message['content']}"
-        for message in inbox
-    )
-    SESSION_MANAGER.add_message({
-        "role": "user",
-        "content": INJECTION_MESSAGES_TEMPLATE.format(content=f"[Inbox messages]\n{inbox_text}")
-    })
-
-
 def start_agent_runtime() -> AgentRuntime:
     """先 bootstrap 初始化，再建 runtime 并起 MCP 预热 / 自动回合轮询线程（各一次）；调用方拿它做中断收口。"""
     bootstrap()
@@ -271,7 +250,7 @@ def start_agent_runtime() -> AgentRuntime:
 
 
 def make_agent_turn(runtime: AgentRuntime) -> Callable[[str], None]:
-    """构造 UI 每轮用户消息的处理函数：与 cron 串行跑完整个 agent 回合（阻塞），再吸收 lead inbox。
+    """构造 UI 每轮用户消息的处理函数：与 cron 串行跑完整个 agent 回合（阻塞）。
 
     由 Textual UI 在后台线程调用；query 已由 UI 写入会话管理器，此处不使用。
     阻塞是契约：UI 的 _turn_worker 靠它判断忙碌态，并把逃逸异常上屏。
@@ -283,7 +262,5 @@ def make_agent_turn(runtime: AgentRuntime) -> Callable[[str], None]:
             runtime.run_turn()  # 阻塞至回合结束（TurnRunner 内部取锁串行）
         except AgentInterrupted:
             pass  # 用户中断，不是错误
-        finally:
-            absorb_lead_inbox()
 
     return agent_turn

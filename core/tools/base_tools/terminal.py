@@ -34,7 +34,7 @@ class Terminal(BaseTool):
                                                        "processes (dev server, watch mode, slow build/test) whose "
                                                        "output is not needed for the next step; leave false when the "
                                                        "next step depends on the output.")
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
         """

@@ -16,7 +16,7 @@ class WebExtract(BaseTool):
     """A web extraction tool used to extract content from web URLs. Call this tool when you need to extract content from a specific URL."""
     url: str = Field(
         description="The URL of the web page to extract content from.")
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
     parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:

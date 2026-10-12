@@ -6,14 +6,13 @@
 
 from core.template import TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
 from core.tools import ToolResult, ToolPool
-from core.tools.base_tools import EditFile, Grep, WriteFile  # noqa: F401 注册工具
-from core.tools.extra_tools import GetTask
+from core.tools.base_tools import EditFile, Grep, ReadFile, WriteFile  # noqa: F401 注册工具
 from core.tools.tool_base import BaseTool
 
 
 def _pool():
     return ToolPool({"edit_file": EditFile, "write_file": WriteFile,
-                     "grep": Grep, "get_task": GetTask})
+                     "grep": Grep, "read_file": ReadFile})
 
 
 def test_edit_error_single_prefix():
@@ -45,9 +44,9 @@ def test_unknown_tool_prefix():
         content=f"{UNKNOWN_TOOL_PREFIX} no_such_tool", is_error=True)
 
 
-def test_task_not_found_raises_not_returns():
-    """回归：旧实现 return "Error: ..." 会绕过前缀约定、被当成成功。"""
-    result = _pool().execute_sync("get_task", {"task_id": "no-such-task"})
+def test_missing_file_raises_not_returns():
+    """回归：失败必须由异常上抛、由 ToolPool 编码成前缀错误（旧实现曾 return "Error: ..." 绕过约定）。"""
+    result = _pool().execute_sync("read_file", {"path": "no-such-file.txt"})
     assert result.is_error
     assert result.content.startswith(TOOL_ERROR_PREFIX)
 

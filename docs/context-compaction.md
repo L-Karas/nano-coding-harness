@@ -6,7 +6,7 @@
 
 ## 1. 概览
 
-主 agent 每回合、sub-agent / teammate 每次 step 前的调用链：
+主 agent 每回合、sub-agent 每次 step 前的调用链：
 
 ```
 SESSION_MANAGER.load_messages()
@@ -126,7 +126,6 @@ prepare_messages(messages, ctx, sub_model=?)
 |---------------|---------------------------------------------------------------------------------------------|-----------------------------------------------|
 | 主 agent 每回合   | `core/loop_with_interrupt.py`：`prepare_messages(...)` → `update_messages(...)`              | 超阈值自动压缩；未触发时同样写回                              |
 | sub-agent     | `core/sub_agent.py`：每轮 `prepare_messages(history, ctx, sub_model=True)`                     | 用子代理 client 的预算与摘要模型                          |
-| teammate      | `core/experimental/teammates.py`：`prepare_messages(history[:], None, sub_model=True)`       | 同上；无 `ctx`，压缩不可中断                             |
 | 手动 `/compact` | TUI → `AgentRuntime.run_compact()` → `TurnRunner` 锁 → `compact_history(auto_compact=False)` | 与用户回合 / cron 互斥；Esc 可中断；中断不落会话；成功后重放历史；空操作只提示 |
 
 UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），runtime 在

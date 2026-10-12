@@ -69,7 +69,7 @@ def build_guidelines() -> str:
     return "\n".join(sections)
 
 
-def build_system_prompt(agent_type: Literal["main", "sub-agent", "teammate"] = "main",
+def build_system_prompt(agent_type: Literal["main", "sub-agent"] = "main",
                         tools: list[dict] | None = None) -> str:
     tools = tools or []
     _LOGGER.debug(f"Building system prompt for {agent_type}, {len(tools)} tools")

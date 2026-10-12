@@ -128,7 +128,7 @@ class ToolPool:
 
 
 def assemble_tool_pool(
-        agent_type: Literal["main", "sub-agent", "teammate"] = "main",
+        agent_type: Literal["main", "sub-agent"] = "main",
         enable_experimental: bool = False,
         exclude: frozenset[str] = frozenset(),
 ) -> ToolPool:
@@ -140,21 +140,20 @@ def assemble_tool_pool(
            and (enable_experimental or not cls.model_fields["experimental"].get_default())
     }
 
-    if agent_type != "teammate":
-        try:
-            mcp_client_manager = get_client_manager()
-        except Exception as e:
-            _LOGGER.exception(f"[MCP error] Init failed, falling back to builtin tools: {e}")
-            mcp_client_manager = None
+    try:
+        mcp_client_manager = get_client_manager()
+    except Exception as e:
+        _LOGGER.exception(f"[MCP error] Init failed, falling back to builtin tools: {e}")
+        mcp_client_manager = None
 
-        if mcp_client_manager:
-            sync_handlers = mcp_client_manager.tool_handlers
-            async_handlers = mcp_client_manager.async_tool_handlers
-            for schema in mcp_client_manager.list_tools():
-                name = schema["function"]["name"]
-                if name in entries or name in exclude:
-                    continue
-                entries[name] = _McpEntry(schema, sync_handlers.get(name), async_handlers.get(name))
+    if mcp_client_manager:
+        sync_handlers = mcp_client_manager.tool_handlers
+        async_handlers = mcp_client_manager.async_tool_handlers
+        for schema in mcp_client_manager.list_tools():
+            name = schema["function"]["name"]
+            if name in entries or name in exclude:
+                continue
+            entries[name] = _McpEntry(schema, sync_handlers.get(name), async_handlers.get(name))
 
     return ToolPool(entries)
 

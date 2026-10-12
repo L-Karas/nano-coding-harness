@@ -6,6 +6,8 @@ accepted
 
 右栏展示的运行状态（Todos、后台任务、子代理）与其结果存储收敛到 `core/runtime_state.py` 的 `RuntimeState` 单例：读写共用一把 `threading.Lock`，写侧只有具名入口（`set_todos` / `register_background` / `complete_background` / `pop_completed_backgrounds` / 子代理增删改），读侧只有类型化快照 `snapshot()`。`ACTIVATE_TEAMMATES` 是队友域状态（判重/清理），留在原处。
 
+> 注：`ACTIVATE_TEAMMATES` 所属的队友域后续已整体移除。
+
 ## Considered Options
 
 - **单状态 module + 单锁 + 类型化快照**（采纳）：锁与 schema 的知识只存在一处，写入方与面板不再互相知道对方的结构。

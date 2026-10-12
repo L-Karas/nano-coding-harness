@@ -16,7 +16,6 @@ from core.config import (
     HARNESS_CONFIG_DIR,
     HARNESS_SETTING_FILE,
     LOG_DIR,
-    MAILBOX_DIR,
     MEMORY_DIR,
     MCP_CONFIG_FILE,
     MCP_DIR,
@@ -24,14 +23,11 @@ from core.config import (
     SESSION_DIR,
     SESSION_INDEX_FILE,
     SKILL_DIR,
-    TASK_DIR,
     TOOL_RESULTS_DIR,
-    WORKTREES_DIR,
 )
 
 _CONFIG_DIRS = (HARNESS_CONFIG_DIR, LOG_DIR, SKILL_DIR, EXTENSION_DIR, MEMORY_DIR,
-                SESSION_DIR, TOOL_RESULTS_DIR, TASK_DIR, MCP_DIR, MAILBOX_DIR,
-                WORKTREES_DIR)
+                SESSION_DIR, TOOL_RESULTS_DIR, MCP_DIR)
 _JSON_FILES = {
     HARNESS_SETTING_FILE: {},  # 默认值由 AgentConfig 提供，load_config 读取时补齐
     PROVIDER_AUTH_FILE: {},

@@ -27,9 +27,9 @@ def test_tool_with_one_implementation_passes():
 
 def test_assemble_filters_agent_type_and_exclude(monkeypatch):
     monkeypatch.setattr(tool_pool, "get_client_manager", lambda: None)
-    pool = assemble_tool_pool("teammate", exclude=frozenset({"check_inbox"}))
+    pool = assemble_tool_pool("sub-agent", exclude=frozenset({"terminal"}))
     names = [s["function"]["name"] for s in pool.schemas()]
     assert "read_file" in names
-    assert "web_search" in names          # 之前缺 sync handler 会让 teammate 装配崩
-    assert "check_inbox" not in names
+    assert "web_search" in names
+    assert "terminal" not in names
     assert "save_memory" not in names     # main-only

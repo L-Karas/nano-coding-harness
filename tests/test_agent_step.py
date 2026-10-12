@@ -1,4 +1,4 @@
-"""Agent step 契约：一次模型调用 + 工具派发；扩展注入顺序、abort、halt、中断占位、请求视图与钳制。"""
+"""Agent step 契约：一次模型调用 + 工具派发；扩展注入顺序、abort、中断占位、请求视图与钳制。"""
 import asyncio
 
 import pytest
@@ -170,44 +170,6 @@ def test_permission_hook_blocks(monkeypatch):
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=False, permission_hooks=True))
     assert outcome.followup_messages[0]["content"] == "[denied by hook]"
-
-
-def test_halt_callback_stops_remaining_tools(monkeypatch):
-    seen = []
-
-    def halt(name, result):
-        seen.append((name, result.content))
-        return True
-
-    outcome = _run(monkeypatch, [("", "", [
-        _tool_call(args='{"value": "a"}', call_id="t1"),
-        _tool_call(args='{"value": "b"}', call_id="t2"),
-    ], "tool_calls", None)],
-                   policy=StepPolicy(use_extensions=False, permission_hooks=False, should_halt=halt))
-    assert outcome.halted is True
-    assert seen == [("echo", "echo:a")]
-    assert [m["content"] for m in outcome.followup_messages] == [
-        "echo:a", "[Error] tool call aborted before execution"]
-
-
-def test_halt_keeps_parallel_sibling_results(monkeypatch):
-    """halt 命中并发组内任一项：本组已执行的兄弟照常收尾，后续组补占位。"""
-    class Probe(ParallelProbe):
-        async def arun(self, tctx=None):
-            return f"done:{self.value}"
-
-    calls = [
-        _tool_call("read_file", '{"value": "a"}', "t1"),
-        _tool_call("grep", '{"value": "b"}', "t2"),
-        _tool_call("echo", '{"value": "c"}', "t3"),
-    ]
-    outcome = _run(monkeypatch, [("", "", calls, "tool_calls", None)],
-                   pool=ToolPool({"read_file": Probe, "grep": Probe, "echo": Echo}),
-                   policy=StepPolicy(use_extensions=False, permission_hooks=False,
-                                     should_halt=lambda name, result: name == "read_file"))
-    assert outcome.halted is True
-    assert [m["content"] for m in outcome.followup_messages] == [
-        "done:a", "done:b", "[Error] tool call aborted before execution"]
 
 
 def test_interrupted_context_places_placeholders(monkeypatch):

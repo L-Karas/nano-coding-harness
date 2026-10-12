@@ -1,6 +1,6 @@
 # nano-harness
 
-一个用 Python 写的 coding agent harness：全屏 TUI、流式工具调用、分层上下文压缩、子代理与队友协作。本文档只记录领域词汇，不承载实现细节。
+一个用 Python 写的 coding agent harness：全屏 TUI、流式工具调用、分层上下文压缩与子代理协作。本文档只记录领域词汇，不承载实现细节。
 
 ## Language
 
@@ -13,7 +13,7 @@ _Avoid_: 工具输出字符串、错误前缀串、handler 返回值
 _Avoid_: handler、run_* 函数
 
 **ToolPool**:
-按 agent 类型（main / sub-agent / teammate）装配好的一组 Tool，是取 schema 与执行调用的唯一入口。
+按 agent 类型（main / sub-agent）装配好的一组 Tool，是取 schema 与执行调用的唯一入口。
 _Avoid_: tools/handlers 平行表、工具注册表
 
 **ToolContext**:
@@ -21,7 +21,7 @@ _Avoid_: tools/handlers 平行表、工具注册表
 _Avoid_: 全局变量、handler 包装
 
 **Agent step**:
-一次模型调用及其触发的工具派发；main / sub-agent / teammate 共用同一实现，差异经 StepPolicy 显式化。
+一次模型调用及其触发的工具派发；main / sub-agent 共用同一实现，差异经 StepPolicy 显式化。
 _Avoid_: 回合（turn）、loop
 
 **Runtime state**:

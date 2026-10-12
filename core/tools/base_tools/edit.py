@@ -15,7 +15,7 @@ class EditFile(BaseTool):
     old_text: str = Field(description="The exact text to find and replace.")
     new_text: str = Field(description="The replacement text.")
 
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
         fp = _resolve(self.path, tctx.cwd if tctx else None)

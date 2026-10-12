@@ -14,7 +14,7 @@ class WriteFile(BaseTool):
     path: str = Field(description="Path to the file to write.")
     content: str = Field(description="Content to write to the file.")
 
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
         fp = _resolve(self.path, tctx.cwd if tctx else None)

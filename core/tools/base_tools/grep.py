@@ -19,7 +19,7 @@ class Grep(BaseTool):
     file_pattern: str = Field(default="*", description="Glob pattern to filter file names (e.g., '*.txt', '*.py'). "
                                                        "Default is '*' (all files).")
 
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
     parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:

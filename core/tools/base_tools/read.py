@@ -29,7 +29,7 @@ class ReadFile(BaseTool):
     offset: int = Field(default=1, description="1-indexed line number to start reading from (default: 1); pass the "
                                                "offset printed in the truncation notice to continue reading.")
 
-    agent_type: set = {"main", "sub-agent", "teammate"}
+    agent_type: set = {"main", "sub-agent"}
     parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:

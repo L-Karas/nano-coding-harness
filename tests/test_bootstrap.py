@@ -16,8 +16,7 @@ from core.bootstrap import init_harness
 def test_init_harness_creates_files(tmp_path, monkeypatch):
     dirs, files = {}, {}
     for name in ("HARNESS_CONFIG_DIR", "LOG_DIR", "SKILL_DIR", "MEMORY_DIR",
-                 "SESSION_DIR", "TOOL_RESULTS_DIR", "TASK_DIR", "MCP_DIR",
-                 "MAILBOX_DIR", "WORKTREES_DIR"):
+                 "SESSION_DIR", "TOOL_RESULTS_DIR", "MCP_DIR"):
         dirs[name] = tmp_path / name
     for name in ("HARNESS_SETTING_FILE", "PROVIDER_AUTH_FILE", "CUSTOM_PROVIDER_FILE",
                  "CUSTOM_MODEL_FILE", "MCP_CONFIG_FILE", "SESSION_INDEX_FILE", "CRON_TASK_FILE"):

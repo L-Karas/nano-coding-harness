@@ -13,9 +13,9 @@ class BaseTool(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
 
-    agent_type: set[Literal["main", "sub-agent", "teammate"]] = (
+    agent_type: set[Literal["main", "sub-agent"]] = (
         Field(default_factory=lambda: {"main"},
-              description="Agent types (main, sub-agent, teammate) that are allowed to use this tool; "
+              description="Agent types (main, sub-agent) that are allowed to use this tool; "
                           "a tool is available to an agent only if that agent's type is included in this set."))
     experimental: bool = Field(default=False, description="Whether the tool is in experimental status.")
     parallel_safe: bool = Field(default=False,

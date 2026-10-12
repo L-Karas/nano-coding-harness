@@ -142,7 +142,7 @@ def register(api):
 
 ### 3.3 事件触发时机
 
-| 事件 | 触发时机（`core/agent_step.py`，main / sub-agent / teammate 相同） |
+| 事件 | 触发时机（`core/agent_step.py`，main / sub-agent 相同） |
 | --- | --- |
 | `before_llm` | 请求视图（system + history 裁剪）构造后、发出前 |
 | `after_llm` | 流式响应解析后、工具执行前；`finish_reason == "length"` 也会触发，扩窗 / 续写恢复由外层决定 |
