@@ -1,4 +1,5 @@
 """core/context/prompt.py 表格构建与 system prompt 拼装测试"""
+from itertools import groupby
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,25 @@ def _clear_guidelines_cache():
 
 def _tool(name: str, desc: str) -> dict:
     return {"function": {"name": name, "description": desc}}
+
+
+def _cell_count(line: str) -> int:
+    """按未转义竖线切分统计列数；独立于实现验证表格结构。"""
+    count, escaped = 1, False
+    for ch in line:
+        if escaped:
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == "|":
+            count += 1
+    return count
+
+
+def _table_widths(text: str) -> list[set[int]]:
+    """按连续表格行分组，返回每组内各行的列数集合（组内应恰好一个值）。"""
+    groups = groupby(text.splitlines(), key=lambda line: line.startswith("|"))
+    return [{_cell_count(line) for line in lines} for is_table, lines in groups if is_table]
 
 
 def test_build_tools_table_renders_rows():
@@ -63,11 +83,13 @@ def test_build_skills_table_renders_rows(monkeypatch):
             name="review",
             description="Review code",
             content="raw",
+            location="/skills/review",
             skill_type="user",
         ),
     })
     assert prompt.build_skills_table() == (
-        "|Skill name|Skill description|\n|---|---|\n|review|Review code|"
+        "|Skill name|Skill description|Location|\n|---|---|---|\n"
+        "|`review`|Review code|`/skills/review`|"
     )
 
 
@@ -124,12 +146,13 @@ def test_build_system_prompt_main_includes_all_tables(monkeypatch):
                             name="s",
                             description="d",
                             content="raw",
+                            location="/skills/s",
                             skill_type="project",
                         )})
     text = prompt.build_system_prompt("main", [_tool("read", "Read a file")])
     assert "|`read`|Read a file|" in text
     assert "|t|c|user|" in text
-    assert "|s|d|" in text
+    assert "|`s`|d|`/skills/s`|" in text
     assert "(none)" not in text
 
 
@@ -139,3 +162,75 @@ def test_build_system_prompt_sub_agent_defaults_to_none_tables(monkeypatch):
     assert "### Available tools:\n(none)" in text
     assert "### Memories:\n(none)" in text
     assert "{" not in text
+
+
+def test_build_tools_table_escapes_pipes_and_newlines():
+    table = prompt.build_tools_table([_tool("read", "Read|write\nsecond line")])
+    assert table == "|Tool|Description|\n|---|---|\n|`read`|Read\\|write<br>second line|"
+    assert _table_widths(table) == [{4}]
+
+
+def test_build_memories_table_escapes_pipes_and_newlines(monkeypatch):
+    monkeypatch.setattr(prompt.MEMORY_MANAGER, "load_memories", lambda: [
+        Memory(
+            id="m1",
+            title="a|b",
+            content="line1\r\nline2",
+            mem_type="user",
+        ),
+    ])
+    table = prompt.build_memories_table()
+    assert table == (
+        "|Memory title|Memory content|Memory type|\n|---|---|---|\n"
+        "|a\\|b|line1<br>line2|user|"
+    )
+    assert _table_widths(table) == [{5}]
+
+
+def test_build_skills_table_escapes_pipes_and_newlines(monkeypatch):
+    monkeypatch.setattr(prompt, "load_skills", lambda: {
+        "review": Skill(
+            name="review|v2",
+            description="Review\rcode",
+            content="raw",
+            location="/skills/review",
+            skill_type="user",
+        ),
+    })
+    table = prompt.build_skills_table()
+    assert table == (
+        "|Skill name|Skill description|Location|\n|---|---|---|\n"
+        "|`review\\|v2`|Review<br>code|`/skills/review`|"
+    )
+    assert _table_widths(table) == [{5}]
+
+
+def test_pipe_preceded_by_backslash_keeps_cell_boundary():
+    # 内容自带 "\|"：若只补一个反斜杠，反斜杠会成对耗尽，竖线重新变成列分隔符
+    table = prompt.build_tools_table([_tool("grep", r"pattern a\|b")])
+    assert table == "|Tool|Description|\n|---|---|\n" + r"|`grep`|pattern a\\\|b|"
+    assert _table_widths(table) == [{4}]
+
+
+def test_build_system_prompt_tables_keep_uniform_width(monkeypatch):
+    monkeypatch.setattr(prompt.MEMORY_MANAGER, "load_memories", lambda: [
+        Memory(
+            id="m1",
+            title="t|1",
+            content="c\n2",
+            mem_type="user",
+        ),
+    ])
+    monkeypatch.setattr(prompt, "load_skills", lambda: {
+        "s": Skill(
+            name="s|1",
+            description="d\n2",
+            content="raw",
+            location="/skills/s",
+            skill_type="project",
+        ),
+    })
+    text = prompt.build_system_prompt("main", [_tool("read", "r|1\n2")])
+
+    # 工具 2 列、记忆 3 列、技能 3 列；每张表内各行宽度须一致
+    assert _table_widths(text) == [{4}, {5}, {5}]

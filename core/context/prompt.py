@@ -2,6 +2,7 @@
 Prompt Assemble
 """
 import platform
+import re
 from functools import cache
 from typing import Literal
 
@@ -14,13 +15,30 @@ from core.template.prompt_template import SUB_AGENT_PROMPT_TEMPLATE
 
 _LOGGER = get_logger(__name__)
 
+# 内容里的反斜杠会反吃掉竖线转义（"\|" 被解析成 "反斜杠 + 列分隔符"）；
+# 匹配竖线前的连续反斜杠并翻倍，保证竖线始终处于被转义状态。
+_PIPE_IN_CELL_RE = re.compile(r"(\\*)[|]")
+
+
+def _escape_table_cell(value: object) -> str:
+    """转义 Markdown 表格单元格：竖线拆列、换行断行，都会破坏表格结构。"""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    text = _PIPE_IN_CELL_RE.sub(lambda match: match.group(1) * 2 + r"\|", text)
+    return text.replace("\n", "<br>")
+
+
+def _row(*cells: object) -> str:
+    """转义各单元格并拼成表格行（列数与表头对齐由调用方负责）。"""
+    return "|" + "|".join(_escape_table_cell(cell) for cell in cells) + "|"
+
 
 def build_tools_table(tools: list[dict] | None = None) -> str:
     if not tools:
         return "(none)"
     sections = ["|Tool|Description|", "|---|---|"]
     for tool in tools:
-        sections.append(f"|`{tool['function']['name']}`|{tool['function']['description']}|")
+        function = tool['function']
+        sections.append(_row(f"`{function['name']}`", function['description']))
 
     return "\n".join(sections)
 
@@ -31,7 +49,7 @@ def build_memories_table() -> str:
         return "(none)"
     sections = ["|Memory title|Memory content|Memory type|", "|---|---|---|"]
     for memory in memories:
-        sections.append(f"|{memory.title}|{memory.content}|{memory.mem_type}|")
+        sections.append(_row(memory.title, memory.content, memory.mem_type))
 
     return "\n".join(sections)
 
@@ -40,9 +58,9 @@ def build_skills_table() -> str:
     skills = load_skills()
     if not skills:
         return "(none)"
-    sections = ["|Skill name|Skill description|", "|---|---|"]
+    sections = ["|Skill name|Skill description|Location|", "|---|---|---|"]
     for skill in skills.values():
-        sections.append(f"|{skill.name}|{skill.description}|")
+        sections.append(_row(f"`{skill.name}`", skill.description, f"`{skill.location}`"))
 
     return "\n".join(sections)
 

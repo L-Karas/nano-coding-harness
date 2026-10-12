@@ -35,6 +35,13 @@ BACKGROUND_MESSAGE_TEMPLATE = (
     + BACKGROUND_MESSAGE_SUFFIX
 )
 
+SKILL_MESSAGE_TEMPLATE = (
+    "<skill>\n"
+    + "  <location>{location}</location>\n"
+    + "  <content>{content}</content>\n"
+    + "</skill>"
+)
+
 TRUNCATED_MESSAGE_PREFIX = "[Truncated: "
 
 CONTINUATION_PROMPT = INJECTION_MESSAGES_TEMPLATE.format(

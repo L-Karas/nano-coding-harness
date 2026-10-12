@@ -20,12 +20,14 @@ async def run(app, pilot) -> None:
             name="smoke-skill-a",
             description="writes smoke checks",
             content="",
+            location="/smoke/skills/smoke-skill-a",
             skill_type="user",
         ),
         "smoke-skill-b": Skill(
             name="smoke-skill-b",
             description="example skill description",
             content="",
+            location="/smoke/skills/smoke-skill-b",
             skill_type="user",
         ),
     })

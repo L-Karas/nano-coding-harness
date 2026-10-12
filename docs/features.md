@@ -28,7 +28,7 @@
 name: my-skill
 description: 一句话说明这个技能做什么
 ---
-技能正文，`load_skill` 会原样返回给模型。
+技能正文；`load_skill` 把它与 `SKILL.md` 路径一起包进 `<skill>` 标签返回给模型。
 ```
 
 扫描在启动阶段（`core/bootstrap.py` 的 `bootstrap()`）执行一次，技能摘要进入系统提示词的 Available skills 段，`/skills` 弹窗可直接选中触发一轮对话。

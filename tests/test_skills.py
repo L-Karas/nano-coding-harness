@@ -59,6 +59,7 @@ def test_scan_skills_loads_three_sources_with_types(sources):
     assert skills_mod.SKILL_REGISTRY["p-skill"].skill_type == "project"
     assert isinstance(skills_mod.SKILL_REGISTRY["p-skill"], skills_mod.Skill)
     assert skills_mod.SKILL_REGISTRY["p-skill"].description == "project desc"
+    assert skills_mod.SKILL_REGISTRY["p-skill"].location == str((sources["project"] / "p-dir").resolve())
 
 
 def test_scan_same_name_prefers_project_then_user_then_global(sources):
@@ -108,7 +109,9 @@ def test_load_skill_returns_manifest_content(sources):
 
     skills_mod.scan_skills()
 
-    assert "u-skill body" in skills_mod.load_skill("u-skill")
+    message = skills_mod.load_skill("u-skill")
+    assert "u-skill body" in message
+    assert str((sources["user"] / "u-dir").resolve()) in message
     missing = skills_mod.load_skill("nope")
     assert missing.startswith("Skill not found: nope")
     assert "u-skill" in missing

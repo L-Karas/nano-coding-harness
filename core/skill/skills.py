@@ -9,6 +9,7 @@ import yaml
 
 from core.config import SKILL_DIR, GLOBAL_SKILLS_DIR, PROJECT_SKILL_DIR
 from core.log import get_logger
+from core.template import SKILL_MESSAGE_TEMPLATE
 
 _LOGGER = get_logger(__name__)
 
@@ -30,6 +31,7 @@ class Skill:
     name: str
     description: str
     content: str
+    location: str
     skill_type: SkillType
 
 
@@ -63,13 +65,14 @@ def scan_skills() -> None:
             if not manifest.exists():
                 continue
             raw = manifest.read_text(encoding="utf-8")
-            meta, _ = _parse_frontmatter(raw, skill_directory)
+            meta, content = _parse_frontmatter(raw, skill_directory)
             name = meta.get("name", skill_directory.name)
             description = meta.get("description", "")
             SKILL_REGISTRY[name] = Skill(
                 name=name,
                 description=description,
-                content=raw,
+                content=content,
+                location=str(skill_directory.resolve()),
                 skill_type=skill_type,
             )
             _LOGGER.info(f"[Skill] Load {skill_type} skill {skill_directory} success")
@@ -84,7 +87,10 @@ def load_skill(name: str) -> str:
     if not skill:
         available_skills = ", ".join(SKILL_REGISTRY.keys()) or "(none)"
         return f"Skill not found: {name}\n\nAvailable skills:\n{available_skills}"
-    return skill.content or "(Skill no content)"
+    return SKILL_MESSAGE_TEMPLATE.format(
+        location=skill.location or "(none)",
+        content=skill.content or "(none)",
+    )
 
 
 # todo: install skill
