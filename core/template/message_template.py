@@ -2,7 +2,7 @@
 
 - 工具失败统一前缀：由 ToolResult.error() 生成（handler 返回的字符串一律是内容），
   TUI 回放历史时按它回退识别 error 卡；
-- 注入消息包装 / 续跑提示 / 用户中断占位：主循环、TUI 渲染、后台任务共用。
+- 注入消息包装 / 续跑提示 / 用户中断占位 / 后台任务通知：主循环、TUI 渲染、后台任务共用。
 
 与 prompt_template.py 的分工：这里放消息级模板（单条消息的包装与占位），
 prompt_template.py 放 agent 级提示词模板（系统提示词 / 子代理 / 摘要）。
@@ -19,9 +19,20 @@ PERSIST_TOOL_MESSAGE_PREFIX = "<persisted-output>\n"
 PERSIST_TOOL_MESSAGE_SUFFIX = "\n</persisted-output>"
 PERSIST_TOOL_MESSAGE_TEMPLATE = (
     PERSIST_TOOL_MESSAGE_PREFIX
-    + "<saved-path>{path}</saved-path>\n"
-    + "<content-preview>{preview}</content-preview>"
+    + "  <saved-path>{path}</saved-path>\n"
+    + "  <content-preview>{preview}</content-preview>"
     + PERSIST_TOOL_MESSAGE_SUFFIX
+)
+
+BACKGROUND_MESSAGE_PREFIX = "<background-task-notification>\n"
+BACKGROUND_MESSAGE_SUFFIX = "\n</background-task-notification>"
+BACKGROUND_MESSAGE_TEMPLATE = (
+    BACKGROUND_MESSAGE_PREFIX
+    + "  <task-id>{task_id}</task-id>\n"
+    + "  <status>{status}</status>\n"
+    + "  <tool>{tool}</tool>\n"
+    + "  <result>{result}</result>"
+    + BACKGROUND_MESSAGE_SUFFIX
 )
 
 TRUNCATED_MESSAGE_PREFIX = "[Truncated: "

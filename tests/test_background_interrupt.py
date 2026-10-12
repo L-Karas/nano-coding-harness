@@ -77,3 +77,37 @@ def test_coroutine_tool_completes_on_caller_loop(monkeypatch):
 def test_spawn_subagent_always_background():
     assert bt.should_run_background("spawn_subagent", {})
     assert bt.should_run_background("spawn_subagent", {"should_run_in_background": False})
+
+
+def test_collect_background_results_formats_notification(monkeypatch):
+    state = RuntimeState()
+    monkeypatch.setattr(bt, "RUNTIME_STATE", state)
+
+    async def main():
+        class QuickTool(BaseTool):
+            """Quick."""
+
+            async def arun(self, tctx=None):
+                return "done"
+
+        class FailTool(BaseTool):
+            """Fail."""
+
+            async def arun(self, tctx=None):
+                raise RuntimeError("boom")
+
+        bt.start_background_task(_ToolCall(), ToolPool({"fake": QuickTool}))
+        bt.start_background_task(_ToolCall(), ToolPool({"fake": FailTool}))
+        for _ in range(200):
+            snap = state.snapshot().background
+            if len(snap) == 2 and all(item.status == "completed" for item in snap):
+                break
+            await asyncio.sleep(0.02)
+
+        notes = "\n".join(bt.collect_background_results())
+        assert "<status>completed</status>" in notes
+        assert "<result>done</result>" in notes
+        assert "<status>error</status>" in notes
+        assert "boom" in notes
+
+    asyncio.run(main())

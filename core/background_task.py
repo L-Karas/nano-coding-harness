@@ -15,7 +15,7 @@ from openai.types.chat import ChatCompletionMessageToolCallUnion
 from core.log import get_logger
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
-from core.template import USER_INTERRUPT_PROMPT
+from core.template import USER_INTERRUPT_PROMPT, BACKGROUND_MESSAGE_TEMPLATE
 from core.tools import ToolPool, ToolResult
 
 _LOGGER = get_logger(__name__)
@@ -123,14 +123,15 @@ def collect_background_results() -> list[str]:
     notifications = []
     for item in done:
         # todo: limit output size
-        summary = item.result.content if item.result is not None else ""
+        result = item.result
+        status = "error" if result is not None and result.is_error else "completed"
         notifications.append(
-            f"<background-task-notification>\n"
-            f"  <task_id>{item.id}</task_id>\n"
-            f"  <status>completed</status>\n"
-            f"  <tool>{item.tool_call}</tool>\n"
-            f"  <summary>{summary}</summary>\n"
-            f"</background-task-notification>"
+            BACKGROUND_MESSAGE_TEMPLATE.format(
+                task_id=item.id,
+                status=status,
+                tool=item.tool_call,
+                result=result.content if result is not None else "",
+            )
         )
 
     return notifications

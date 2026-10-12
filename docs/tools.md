@@ -57,4 +57,5 @@ MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main 
 只看每条子命令的命令词，宁可漏判不误判）。
 
 命中后立即返回 `[Background task <bg-id> started]` 占位结果，工具在守护线程中继续执行；
-下一轮开始时结果以 `<background-task-notification>` 注入会话，右栏 Background Tasks 同步显示状态。
+下一轮开始时结果以 `<background-task-notification>` 注入会话，通知含 `<task-id>` / `<status>`
+（`completed` / `error`）/ `<tool>` / `<result>`，右栏 Background Tasks 同步显示状态。
