@@ -35,7 +35,8 @@ from core.tui.widgets import _CommandInput
 
 
 class _ChatScreen(Screen):
-    """主屏：焦点变更一律改道输入栏（权限/澄清作答、输入栏禁用时除外）。"""
+    """主屏：焦点变更一律改道当前交互，点击其他区域不夺走键盘控制
+    （权限/澄清挂起 → 对应列表，Other 输入 → 输入条，平时 → 输入栏）。"""
 
     def set_focus(
         self,
@@ -43,16 +44,25 @@ class _ChatScreen(Screen):
         scroll_visible=True,
         from_app_focus=False,
     ) -> None:
-        if widget is not None and self.app.screen is self and not self.app._perm_pending \
-                and not self.app._clarify_pending:
-            try:
-                prompt = self.query_one("#prompt")
-            except NoMatches:  # 挂载早期 / 卸载期无输入栏
-                pass
-            else:
-                if widget is not prompt and not prompt.disabled:
-                    widget = prompt
+        if widget is not None and self.app.screen is self:
+            widget = self._dock_focus_target(widget)
         super().set_focus(widget, scroll_visible=scroll_visible, from_app_focus=from_app_focus)
+
+    def _dock_focus_target(self, widget):
+        """把焦点改道到当前交互（取不到部件时保持原目标）：权限挂起 → #perm-list；
+        clarify 挂起 → #clarify-list（Other 输入模式归 #prompt）；否则 #prompt
+        （/ 与 @ 候选导航依赖它；输入条禁用时不改道）。"""
+        if self.app._perm_pending:
+            target_id = "#perm-list"
+        elif self.app._clarify_pending and not self.app._clarify_other:
+            target_id = "#clarify-list"
+        else:
+            target_id = "#prompt"
+        try:
+            target = self.query_one(target_id)
+        except NoMatches:  # 挂载早期 / 卸载期无停靠区部件
+            return widget
+        return widget if widget is target or target.disabled else target
 
 
 def _set_terminal_title(driver: Any, title: str) -> None:
