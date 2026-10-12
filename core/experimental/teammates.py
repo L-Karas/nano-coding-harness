@@ -126,7 +126,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         from core.agent_step import StepPolicy, StepRenderer, run_agent_step
         from core.tools import assemble_tool_pool
 
-        # 与 main / sub-agent 相同：工具定义与执行统一取自 tool_loader（teammate 级）；
+        # 与 main / sub-agent 相同：工具定义与执行统一取自 tool_pool（teammate 级）；
         # 身份与 worktree 目录经调用方持有的 ToolContext 传达，认领任务时由工具更新 cwd。
         tctx = ToolContext(agent_name=name)
         pool = assemble_tool_pool(agent_type="teammate", enable_experimental=True,

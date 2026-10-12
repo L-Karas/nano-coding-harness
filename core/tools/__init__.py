@@ -1,4 +1,4 @@
-from .tool_loader import ToolPool, assemble_tool_pool
+from .tool_pool import ToolPool, assemble_tool_pool
 from .tool_result import ToolResult
 
 __all__ = [

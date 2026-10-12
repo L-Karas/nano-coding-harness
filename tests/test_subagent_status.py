@@ -7,7 +7,7 @@ import core.agent_step as step_mod
 import core.context.compact.context_compact as compact_mod
 import core.sub_agent as sa
 import core.tools
-import core.tools.tool_loader
+import core.tools.tool_pool
 from core.runtime_state import RuntimeState
 from core.tools import ToolResult
 

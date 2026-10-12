@@ -1,10 +1,10 @@
 """注册期校验：至少覆写 run / arun 之一；装配按 agent_type 过滤并支持 exclude。"""
 import pytest
 
-import core.tools.tool_loader as tool_loader
+import core.tools.tool_pool as tool_pool
 from core.tools import assemble_tool_pool
 from core.tools.tool_base import BaseTool
-from core.tools.tool_loader import _validate_tool_class
+from core.tools.tool_pool import _validate_tool_class
 
 
 def test_tool_without_implementation_is_rejected():
@@ -26,7 +26,7 @@ def test_tool_with_one_implementation_passes():
 
 
 def test_assemble_filters_agent_type_and_exclude(monkeypatch):
-    monkeypatch.setattr(tool_loader, "get_client_manager", lambda: None)
+    monkeypatch.setattr(tool_pool, "get_client_manager", lambda: None)
     pool = assemble_tool_pool("teammate", exclude=frozenset({"check_inbox"}))
     names = [s["function"]["name"] for s in pool.schemas()]
     assert "read_file" in names
