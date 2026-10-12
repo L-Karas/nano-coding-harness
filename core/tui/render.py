@@ -79,9 +79,30 @@ def render_user_input(user_text: str) -> None:
     _exec(lambda app: app._add_card("user", Text(user_text, style="bold #f9fafb")))
 
 
+def _format_arg_value(value: Any) -> str:
+    """单个参数值转单行文本：字符串去 JSON 引号（换行转义为字面 \\n），bool / null 用小写字面量，
+    嵌套 dict / list 紧凑 JSON；序列化失败回退 str。"""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, str):
+        return value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
+
+
 def _format_args(tool_args: Any) -> str:
-    """工具参数转展示文本：dict / list 缩进 JSON，其余 str（JSON 失败回退 str）。"""
-    if not isinstance(tool_args, (dict, list)):
+    """工具参数转展示文本：dict 每参一行 `key: value`；list 缩进 JSON，其余 str。"""
+    if isinstance(tool_args, dict):
+        if not tool_args:
+            return "{}"
+        return "\n".join(f"{key}: {_format_arg_value(value)}" for key, value in tool_args.items())
+    if not isinstance(tool_args, list):
         return str(tool_args)
     try:
         return json.dumps(tool_args, ensure_ascii=False, indent=2)
@@ -90,7 +111,7 @@ def _format_args(tool_args: Any) -> str:
 
 
 def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """工具调用卡片：参数缩进 JSON，超出折叠。"""
+    """工具调用卡片：参数每参一行，超出折叠。"""
     head = Text.assemble(("Tool Call: ", "bold #fde68a"), (tool_name, "bold white"), "\n")
     _add_capped_card(
         "tool",
