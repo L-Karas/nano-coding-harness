@@ -7,17 +7,17 @@
 | `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
 | `core/loop_with_interrupt.py` | Agent 主循环 `AgentRuntime`：外层骨架（cron / 后台注入、预算、会话落盘、长度恢复）、`/compact`；线程契约（loop / 锁 / 中断）委托 `TurnRunner` |
 | `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
-| `core/agent_step.py` | Agent step：一次模型调用 + 工具派发，main / sub-agent / teammate 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
+| `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent / teammate 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
 | `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑） |
 | `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、hook、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
 | `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |
 | `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
-| `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹） |
+| `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹、后台通知包裹） |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
 | `core/context/session/session.py` | `SessionManager`：消息状态的唯一 owner；`Message` 货币、JSON 只在文件边界、只读 `current_session` + `reset()`（ADR-0006） |
 | `core/context/message.py` | `Message` 会话消息类型与 `to_llm_messages` 模型请求视图（兼容 `Message` / dict） |
-| `core/tools/` | 工具基类（schema 字段 + `run`/`arun`）、注册表与 `ToolPool`；`base_tools/`（基础工具）、`extra_tools/`（扩展工具）、`web_search/`（含 `ToolResult` / `ToolContext`） |
+| `core/tools/` | 工具基类（schema 字段 + `run`/`arun`）、注册表与 `ToolPool`（`tool_pool.py`）；`base_tools/`（基础工具）、`extra_tools/`（扩展工具）、`web_search/`（含 `ToolResult` / `ToolContext`） |
 | `core/context/compact/context_compact.py` | 两层上下文压缩（工具结果截断 / 历史摘要）与 token 估算 |
 | `core/context/truncate.py` | 工具输出截断（2000 行 / 50KB 双上限），read 工具与上下文压缩共用 |
 | `core/background_task.py` | 慢工具转后台执行，结果回流注入 |
@@ -42,8 +42,9 @@
 2. `prepare_messages()` 走上下文预算流水线（先截断工具结果，再按需摘要历史）；
 3. 重建工具池（内置 + MCP），把预算后的 history 交给 `run_agent_step()`；
 4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
-   → 扩展 `after_llm` → 逐个执行工具调用（扩展 `before_tool` → `PreToolUse` hook → 慢工具转后台 → 异步执行
-   → 扩展 `after_tool` → 渲染 diff/结果）；结果写回会话后进入下一轮。工具结局统一为 `ToolResult`（内容 +
+   → 扩展 `after_llm` → 按 `parallel_safe` 声明分组派发工具（组内 `asyncio.gather` 并发，未声明工具作为屏障自成一组；
+   每组：扩展 `before_tool` → `PreToolUse` hook → 慢工具转后台 → 并发执行 → 扩展 `after_tool` → 渲染 diff/结果）；
+   结果写回会话后进入下一轮。工具结局统一为 `ToolResult`（内容 +
    失败标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
 5. 模型不再请求工具即结束回合。
 
@@ -54,7 +55,8 @@
 健壮性设计：
 
 - **中断**：`Esc → AgentRuntime.interrupt()` 同时置位 `AgentRunContext.cancelled` 并取消任务，
-  取消统一收敛为 `AgentInterrupted`；回合收尾会给未回答的 tool call 补一条中断占位结果，保证消息历史合法。
+  取消统一收敛为 `AgentInterrupted`；并行组被取消时组内未收尾的调用补 `[User interrupted]` 占位
+  （不随 `CancelledError` 丢弃整轮消息），保证消息历史合法。
 - **串行**：`TurnRunner` 的锁保证用户回合、cron 自动回合、`/compact` 三者互斥；loop、锁与当前 ctx/task 都收在 `core/turn_runtime.py` 里。
 - **截断恢复**：`finish_reason == "length"` 先把 `max_tokens` 升到 `escalated_max_tokens`
   重试一次，仍截断则追加续写提示（最多 `max_recovery_retries` 次）。
@@ -89,7 +91,8 @@
 
 ## 已知边界
 
-- 同一轮内的多个工具调用目前串行执行（代码中留有 TaskGroup 并发化的 TODO）；
+- 同一轮内的多个工具调用按 `BaseTool.parallel_safe` 声明（分组函数 `group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）分组（ADR-0008）：组内 `asyncio.gather` 并发，写文件 / 终端等未声明工具作为屏障自成一组，组间串行；扩展钩子、权限确认与渲染仍在每组的准备 / 收尾段串行执行；
+- `should_halt` 命中后：本组已并发的调用照常收尾（`after_tool` / 渲染 / 回填结果），后续组不再执行（当前唯一使用方 `submit_plan` 落在单元素屏障组）；
 - 工具结果仅取文本内容，图片/多模态读取未实现；
 - 权限策略为进程内 hook，`.hooks.json` 尚未被代码读取；
 - `request_shutdown` / `request_plan` / `review_plan` 的审批闭环可跑通，但异常路径仍在打磨。

@@ -6,7 +6,8 @@ append、落盘与重试。差异经 StepPolicy 与 StepRenderer 显式化（见
 import asyncio
 import json
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import groupby
 from typing import Callable, ContextManager
 
 from openai.types.chat import ChatCompletionMessageToolCall
@@ -39,6 +40,11 @@ def _noop(*_args, **_kwargs) -> None:
 
 def _null_cm() -> ContextManager:
     return nullcontext()
+
+
+def _tool_message(tool_call_id: str, content: str) -> dict:
+    """tool 角色消息：每个 tool_call_id 必须有且仅有一条结果消息。"""
+    return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
 
 
 @dataclass(frozen=True)
@@ -81,15 +87,15 @@ class StepOutcome:
 
 
 async def run_agent_step(
-    history: list[dict],
-    system_prompt: str,
-    *,
-    client,
-    pool: ToolPool,
-    tctx: ToolContext,
-    max_tokens: int,
-    policy: StepPolicy = StepPolicy(),
-    renderer: StepRenderer = StepRenderer(),
+        history: list[dict],
+        system_prompt: str,
+        *,
+        client,
+        pool: ToolPool,
+        tctx: ToolContext,
+        max_tokens: int,
+        policy: StepPolicy = StepPolicy(),
+        renderer: StepRenderer = StepRenderer(),
 ) -> StepOutcome:
     """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展 → hooks → 执行 → 扩展）。"""
     tools = pool.schemas()
@@ -179,130 +185,218 @@ async def run_agent_step(
     )
 
 
+@dataclass
+class _PreparedCall:
+    """一次工具调用的中间态。
+
+    final_message / outcome / exception 互斥：准备阶段定型为 final_message 的调用不再执行；
+    outcome 是待收尾的真实结局；exception 是待上抛的执行失败。
+    """
+    tool_call_id: str
+    tool_name: str = ""
+    tool_args: dict = field(default_factory=dict)
+    final_message: dict | None = None  # 已定型：直接入历史，跳过 after_tool / 渲染 / diff / halt
+    outcome: ToolResult | None = None  # 待收尾：走 after_tool / 渲染 / diff / halt
+    diff: str = ""
+    exception: BaseException | None = None
+
+
+async def _prepare_tool_call(
+        tool_call: dict,
+        pool: ToolPool,
+        tctx: ToolContext,
+        policy: StepPolicy,
+        renderer: StepRenderer,
+) -> _PreparedCall:
+    """准备阶段（串行）：中断检查 → 解析 → before_tool → 渲染调用 → 权限 → tool_execute → 后台路由。
+
+    立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 final_message 或 outcome 返回；
+    其余留给执行阶段。
+    """
+    tool_call_id = tool_call.get("id", "")
+    item = _PreparedCall(tool_call_id)
+
+    if tctx.interrupted:
+        item.final_message = _tool_message(tool_call_id, USER_INTERRUPT_PROMPT)
+        return item
+
+    try:
+        call = ChatCompletionMessageToolCall(**tool_call)
+        tool_args = json.loads(call.function.arguments or "{}")
+    except json.JSONDecodeError as e:
+        item.final_message = _tool_message(tool_call_id, f"[Error] {type(e).__name__}: {e}")
+        return item
+    tool_name = call.function.name
+    item.tool_name = tool_name
+
+    if policy.use_extensions:
+        tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args)
+        await dispatch("before_tool", tool_ctx)
+        tool_args = tool_ctx.args
+        call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
+        if tool_ctx.blocked:
+            item.final_message = _tool_message(tool_call_id, f"[Extension blocked] {tool_ctx.block_reason}")
+            return item
+
+    item.tool_args = tool_args
+    renderer.on_tool_call(tool_name, tool_args)
+
+    if policy.permission_hooks:
+        blocked = trigger_hooks("pre_tool_call", call)
+        if blocked:
+            item.final_message = _tool_message(tool_call_id, f"[{blocked}]")
+            return item
+
+    if policy.use_extensions:
+        exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
+        with renderer.working_status():
+            await dispatch("tool_execute", exec_ctx)
+        if exec_ctx.handled:
+            item.outcome = ToolResult(content=exec_ctx.result, is_error=exec_ctx.is_error)
+            return item
+
+    if policy.background and should_run_background(tool_name, tool_args):
+        bg_id = start_background_task(call, pool, tctx)
+        item.final_message = _tool_message(
+            tool_call_id,
+            f"[Background task `{bg_id}` started] "
+            f"Result will arrive with a `<background-task-notification>` tag.",
+        )
+        return item
+
+    return item
+
+
+def _preview_diff(item: _PreparedCall) -> list[tuple[str, int, str]] | str:
+    """执行前预览 write / edit 将产生的变化行；失败记日志并返回空串。"""
+    if item.tool_name not in DIFF_TOOLS:
+        return ""
+    try:
+        if item.tool_name == "write_file":
+            return preview_write(item.tool_args["path"], item.tool_args["content"])
+        return preview_edit(item.tool_args["path"], item.tool_args["old_text"], item.tool_args["new_text"])
+    except Exception as e:
+        _LOGGER.exception(f"[Diff exception] {e}")
+        return ""
+
+
 async def _run_tools(
-    tool_calls: list[dict],
-    pool: ToolPool,
-    tctx: ToolContext,
-    policy: StepPolicy,
-    renderer: StepRenderer,
+        tool_calls: list[dict],
+        pool: ToolPool,
+        tctx: ToolContext,
+        policy: StepPolicy,
+        renderer: StepRenderer,
 ) -> tuple[list[dict], list[dict], bool]:
+    """按组派发工具：parallel_safe 声明组内用 asyncio.gather，不可并发工具自成一组形成屏障。
+
+    每组三段：准备（串行，含扩展 / 权限 / 后台路由）→ 执行（组内并发）→ 收尾（串行，按原调用
+    顺序回填消息、触发 after_tool 与渲染）。中断按占位收尾；halt 命中后本组照常收尾、后续组补占位。
+    """
     results: list[dict] = []
     injected: list[dict] = []
     halted = False
     executed_ids: set[str] = set()
     try:
-        # todo: 采用 asyncio.gather 并发执行工具，当前工具执行实质为串行执行
-        for tool_call in tool_calls:
-            tool_call_id = tool_call.get("id", "")
-            if tctx.agent_run and tctx.agent_run.interrupted:
-                results.append({"role": "tool", "tool_call_id": tool_call_id, "content": USER_INTERRUPT_PROMPT})
-                executed_ids.add(tool_call_id)
-                continue
-
-            try:
-                call = ChatCompletionMessageToolCall(**tool_call)
-                tool_args = json.loads(call.function.arguments or "{}")
-            except json.JSONDecodeError as e:
-                results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                "content": f"[Error] {type(e).__name__}: {e}"})
-                executed_ids.add(tool_call_id)
-                continue
-            tool_name = call.function.name
-
-            if policy.use_extensions:
-                tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args)
-                await dispatch("before_tool", tool_ctx)
-                tool_args = tool_ctx.args
-                call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
-                if tool_ctx.blocked:
-                    results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                    "content": f"[Extension blocked] {tool_ctx.block_reason}"})
-                    executed_ids.add(tool_call_id)
-                    continue
-
-            renderer.on_tool_call(tool_name, tool_args)
-
-            if policy.permission_hooks:
-                blocked = trigger_hooks("pre_tool_call", call)
-                if blocked:
-                    results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                    "content": f"[{str(blocked)}]"})
-                    executed_ids.add(tool_call_id)
-                    continue
-
-            diff = ""
-            extension_result: ToolResult | None = None
-            if policy.use_extensions:
-                exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
-                with renderer.working_status():
-                    await dispatch("tool_execute", exec_ctx)
-                if exec_ctx.handled:
-                    extension_result = ToolResult(content=exec_ctx.result, is_error=exec_ctx.is_error)
-
-            if extension_result is not None:
-                result = extension_result
-            elif policy.background and should_run_background(tool_name, tool_args):
-                bg_id = start_background_task(call, pool, tctx)
-                results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                "content": f"[Background task `{bg_id}` started] "
-                                           f"Result will arrive with a `<background-task-notification>` tag."})
-                executed_ids.add(tool_call_id)
-                continue
-            else:
-                with renderer.working_status():
-                    if policy.diff_preview and tool_name in DIFF_TOOLS:
-                        try:
-                            diff = preview_write(tool_args["path"], tool_args["content"]) if tool_name == "write_file" \
-                                else preview_edit(tool_args["path"], tool_args["old_text"], tool_args["new_text"])
-                        except Exception as e:
-                            _LOGGER.exception(f"[Diff exception] {e}")
-
-                    task = asyncio.create_task(pool.execute(tool_name, tool_args, tctx))
-                    if tctx.agent_run:
-                        tctx.agent_run.track(task)
-                    try:
-                        result = await task
-                    except asyncio.CancelledError:
-                        if not (tctx.agent_run and tctx.agent_run.interrupted):
-                            raise
-                        task.cancel()
-                        results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                        "content": USER_INTERRUPT_PROMPT})
-                        executed_ids.add(tool_call_id)
-                        continue
-
-                    if diff and not result.is_error:
-                        renderer.on_diff(diff)
-
-            output = result.content
-            is_error = result.is_error
-            if policy.use_extensions:
-                result_ctx = AfterToolContext(
-                    tool_name=tool_name,
-                    args=tool_args,
-                    result=output,
-                    is_error=is_error,
+        for group in group_parallel_tool_calls(tool_calls, pool):
+            prepared = [
+                await _prepare_tool_call(
+                    tool_call,
+                    pool,
+                    tctx,
+                    policy,
+                    renderer,
                 )
-                await dispatch("after_tool", result_ctx)
-                output = result_ctx.result
-                injected.extend(result_ctx.inject_messages)
+                for tool_call in group
+            ]
 
-            renderer.on_tool_result(output, is_error)
+            runnable = [item for item in prepared if item.final_message is None and item.outcome is None]
+            if runnable:
+                with renderer.working_status():
+                    for item in runnable:
+                        if policy.diff_preview:
+                            item.diff = _preview_diff(item)
 
-            message = {"role": "tool", "tool_call_id": tool_call_id, "content": output}
-            if diff and not is_error:
-                message["payload"] = diff
-            results.append(message)
-            executed_ids.add(tool_call_id)
+                    tasks = []
+                    for item in runnable:
+                        task = asyncio.create_task(pool.execute(item.tool_name, item.tool_args, tctx))
+                        if tctx.agent_run:
+                            tctx.agent_run.track(task)
+                        tasks.append(task)
+                    try:
+                        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+                    except asyncio.CancelledError:
+                        # Esc 同时取消 turn task 与组内 task：按中断占位收尾，不随 CancelledError 丢弃整轮消息
+                        if not tctx.interrupted:
+                            raise
+                        outcomes = [asyncio.CancelledError()] * len(runnable)
+                for item, outcome in zip(runnable, outcomes):
+                    if isinstance(outcome, BaseException):
+                        item.exception = outcome
+                    else:
+                        item.outcome = outcome
 
-            if policy.should_halt and policy.should_halt(tool_name, result):
-                halted = True
+            for item in prepared:
+                if item.final_message is not None:
+                    results.append(item.final_message)
+                    executed_ids.add(item.tool_call_id)
+                    continue
+                if item.exception is not None:
+                    if (isinstance(item.exception, asyncio.CancelledError)
+                            and tctx.interrupted):
+                        results.append(_tool_message(item.tool_call_id, USER_INTERRUPT_PROMPT))
+                        executed_ids.add(item.tool_call_id)
+                        continue
+                    raise item.exception
+
+                outcome = item.outcome
+                output = outcome.content
+                is_error = outcome.is_error
+                if item.diff and not is_error:
+                    renderer.on_diff(item.diff)
+                if policy.use_extensions:
+                    result_ctx = AfterToolContext(
+                        tool_name=item.tool_name,
+                        args=item.tool_args,
+                        result=output,
+                        is_error=is_error,
+                    )
+                    await dispatch("after_tool", result_ctx)
+                    output = result_ctx.result
+                    injected.extend(result_ctx.inject_messages)
+
+                renderer.on_tool_result(output, is_error)
+
+                message = _tool_message(item.tool_call_id, output)
+                if item.diff and not is_error:
+                    message["payload"] = item.diff
+                results.append(message)
+                executed_ids.add(item.tool_call_id)
+
+                if policy.should_halt and policy.should_halt(item.tool_name, outcome):
+                    halted = True
+            if halted:
                 break
     finally:
         # 未执行的 tool call 补占位：消息历史必须给每个 tool_call_id 一个结果
         for tool_call in tool_calls:
             tool_call_id = tool_call.get("id", "")
             if tool_call_id not in executed_ids:
-                results.append({"role": "tool", "tool_call_id": tool_call_id,
-                                "content": "[Error] tool call aborted before execution"})
+                results.append(_tool_message(tool_call_id, "[Error] tool call aborted before execution"))
     return results, injected, halted
+
+
+def group_parallel_tool_calls(tool_calls: list[dict], pool: ToolPool) -> list[list[dict]]:
+    """按工具声明的 parallel_safe 分组：连续的并发安全工具合成一组（组内可并发执行），
+    其余工具各自单成一组的屏障，组间保持串行。"""
+
+    def is_parallel(tool_call: dict) -> bool:
+        return pool.is_parallel_safe((tool_call.get("function") or {}).get("name", ""))
+
+    groups: list[list[dict]] = []
+    for parallel, chunk in groupby(tool_calls, key=is_parallel):
+        chunk = list(chunk)
+        if parallel:
+            groups.append(chunk)
+        else:
+            groups.extend([[call] for call in chunk])
+    return groups

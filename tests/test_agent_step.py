@@ -4,12 +4,23 @@ import asyncio
 import pytest
 
 import core.agent_step as step_mod
-from core.agent_step import StepPolicy, StepRenderer, run_agent_step
+from core.agent_step import StepPolicy, StepRenderer, group_parallel_tool_calls, run_agent_step
 from core.extension import reset_extensions
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool
+from core.tools.base_tools.edit import EditFile
+from core.tools.base_tools.glob import Glob
+from core.tools.base_tools.grep import Grep
+from core.tools.base_tools.read import ReadFile
+from core.tools.base_tools.write import WriteFile
+from core.tools.extra_tools.cron import ListCrons
+from core.tools.extra_tools.memory import SaveMemory
+from core.tools.extra_tools.skill import LoadSkill
+from core.tools.extra_tools.subagent import SpawnSubagent
 from core.tools.tool_base import BaseTool
+from core.tools.web_search.web_extract import WebExtract
+from core.tools.web_search.web_search import WebSearch
 
 
 class Echo(BaseTool):
@@ -18,6 +29,12 @@ class Echo(BaseTool):
 
     def run(self, tctx=None):
         return f"echo:{self.value}"
+
+
+class ParallelProbe(BaseTool):
+    """声明 parallel_safe 的可并发测试工具：子类覆写 arun 定义行为。"""
+    value: str = ""
+    parallel_safe: bool = True
 
 
 class _Client:
@@ -173,6 +190,26 @@ def test_halt_callback_stops_remaining_tools(monkeypatch):
         "echo:a", "[Error] tool call aborted before execution"]
 
 
+def test_halt_keeps_parallel_sibling_results(monkeypatch):
+    """halt 命中并发组内任一项：本组已执行的兄弟照常收尾，后续组补占位。"""
+    class Probe(ParallelProbe):
+        async def arun(self, tctx=None):
+            return f"done:{self.value}"
+
+    calls = [
+        _tool_call("read_file", '{"value": "a"}', "t1"),
+        _tool_call("grep", '{"value": "b"}', "t2"),
+        _tool_call("echo", '{"value": "c"}', "t3"),
+    ]
+    outcome = _run(monkeypatch, [("", "", calls, "tool_calls", None)],
+                   pool=ToolPool({"read_file": Probe, "grep": Probe, "echo": Echo}),
+                   policy=StepPolicy(use_extensions=False, permission_hooks=False,
+                                     should_halt=lambda name, result: name == "read_file"))
+    assert outcome.halted is True
+    assert [m["content"] for m in outcome.followup_messages] == [
+        "done:a", "done:b", "[Error] tool call aborted before execution"]
+
+
 def test_interrupted_context_places_placeholders(monkeypatch):
     ctx = AgentRunContext()
     ctx.cancelled.set()
@@ -202,3 +239,206 @@ def test_renderer_receives_tool_call_and_result(monkeypatch):
     _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)], renderer=renderer)
     assert ("call", "echo", {"value": "x"}) in seen
     assert ("result", "echo:x", False) in seen
+
+
+def _names(groups):
+    return [[call["function"]["name"] for call in group] for group in groups]
+
+
+_GROUP_POOL = ToolPool({
+    "read_file": ReadFile,
+    "glob": Glob,
+    "grep": Grep,
+    "write_file": WriteFile,
+    "edit_file": EditFile,
+})
+
+
+def test_group_parallel_tool_calls_groups_between_barriers():
+    calls = [
+        _tool_call("read_file", call_id="t1"),
+        _tool_call("grep", call_id="t2"),
+        _tool_call("write_file", call_id="t3"),
+        _tool_call("glob", call_id="t4"),
+    ]
+    assert _names(group_parallel_tool_calls(calls, _GROUP_POOL)) == [
+        ["read_file", "grep"], ["write_file"], ["glob"]]
+
+
+def test_group_parallel_tool_calls_keeps_parallel_runs_separate():
+    calls = [
+        _tool_call("write_file", call_id="t1"),
+        _tool_call("read_file", call_id="t2"),
+        _tool_call("read_file", call_id="t3"),
+        _tool_call("edit_file", call_id="t4"),
+    ]
+    assert _names(group_parallel_tool_calls(calls, _GROUP_POOL)) == [
+        ["write_file"], ["read_file", "read_file"], ["edit_file"]]
+
+
+def test_group_parallel_tool_calls_all_parallel_is_one_group():
+    calls = [
+        _tool_call("read_file", call_id="t1"),
+        _tool_call("grep", call_id="t2"),
+        _tool_call("glob", call_id="t3"),
+    ]
+    assert _names(group_parallel_tool_calls(calls, _GROUP_POOL)) == [["read_file", "grep", "glob"]]
+
+
+def test_group_parallel_tool_calls_unknown_tool_is_own_group():
+    calls = [
+        _tool_call("read_file", call_id="t1"),
+        _tool_call("frobnicate", call_id="t2"),
+        _tool_call("grep", call_id="t3"),
+    ]
+    assert _names(group_parallel_tool_calls(calls, _GROUP_POOL)) == [
+        ["read_file"], ["frobnicate"], ["grep"]]
+
+
+def test_group_parallel_tool_calls_empty_input():
+    assert group_parallel_tool_calls([], _GROUP_POOL) == []
+
+
+def test_group_parallel_tool_calls_uses_declared_parallel_safe():
+    """内置工具中声明 parallel_safe 的 9 个连成一个并发组，其余工具仍是屏障。"""
+    names = ["read_file", "glob", "grep", "list_crons", "load_skill",
+             "save_memory", "spawn_subagent", "web_search", "web_extract"]
+    pool = ToolPool({
+        "read_file": ReadFile,
+        "glob": Glob,
+        "grep": Grep,
+        "list_crons": ListCrons,
+        "load_skill": LoadSkill,
+        "save_memory": SaveMemory,
+        "spawn_subagent": SpawnSubagent,
+        "web_search": WebSearch,
+        "web_extract": WebExtract,
+    })
+    calls = [_tool_call(name, call_id=f"t{i}") for i, name in enumerate(names)]
+    assert _names(group_parallel_tool_calls(calls, pool)) == [names]
+
+
+def test_parallel_tool_calls_run_concurrently(monkeypatch):
+    both = asyncio.Event()
+    active = []
+
+    class Probe(ParallelProbe):
+        async def arun(self, tctx=None):
+            active.append(self.value)
+            if len(active) == 2:
+                both.set()
+            try:
+                await asyncio.wait_for(both.wait(), timeout=0.5)
+            finally:
+                active.remove(self.value)
+            return f"done:{self.value}"
+
+    outcome = _run(monkeypatch,
+                   [("", "", [_tool_call("read_file", '{"value": "a"}', "t1"),
+                              _tool_call("grep", '{"value": "b"}', "t2")], "tool_calls", None)],
+                   pool=ToolPool({"read_file": Probe, "grep": Probe}))
+    assert [m["content"] for m in outcome.followup_messages] == ["done:a", "done:b"]
+
+
+def test_parallel_group_preserves_call_order(monkeypatch):
+    class Probe(ParallelProbe):
+        async def arun(self, tctx=None):
+            await asyncio.sleep(0.05 if self.value == "slow" else 0)
+            return f"done:{self.value}"
+
+    outcome = _run(monkeypatch,
+                   [("", "", [_tool_call("read_file", '{"value": "slow"}', "t1"),
+                              _tool_call("grep", '{"value": "fast"}', "t2")], "tool_calls", None)],
+                   pool=ToolPool({"read_file": Probe, "grep": Probe}))
+    assert [m["tool_call_id"] for m in outcome.followup_messages] == ["t1", "t2"]
+    assert [m["content"] for m in outcome.followup_messages] == ["done:slow", "done:fast"]
+
+
+def test_barrier_tool_separates_parallel_groups(monkeypatch):
+    log = []
+
+    class Probe(ParallelProbe):
+        async def arun(self, tctx=None):
+            log.append(("start", self.value))
+            await asyncio.sleep(0)
+            log.append(("end", self.value))
+            return f"done:{self.value}"
+
+    class Barrier(BaseTool):
+        value: str = ""
+
+        def run(self, tctx=None):
+            log.append(("start", self.value))
+            log.append(("end", self.value))
+            return f"done:{self.value}"
+
+    _run(monkeypatch,
+         [("", "", [
+             _tool_call("read_file", '{"value": "a"}', "t1"),
+             _tool_call("grep", '{"value": "b"}', "t2"),
+             _tool_call("write_file", '{"value": "c"}', "t3"),
+             _tool_call("read_file", '{"value": "d"}', "t4"),
+         ], "tool_calls", None)],
+         pool=ToolPool({"read_file": Probe, "grep": Probe, "write_file": Barrier}))
+    assert log == [("start", "a"), ("start", "b"), ("end", "a"), ("end", "b"),
+                   ("start", "c"), ("end", "c"), ("start", "d"), ("end", "d")]
+
+
+@pytest.mark.parametrize("cancel_turn", [False, True])
+def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
+    started = asyncio.Event()
+    blocker = asyncio.Event()
+
+    class Probe(ParallelProbe):
+        async def arun(self, tctx=None):
+            started.set()
+            await blocker.wait()
+            return f"done:{self.value}"
+
+    ctx = AgentRunContext()
+    calls = [_tool_call("read_file", '{"value": "a"}', "t1"),
+             _tool_call("grep", '{"value": "b"}', "t2")]
+
+    async def fake_stream(stream, on_text=None):
+        return ("", "", calls, "tool_calls", None)
+
+    monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
+
+    async def driver():
+        task = asyncio.create_task(run_agent_step(
+            [],
+            "sys",
+            client=_Client(),
+            pool=ToolPool({"read_file": Probe, "grep": Probe}),
+            tctx=ToolContext(agent_run=ctx),
+            max_tokens=1000,
+            policy=StepPolicy(use_extensions=False, permission_hooks=False),
+            renderer=StepRenderer(),
+        ))
+        await started.wait()
+        ctx.cancel()
+        if cancel_turn:  # 生产 Esc：TurnRunner 同时取消 ctx 与回合 task
+            task.cancel()
+        return await task
+
+    outcome = asyncio.run(driver())
+    assert [m["content"] for m in outcome.followup_messages] == [
+        "[User interrupted]", "[User interrupted]"]
+
+
+def test_parallel_group_renderer_order(monkeypatch):
+    class Probe(ParallelProbe):
+        async def arun(self, tctx=None):
+            return f"done:{self.value}"
+
+    seen = []
+    renderer = StepRenderer(
+        on_tool_call=lambda name, _args: seen.append(("call", name)),
+        on_tool_result=lambda text, _err: seen.append(("result", text)))
+    _run(monkeypatch,
+         [("", "", [_tool_call("read_file", '{"value": "a"}', "t1"),
+                     _tool_call("grep", '{"value": "b"}', "t2")], "tool_calls", None)],
+         pool=ToolPool({"read_file": Probe, "grep": Probe}),
+         renderer=renderer)
+    assert seen == [("call", "read_file"), ("call", "grep"),
+                    ("result", "done:a"), ("result", "done:b")]

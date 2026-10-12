@@ -62,7 +62,7 @@ def should_run_background(tool_name: str, tool_args: dict) -> bool:
 
 
 def _bg_interrupted(tctx: ToolContext | None) -> bool:
-    return bool(tctx and tctx.agent_run and tctx.agent_run.interrupted)
+    return bool(tctx and tctx.interrupted)
 
 
 def start_background_task(

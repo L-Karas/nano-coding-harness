@@ -9,6 +9,13 @@
 运行期由 `assemble_tool_pool()` 按 `agent_type` / `experimental` 装配成 `ToolPool`：向模型提供 schema
 列表、按名执行，并以 `ToolResult` 承载成功 / 失败；MCP 工具在装配处包成同一条目。
 
+同一轮内连续出现的多个工具调用按 `BaseTool.parallel_safe` 声明分组（分组函数
+`group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）：声明 `parallel_safe = True`
+的工具组内并发执行（`asyncio.gather`），其余工具（含未声明的 MCP 工具）作为屏障自成一组、组间串行。
+只有可被并发调用（不共享可变状态）的工具才应声明 True。同步实现（`run`）的工具在事件循环上逐个执行、
+与其它工具不会真正重叠，声明只影响分组；原生异步（`arun`）的工具才是真正并发等待。
+整组被 Esc 取消时，组内未收尾的调用补 `[User interrupted]` 占位。
+
 ## 基础工具（main / sub-agent / teammate）
 
 | 工具 | 参数 | 说明 |

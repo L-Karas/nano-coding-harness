@@ -50,6 +50,9 @@ def _patch(monkeypatch, responses, execute):
         def schemas(self):
             return []
 
+        def is_parallel_safe(self, name):
+            return False
+
         async def execute(
             self,
             name,

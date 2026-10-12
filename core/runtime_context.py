@@ -52,3 +52,8 @@ class ToolContext:
     def raise_if_cancelled(self) -> None:
         if self.agent_run is not None:
             self.agent_run.raise_if_cancelled()
+
+    @property
+    def interrupted(self) -> bool:
+        """取消信号是否已置位；无回合上下文时为 False。"""
+        return self.agent_run is not None and self.agent_run.interrupted

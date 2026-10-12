@@ -150,6 +150,11 @@ def register(api):
 | `tool_execute` | 权限门（`pre_tool_call`）通过后、后台路由与内置执行之前；有人 `handle()` 接管则跳过内置执行 |
 | `after_tool` | 工具真正执行完成后、结果写入消息前（内置执行与扩展接管共用） |
 
+**并发组中的事件顺序**：同一轮里连续出现的多个 `parallel_safe` 工具（`read_file` / `grep` 等）构成一个并发组：
+先按调用顺序逐个工具触发 `before_tool` 与 `tool_execute`（同一调用内仍先 `before_tool` 后 `tool_execute`），
+随后整组并发执行；`after_tool` 等整组执行完毕后，再按调用顺序逐个触发。事件回调本身始终串行执行，
+不会被并发调用。整组被 Esc 取消时，组内未收尾的调用补中断占位，不触发 `after_tool`。
+
 ## 4. 执行语义
 
 ### 4.1 顺序与链式修改
