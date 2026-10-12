@@ -34,7 +34,9 @@ _register_tools()
 
 
 class _McpEntry:
-    """MCP 工具的 pool 条目：schema + 同步 / 异步 handler，由装配处适配。"""
+    """MCP 工具的 pool 条目：schema + 同步 / 异步实现，由装配处适配。"""
+
+    parallel_safe = False
 
     def __init__(
         self,
@@ -77,6 +79,15 @@ class ToolPool:
         if not isinstance(entry, type):
             return True
         return entry.arun is not BaseTool.arun
+
+    def is_parallel_safe(self, name: str) -> bool:
+        """该工具是否声明可与同轮兄弟调用并发执行；未声明或未知工具一律 False。"""
+        entry = self._entries.get(name)
+        if entry is None:
+            return False
+        if not isinstance(entry, type):
+            return entry.parallel_safe
+        return bool(entry.model_fields["parallel_safe"].get_default())
 
     async def execute(
         self,

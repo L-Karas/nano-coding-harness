@@ -10,6 +10,7 @@ class SpawnSubagent(BaseTool):
     description: str = Field(description="The task description for the subagent to complete.")
 
     agent_type: set = {"main"}
+    parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
         return await spawn_subagent(self.description, tctx.agent_run if tctx else None)

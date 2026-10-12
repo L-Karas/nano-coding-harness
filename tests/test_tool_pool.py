@@ -4,6 +4,7 @@ import asyncio
 from core.runtime_context import ToolContext
 from core.tools import ToolResult, ToolPool
 from core.tools.tool_base import BaseTool
+from core.tools.tool_pool import _McpEntry
 
 
 class Echo(BaseTool):
@@ -77,3 +78,35 @@ def test_extra_args_are_rejected():
 def test_context_reaches_tool():
     pool = ToolPool({"named": Named})
     assert pool.execute_sync("named", {}, ToolContext(agent_name="tm")).content == "tm"
+
+
+class ParallelSafe(BaseTool):
+    """Parallel safe."""
+    parallel_safe: bool = True
+
+    def run(self, tctx=None):
+        return "ran"
+
+
+def test_pool_reports_declared_parallel_safe():
+    pool = ToolPool({"safe": ParallelSafe, "serial": Echo})
+    assert pool.is_parallel_safe("safe") is True
+    assert pool.is_parallel_safe("serial") is False
+    assert pool.is_parallel_safe("unknown") is False
+
+
+def test_mcp_entry_is_not_parallel_safe_by_default():
+    entry = _McpEntry(
+        {"type": "function", "function": {"name": "mcp__srv__do"}},
+        lambda **kwargs: "",
+        lambda **kwargs: "",
+    )
+    pool = ToolPool({"mcp__srv__do": entry})
+    assert pool.is_parallel_safe("mcp__srv__do") is False
+
+
+def test_internal_fields_stay_out_of_openai_schema():
+    props = ParallelSafe.to_openai_tool()["function"]["parameters"]["properties"]
+    assert "agent_type" not in props
+    assert "experimental" not in props
+    assert "parallel_safe" not in props

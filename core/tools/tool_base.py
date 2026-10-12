@@ -18,6 +18,10 @@ class BaseTool(BaseModel):
               description="Agent types (main, sub-agent, teammate) that are allowed to use this tool; "
                           "a tool is available to an agent only if that agent's type is included in this set."))
     experimental: bool = Field(default=False, description="Whether the tool is in experimental status.")
+    parallel_safe: bool = Field(default=False,
+                                description="Whether this tool may run concurrently with sibling tool calls "
+                                            "in the same turn; only tools without shared mutable state should "
+                                            "declare True.")
 
     @classmethod
     def to_openai_tool(cls) -> dict[str, Any]:

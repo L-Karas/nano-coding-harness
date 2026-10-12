@@ -21,6 +21,7 @@ class Glob(BaseTool):
                                      "'src/**/*.ts'. Use `**/` to recurse.")
 
     agent_type: set = {"main", "sub-agent", "teammate"}
+    parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
         root = tctx.cwd if tctx and tctx.cwd else WORKDIR

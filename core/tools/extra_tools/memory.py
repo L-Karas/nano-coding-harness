@@ -19,6 +19,7 @@ class SaveMemory(BaseTool):
                     "reference=external resource pointers")
 
     agent_type: set = {"main"}
+    parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None):
         return memory.run_save_memory(self.title, self.content, self.mem_type)

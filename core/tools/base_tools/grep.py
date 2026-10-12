@@ -20,6 +20,7 @@ class Grep(BaseTool):
                                                        "Default is '*' (all files).")
 
     agent_type: set = {"main", "sub-agent", "teammate"}
+    parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
         path = _validate_path(self.path, tctx.cwd if tctx else None)

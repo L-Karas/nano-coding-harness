@@ -30,6 +30,7 @@ class ReadFile(BaseTool):
                                                "offset printed in the truncation notice to continue reading.")
 
     agent_type: set = {"main", "sub-agent", "teammate"}
+    parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
         base = tctx.cwd if tctx and tctx.cwd else WORKDIR

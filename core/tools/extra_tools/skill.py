@@ -10,6 +10,7 @@ class LoadSkill(BaseTool):
     name: str = Field(description="The name of the skill to load.")
 
     agent_type: set = {"main"}
+    parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
         return load_skill(self.name)

@@ -52,6 +52,7 @@ def to_openai_tool(model: type[BaseModel]) -> dict[str, Any]:
     # remove internal field from schema
     params["properties"].pop("agent_type")
     params["properties"].pop("experimental")
+    params["properties"].pop("parallel_safe")
     params["required"] = [r for r in params.get("required", []) if r != "agent_type"]
 
     return {

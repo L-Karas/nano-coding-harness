@@ -17,6 +17,7 @@ class WebExtract(BaseTool):
     url: str = Field(
         description="The URL of the web page to extract content from.")
     agent_type: set = {"main", "sub-agent", "teammate"}
+    parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
         if not self.url:

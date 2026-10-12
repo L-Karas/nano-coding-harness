@@ -29,6 +29,7 @@ class ScheduleCron(BaseTool):
 class ListCrons(BaseTool):
     """List all registered cron jobs."""
     agent_type: set = {"main"}
+    parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
         return cron_scheduler.run_list_crons()
