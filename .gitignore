@@ -13,6 +13,7 @@ wheels/
 /skills/*
 /log
 /temp
+/docs/pi-session-*.html
 
 # Track only .py files under core
 skills-lock.json
