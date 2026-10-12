@@ -125,6 +125,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._clarify_options: list[str] = []
         self._clarify_other = False
         self._panel_pct: Optional[int] = None  # 右栏宽度百分比（Ctrl+←/→ 调整）；None = 默认 20%
+        self._progress_state: Optional[tuple[int, Optional[int]]] = None  # 任务栏已写状态（_write_progress 去重）
         self._sections_non_empty = False  # 三区活动快照：驱动「全空 ↔ 非空」跳变的自动展开/收回
         self._manual_expand = False  # 用户手动展开后，三区清空也不自动收回
 
@@ -155,29 +156,45 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._set_welcome(True)
         self._refresh_footer()
         _set_terminal_title(self._driver, TERMINAL_TITLE)
+        self.set_interval(1.0, self._progress_sync)  # 后台任务 / 子代理 / 自动回合的兜底重估
 
     def on_unmount(self) -> None:
         """退出（App Unmount，driver 尚未 close）时清空窗口标题与任务栏进度，交还 shell 默认状态。"""
         _set_terminal_title(self._driver, "")
-        self._progress_clear()
+        _set_terminal_progress(self._driver, 0)  # 绕过去重兜底，确保交还 shell
 
     # ---------- 终端任务栏进度（OSC 9;4） ----------
 
+    def _write_progress(self, state: int, value: Optional[int] = None) -> None:
+        """任务栏进度写入口：driver 缺失时忽略；与上次相同则不重复写（tick 可任意频繁调用）。"""
+        if self._driver is None or (state, value) == self._progress_state:
+            return
+        self._progress_state = (state, value)
+        _set_terminal_progress(self._driver, state, value)
+
     def _progress_working(self) -> None:
-        """回合运行中：任务栏不确定进度（动态条）。"""
-        _set_terminal_progress(self._driver, 3)
+        """运行中（前台回合 / 后台任务 / 子代理 / 自动回合）：任务栏不确定进度（动态条）。"""
+        self._write_progress(3)
 
     def _progress_waiting(self) -> None:
         """等待用户作答（权限确认 / clarify）：任务栏满格黄色静态条（state 4 + 100%）。"""
-        _set_terminal_progress(self._driver, 4, 100)
+        self._write_progress(4, 100)
 
     def _progress_clear(self) -> None:
-        """回合结束 / 应用退出：清除任务栏进度。"""
-        _set_terminal_progress(self._driver, 0)
+        """无进行中的工作：清除任务栏进度。"""
+        self._write_progress(0)
 
-    def _progress_resume(self) -> None:
-        """作答后恢复进度：前景回合仍在跑则转动态条，回合外（子代理 / cron 询问）直接清除，避免残留。"""
-        if self._busy:
+    def _background_active(self) -> bool:
+        """是否有在跑的后台任务 / 子代理（子代理条目只在运行期存在；Todos 不算）。"""
+        return self._runtime_state.snapshot().has_running_background()
+
+    def _progress_sync(self) -> None:
+        """任务栏进度唯一决策点（等待作答 > 运行中 > 清除）：前台回合 _busy、runtime 回合、
+        后台任务、子代理任一在跑即动态条；权限 / clarify 挂起时黄色。每次实时重算并以写去重，
+        可被 1s 兜底 tick 反复调用。"""
+        if self._perm_pending or self._clarify_pending:
+            self._progress_waiting()
+        elif self._busy or self._agent_running() or self._background_active():
             self._progress_working()
         else:
             self._progress_clear()

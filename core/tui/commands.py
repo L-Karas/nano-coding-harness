@@ -213,7 +213,7 @@ class _CommandFlow:
         self._busy = True
         self._prompt().disabled = True
         self._set_status_text("Working…", spin=True)
-        self._progress_working()
+        self._progress_sync()
         render_user_input(query)
         self._spawn_worker(lambda: self._turn_worker(query), "agent-turn", "⚠️ Agent Error")
 
@@ -251,8 +251,8 @@ class _CommandFlow:
     def _set_idle(self) -> None:
         """回合 / 压缩结束：复位忙碌态、收起权限与 clarify 列表、恢复输入条并收回焦点。"""
         self._busy = False
-        self._progress_clear()
-        self._reset_interactions()
+        self._reset_interactions()  # 先清挂起：_progress_sync 据此判断等待优先级
+        self._progress_sync()  # 后台任务 / 子代理仍在跑则保持动态条，否则清除
         self._set_status_text("")
         prompt = self._prompt()
         prompt.placeholder = _PLACEHOLDER
@@ -274,7 +274,7 @@ class _CommandFlow:
         self._busy = True
         self._prompt().disabled = True
         self._set_status_text("Compacting…", spin=True)
-        self._progress_working()
+        self._progress_sync()
         self._spawn_worker(lambda: self._compact_worker(self._runtime), "agent-compact", "⚠️ Compact Error")
 
     def _compact_worker(self, runtime: Any) -> None:

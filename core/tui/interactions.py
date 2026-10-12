@@ -31,17 +31,21 @@ class _DockInteractions:
         perm.highlighted = 1  # 默认 No（同旧版 [y/N]）
         perm.focus()
         self._set_status_text("Confirm permission: ↑/↓ Yes/No, Enter confirm, Esc reject.", spin=True)
-        self._progress_waiting()
+        self._progress_sync()
 
     def _answer_permission(self, value: str) -> None:
-        """落地回答：写回等待线程、收起列表；输入条由回合结束的 _set_idle 统一恢复。"""
+        """落地回答：写回等待线程、收起列表。前台回合内的询问由回合结束的 _set_idle 收尾；
+        回合外（子代理 / cron）没有收尾回合，就地恢复空闲界面。"""
         if not self._perm_pending:
             return
         future, self._perm_future = self._perm_future, None
         self._perm_pending = False
         self.query_one("#perm-list", OptionList).styles.display = "none"
-        self._set_status_text("Working…", spin=True)
-        self._progress_resume()
+        if self._busy:
+            self._set_status_text("Working…", spin=True)
+            self._progress_sync()
+        else:
+            self._set_idle()
         if future is not None:
             future.set_result(value)
 
@@ -66,10 +70,10 @@ class _DockInteractions:
     # ---------- clarify ----------
 
     def _begin_clarify(
-        self,
-        questions: list[str],
-        multi_select: bool,
-        future: Future[str],
+            self,
+            questions: list[str],
+            multi_select: bool,
+            future: Future[str],
     ) -> None:
         """弹选项列表（末尾 Other）并聚焦：单选 Enter/点击作答，多选 Space 勾选、Enter 提交。"""
         self._clarify_future = future
@@ -85,7 +89,7 @@ class _DockInteractions:
         ol.focus()
         self._prompt().disabled = True
         self._set_status_text(self._clarify_hint(), spin=True)
-        self._progress_waiting()
+        self._progress_sync()
 
     def _clarify_rows(self):
         """选项行：多选带 ◉/◯；末尾 Other（id=other，其余 id=下标）。prompt 用 Text：
@@ -171,7 +175,8 @@ class _DockInteractions:
         prompt.disabled = True
 
     def _answer_clarify(self, value: str) -> None:
-        """落地回答：写回等待线程、收起列表；输入条恢复禁用（_set_idle 统一恢复）。"""
+        """落地回答：写回等待线程、收起列表。前台回合内的询问由回合结束的 _set_idle 收尾；
+        回合外（子代理 / cron）没有收尾回合，就地恢复空闲界面。"""
         if not self._clarify_pending:
             return
         future, self._clarify_future = self._clarify_future, None
@@ -179,15 +184,23 @@ class _DockInteractions:
         self._clarify_other = False
         self.query_one("#clarify-list", _ClarifyList).styles.display = "none"
         self._reset_prompt()
-        self._set_status_text("Working…", spin=True)
-        self._progress_resume()
+        if self._busy:
+            self._set_status_text("Working…", spin=True)
+            self._progress_sync()
+        else:
+            self._set_idle()
         if future is not None:
             future.set_result(value)
 
     # ---------- 回合结束复位 ----------
 
     def _reset_interactions(self) -> None:
-        """回合结束兜底：清挂起请求、收起两个列表；输入条复位由 _set_idle 负责。"""
+        """回合结束兜底：清挂起请求、收起两个列表；输入条复位由 _set_idle 负责。
+        挂起请求必须先作答（拒绝 / 取消），否则等待的线程（子代理 / 工具）永久阻塞。"""
+        if self._perm_pending and self._perm_future is not None:
+            self._perm_future.set_result("no")
+        if self._clarify_pending and self._clarify_future is not None:
+            self._clarify_future.set_result("[User cancelled]")
         self._perm_pending = False
         self._perm_future = None
         self._clarify_pending = False

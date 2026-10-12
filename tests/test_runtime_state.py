@@ -59,6 +59,29 @@ def test_subagent_lifecycle():
     assert state.snapshot().subagents == []
 
 
+def test_snapshot_has_running_background_only_for_live_work():
+    """任务栏判活谓词：仅 running 的后台任务 / 存在的子代理为真；Todos 与已完成项不算。"""
+    state = RuntimeState()
+    assert not state.snapshot().has_running_background()
+
+    state.set_todos([TodoEntry("write tests", "in_progress")])
+    assert not state.snapshot().has_running_background()
+
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    assert state.snapshot().has_running_background()
+
+    state.complete_background(bg_id, ToolResult(content="done"))
+    assert not state.snapshot().has_running_background()  # 完成待弹出：不再算运行中
+
+    sa_id = state.allocate_subagent_id()
+    state.register_subagent(sa_id, "explore")
+    assert state.snapshot().has_running_background()
+
+    state.remove_subagent(sa_id)
+    assert not state.snapshot().has_running_background()
+
+
 def test_clear_resets_all_sections():
     state = RuntimeState()
     state.set_todos([TodoEntry("t")])

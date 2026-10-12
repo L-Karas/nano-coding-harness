@@ -47,6 +47,10 @@ class RuntimeSnapshot:
     background: list[BackgroundEntry]
     subagents: list[SubagentEntry]
 
+    def has_running_background(self) -> bool:
+        """是否有在跑的后台任务 / 子代理（子代理条目只在运行期存在；Todos 不算）。"""
+        return bool(self.subagents) or any(bg.status == "running" for bg in self.background)
+
 
 class RuntimeState:
     """运行状态容器：全部读写共用一把锁；快照是副本，写入口具名。"""
