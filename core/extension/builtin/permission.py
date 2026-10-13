@@ -2,7 +2,7 @@
 
 规则只覆盖 terminal 与三个文件工具（read_file / write_file / edit_file）；
 文件整体非法时不生效并记 ERROR，单条规则非法只丢弃自身，未知键忽略并记 WARN。
-权限门按「地板 → 规则/扩展表态 → 默认层」裁决；地板与默认层自 core/hook/hook.py 迁移，
+权限门按「地板 → 规则/扩展表态 → 默认层」裁决；地板与默认层迁移自旧 hook 权限门，
 行为与文案不变。
 """
 import json
@@ -114,7 +114,7 @@ def _parse_external_directory_section(tool_name: str, section: object, rules: Ru
         rules.external_directory[tool_name] = action
 
 
-# ---------- 地板与默认层（自 core/hook/hook.py 迁移，行为与文案不变） ----------
+# ---------- 地板与默认层（迁移自旧 hook 权限门，行为与文案不变） ----------
 
 # 硬拒绝：不可逆的系统级操作，直接拒绝、不给确认机会。
 DENY_LIST = [

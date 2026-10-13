@@ -1,7 +1,7 @@
 """进程启动初始化（composition root）。
 
 各模块导入自身不再创建目录 / 启动线程 / 扫描磁盘；由这里显式按序初始化：
-.harness 目录树与文件 → 出厂 hook → 技能扫描 → 模型注册表 → cron 调度线程。
+.harness 目录树与文件 → 内置扩展 → 技能扫描 → 模型注册表 → cron 调度线程。
 `bootstrap()` 幂等，供 main.py / TUI run() / start_agent_runtime() 调用；
 测试用 tests/conftest.py 复用其中的单项初始化（不启动后台线程）。
 """
@@ -19,6 +19,7 @@ from core.config import (
     MEMORY_DIR,
     MCP_CONFIG_FILE,
     MCP_DIR,
+    PERMISSION_FILE,
     PROVIDER_AUTH_FILE,
     SESSION_DIR,
     SESSION_INDEX_FILE,
@@ -34,6 +35,7 @@ _JSON_FILES = {
     CUSTOM_PROVIDER_FILE: {},
     CUSTOM_MODEL_FILE: {},
     MCP_CONFIG_FILE: {"mcpServers": {}},
+    PERMISSION_FILE: {},
 }
 _TOUCH_FILES = (SESSION_INDEX_FILE, CRON_TASK_FILE)
 
@@ -64,11 +66,11 @@ def bootstrap() -> None:
         # 函数内导入：bootstrap 被导入时不拉起模型注册表 / 工具池等重依赖
         from core.client.model import load_model_registry
         from core.cron_scheduler import start_cron_scheduler
+        from core.extension.builtin import register_builtin_extensions
         from core.extension.loader import load_extensions
-        from core.hook.hook import install_default_hooks
         from core.skill.skills import scan_skills
 
-        install_default_hooks()
+        register_builtin_extensions()
         load_extensions()
         scan_skills()
         load_model_registry()

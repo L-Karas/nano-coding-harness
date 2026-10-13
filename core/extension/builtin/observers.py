@@ -1,6 +1,6 @@
 """内置观察者扩展：记录工具调用与大输出告警，只读上下文、不参与裁决。
 
-自 core/hook/hook.py 迁移 tool_call_log_hook / large_tool_output_hook，日志文案与
+迁移自旧 hook 的 tool_call_log_hook / large_tool_output_hook，日志文案与
 阈值不变；以 observer 阶段注册，先于权限门执行，因此被拦下的调用同样有日志。
 """
 import json
