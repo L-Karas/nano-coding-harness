@@ -35,6 +35,16 @@ BACKGROUND_MESSAGE_TEMPLATE = (
     + BACKGROUND_MESSAGE_SUFFIX
 )
 
+TODO_ITEM_MESSAGE_TEMPLATE = (
+    "  <todo>\n"
+    "    <content>{content}</content>\n"
+    "    <status>{status}</status>\n"
+    "  </todo>"
+)
+TODOS_MESSAGE_TEMPLATE = (
+    "<todos>\n{todos}\n</todos>"
+)
+
 SKILL_MESSAGE_TEMPLATE = (
     "<skill>\n"
     + "  <location>{location}</location>\n"

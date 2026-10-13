@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from core.runtime_context import ToolContext
+from core.runtime_state import TodoEntry
 from core.todo import todo_write
 from core.tools.tool_base import BaseTool
 
@@ -21,4 +22,6 @@ class TodoWrite(BaseTool):
     agent_type: set = {"main"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        return todo_write(self.todos)
+        return todo_write([
+            TodoEntry(content=item.content, status=item.status) for item in self.todos
+        ])

@@ -1,52 +1,17 @@
-import ast
-import json
-from dataclasses import dataclass
-from typing import Literal
-
 from core.log import get_logger
 from core.runtime_state import RUNTIME_STATE, TodoEntry
+from core.template import TODO_ITEM_MESSAGE_TEMPLATE, TODOS_MESSAGE_TEMPLATE
 
 _LOGGER = get_logger(__name__)
 
 
-@dataclass
-class Todo:
-    content: str
-    status: Literal["pending", "in_progress", "completed"] = "pending"
-
-
-def _normalize_todos(todos):
-    if isinstance(todos, str):
-        try:
-            todos = json.loads(todos)
-        except json.JSONDecodeError:
-            # json.loads 仅 JSON 格式（只支持双引号、不支持元组/集合/None等）
-            try:
-                # ast.literal_eval 支持 Python 字面量（支持元组、集合、None、布尔等）
-                todos = ast.literal_eval(todos)
-            except (SyntaxError, ValueError):
-                return None, "todos must be a list or JSON array string"
-
-    if not isinstance(todos, list):
-        return None, "todos must be a list"
-
-    for i, todo in enumerate(todos):
-        if not isinstance(todo, dict):
-            return None, f"todos[{i}] must be an object"
-        if "content" not in todo or "status" not in todo:
-            return None, f"todos[{i}] must contain 'content' or 'status'"
-        if todo["status"] not in ["pending", "in_progress", "completed"]:
-            return None, f"todos[{i}] has invalid status '{todo['status']}'"
-
-    todos = [Todo(**todo) for todo in todos]
-
-    return todos, None
-
-
-def todo_write(todos: list) -> str:
-    todos, error = _normalize_todos(todos)
-    if error:
-        raise Exception(f"run todo write error: {error}")
-    RUNTIME_STATE.set_todos([TodoEntry(content=t.content, status=t.status) for t in todos])
+def todo_write(todos: list[TodoEntry]) -> str:
+    """整体替换当前 todo 清单并回显；参数校验由 ToolPool（TodoWrite 模型）负责。"""
+    todo_messages = [
+        TODO_ITEM_MESSAGE_TEMPLATE.format(content=todo.content, status=todo.status)
+        for todo in todos
+    ]
+    RUNTIME_STATE.set_todos(list(todos))
     _LOGGER.info(f"[Todo Update] updated {len(todos)} item(s)")
-    return f"Updated todos. Current todos:\n {todos}"
+
+    return f"Updated todos, current todos:\n {TODOS_MESSAGE_TEMPLATE.format(todos='\n'.join(todo_messages))}"
