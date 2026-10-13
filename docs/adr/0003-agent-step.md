@@ -4,7 +4,7 @@
 
 accepted
 
-一次模型调用及其触发的工具派发共同构成 **Agent step**（`core/agent_step.py` 的 `run_agent_step()`），main / sub-agent / teammate 共用同一实现；三方差异经 `StepPolicy`（扩展、permission hooks、后台路由、diff 预览、length 时延迟执行工具、halt 回调）与 `StepRenderer` 显式化。step 不改调用方的 messages、不碰 session/cron/阶段标记/协议门控，这些骨架留在各自 loop。
+一次模型调用及其触发的工具派发共同构成 **Agent step**（`core/agent_step.py` 的 `run_agent_step()`），main / sub-agent / teammate 共用同一实现；三方差异经 `StepPolicy`（外部扩展、后台路由、diff 预览、length 时延迟执行工具、halt 回调）与 `StepRenderer` 显式化。step 不改调用方的 messages、不碰 session/cron/阶段标记/协议门控，这些骨架留在各自 loop。
 
 > 注：teammate 域与 `StepPolicy.should_halt` 后续已整体移除，现为 main / sub-agent 共享；正文与下方 Considered Options 中的「三方」均为当时语境，现状按两方理解。
 

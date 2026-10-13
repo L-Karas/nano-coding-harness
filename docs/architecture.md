@@ -9,7 +9,7 @@
 | `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
 | `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
 | `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑） |
-| `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、hook、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
+| `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、内置扩展、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
 | `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |
 | `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
@@ -22,7 +22,7 @@
 | `core/context/truncate.py` | 工具输出截断（2000 行 / 50KB 双上限），read 工具与上下文压缩共用 |
 | `core/background_task.py` | 慢工具转后台执行，结果回流注入 |
 | `core/cron_scheduler.py` | 5 段式 cron 解析、队列、持久化 |
-| `core/hook/hook.py` | `pre_tool_call` / `post_tool_call` hook 与权限策略 |
+| `core/extension/` | 外部扩展系统（事件、阶段、决定票）与内置扩展（权限门、观察者） |
 | `core/recovery/error_recovery.py` | 按 provider 分类错误、指数退避重试、恢复状态 |
 | `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环） |
 | `core/skill/skills.py` | 扫描 global（`~/.agents/skills`）/ user（`.harness/skills`）/ project（`.agents/skills`）三来源的 `SKILL.md`，同名 project > user > global |
@@ -42,13 +42,13 @@
 3. 重建工具池（内置 + MCP），把预算后的 history 交给 `run_agent_step()`；
 4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
    → 扩展 `after_llm` → 按 `parallel_safe` 声明分组派发工具（组内 `asyncio.gather` 并发，未声明工具作为屏障自成一组；
-   每组：扩展 `before_tool` → `PreToolUse` hook → 慢工具转后台 → 并发执行 → 扩展 `after_tool` → 渲染 diff/结果）；
+   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool` → 渲染 diff/结果）；
    结果写回会话后进入下一轮。工具结局统一为 `ToolResult`（内容 +
    失败标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
 5. 模型不再请求工具即结束回合。
 
 `run_agent_step()`（`core/agent_step.py`）是 main 与子代理共用的唯一实现；子代理的外层循环
-（轮次上限）只负责 append、调度与结束条件，差异（扩展、permission hooks、后台路由、diff 预览、
+（轮次上限）只负责 append、调度与结束条件，差异（外部扩展是否参与、后台路由、diff 预览、
 length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 
 健壮性设计：
@@ -92,4 +92,4 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 
 - 同一轮内的多个工具调用按 `BaseTool.parallel_safe` 声明（分组函数 `group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）分组（ADR-0008）：组内 `asyncio.gather` 并发，写文件 / 终端等未声明工具作为屏障自成一组，组间串行；扩展钩子、权限确认与渲染仍在每组的准备 / 收尾段串行执行；
 - 工具结果仅取文本内容，图片/多模态读取未实现；
-- 权限策略为进程内 hook，`.hooks.json` 尚未被代码读取。
+- 权限策略由内置权限扩展在 `before_tool` 的 gate 阶段裁决（地板 / 规则 / 扩展决定票；规则文件 `.harness/.permissions.json`）；根目录 `.hooks.json` 与 `examples/s08_hook_system.py` 是独立教学示例，不被代码读取。

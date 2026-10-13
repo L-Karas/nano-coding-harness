@@ -21,6 +21,8 @@ Agent 执行流程的关键节点（LLM 调用前/后、工具调用前/后）�
 | 启用切换 | 启动时读取一次；修改后需重启进程生效 |
 | 与旧 hook 的关系 | 不动 `core/hook/hook.py`；旧 registry 继续承担权限门与日志，新系统独立 |
 
+> 注：本设计的「与旧 hook 的关系」已由 [`2026-10-13 权限策略设计`](2026-10-13-permission-policy-design.md) 取代——旧 hook（`core/hook/`）已删除，权限门与观察者迁移为内置扩展，两套机制并存的方案不再成立。
+
 ## 2. 非目标（本次不做）
 
 - 后台任务执行结果（`core/background_task.py`）不触发 `after_tool`；派发时的 `before_tool` 已触发。

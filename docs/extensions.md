@@ -6,7 +6,7 @@
 - 工具调用前（`before_tool`）/ 后（`after_tool`）
 - 工具执行接管（`tool_execute`）
 
-扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以拦截 LLM 调用或工具执行、注入额外消息。
+扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
 
 > 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py`）
 > 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)
@@ -128,7 +128,7 @@ def register(api):
 | --- | --- | --- | --- |
 | `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history)`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
 | `after_llm` | `AfterLLMContext(content, tool_calls, finish_reason="", usage=None)` | **`content`**、**`tool_calls`**、**`inject_messages`** | 无 |
-| `before_tool` | `BeforeToolContext(tool_name, args)` | **`args`** | `ctx.block(reason)` |
+| `before_tool` | `BeforeToolContext(tool_name, args)` | **`args`** | `ctx.decide(action, reason)` / `ctx.block(reason)` |
 | `tool_execute` | `ToolExecuteContext(tool_name, args, tctx=None)` | **`result`**、**`is_error`** | `ctx.handle(result, is_error=False)` |
 | `after_tool` | `AfterToolContext(tool_name, args, result, is_error=False)` | **`result`**、**`inject_messages`** | 无 |
 
@@ -136,7 +136,7 @@ def register(api):
 
 - `messages` / `tool_calls` / `inject_messages` 中的消息是普通 dict（`{"role": ..., "content": ...}`）；`before_llm` 里的消息就是即将发出的请求消息（已裁剪），追加的消息需是 API 可接受的普通 dict，不会再被二次裁剪。
 - `tool_calls` 在无工具调用时为空列表（不会为 `None`）。
-- `abort()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` / `block_reason` 字段可读。
+- `abort()` / `decide()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` 可读，`blocked` / `block_reason` 由内置权限门在裁决后写入（见 4.4）。
 - `tool_execute` **只有调用 `ctx.handle(result, is_error=False)` 才算接管**（`handled` 置真）；只写 `ctx.result` 不算接管，内置执行照常发生。`tctx` 是只读运行上下文（取消信号 / cwd / agent 身份）。
 - `finish_reason`、`usage`、`tool_name`、`is_error` 为只读信息，供回调判断，不要写入。
 
@@ -146,8 +146,8 @@ def register(api):
 | --- | --- |
 | `before_llm` | 请求视图（system + history 裁剪）构造后、发出前 |
 | `after_llm` | 流式响应解析后、工具执行前；`finish_reason == "length"` 也会触发，扩窗 / 续写恢复由外层决定 |
-| `before_tool` | 工具参数 JSON 解析后、permission hook（`pre_tool_call`）之前 |
-| `tool_execute` | 权限门（`pre_tool_call`）通过后、后台路由与内置执行之前；有人 `handle()` 接管则跳过内置执行 |
+| `before_tool` | 工具参数 JSON 解析后、权限门裁决前；回调可改写参数并投决定票 |
+| `tool_execute` | 权限门（内置权限扩展的 gate 阶段）通过后、后台路由与内置执行之前；有人 `handle()` 接管则跳过内置执行 |
 | `after_tool` | 工具真正执行完成后、结果写入消息前（内置执行与扩展接管共用） |
 
 **并发组中的事件顺序**：同一轮里连续出现的多个 `parallel_safe` 工具（`read_file` / `grep` 等）构成一个并发组：
@@ -159,7 +159,7 @@ def register(api):
 
 ### 4.1 顺序与链式修改
 
-多个回调（同一扩展内、不同扩展间）按「文件夹字典序 → 注册顺序」串行执行，共享同一个上下文对象：
+多个回调先按内部阶段排序（`user` → `observer` → `gate`，见 4.4），同一阶段内按「文件夹字典序 → 注册顺序」串行执行，共享同一个上下文对象：
 
 ```
 扩展 A 的 hook1 → 扩展 A 的 hook2 → 扩展 B 的 hook1 …
@@ -169,23 +169,36 @@ def register(api):
 
 ### 4.2 短路控制
 
-- `ctx.block(reason)`（`before_tool`）：跳过**该事件剩余回调**、跳过权限检查、跳过工具执行；工具结果写为 `[Extension blocked] <reason>`。
+- `ctx.block(reason)`（`before_tool`）：等价于 `ctx.decide("deny", reason)`，登记一票拒绝（**不短路、不直接拦截**）；是否拒绝由内置权限门统一裁决——与 allow 规则/扩展票冲突时改为弹确认卡，最终被拒时跳过工具执行，工具结果写为 `[Extension blocked] <reason>`。
 - `ctx.abort(reason)`（`before_llm`）：跳过该事件剩余回调，不再调用 LLM。
   - 主循环：写入一条 `[Extension aborted] <reason>` 的 assistant 消息并结束本回合；
   - 子代理：返回文本 `(subagent aborted by extension: <reason>)`。
 - `ctx.handle(result, is_error=False)`（`tool_execute`）：跳过**该事件剩余回调**、跳过后台路由 / diff 预览 / 内置执行，接管结果作为本次工具结果；`after_tool` 照常触发。
 
-被 `block` 拦截的工具调用**不会**触发 `after_tool`，但下一轮模型会看到 `[Extension blocked] ...` 工具结果。
+被权限门拒绝的工具调用**不会**触发 `after_tool`，下一轮模型会看到对应的拒绝文案（见 [`permissions.md`](permissions.md)）。
 
 `tool_execute` 回调异常按 fail-open 处理：记 `dispatcher.log` 后视为**未接管**，继续后续回调；最终无人接管则回退内置执行（接管崩溃不代表内置不执行，扩展需自行 `try/except` 后 `handle(..., is_error=True)` 实现失败闭合）。
 
-### 4.3 fail-open 与中断
+### 4.3 失败语义与中断
 
-- 每个回调独立 `try/except Exception`：单个回调抛异常只记日志（`dispatcher.log`）并跳过，后续回调与主流程继续。
+- 每个回调独立 `try/except Exception`：外部回调抛异常只记日志（`dispatcher.log`）并视为弃权，后续回调与主流程继续（fail-open）。
+- 内置权限门例外：`gate` 阶段的权限门声明 `fail_closed=True`，自身异常 → 拒绝，工具结果写为 `Permission check failed: <ExceptionName>` 并记 ERROR，避免策略代码崩溃导致放行。
 - `asyncio.CancelledError` 不会被捕获：用户中断（Esc）能正常取消正在执行的异步回调。
 - **没有超时机制**：同步回调卡住会卡住整个 agent，异步回调里的阻塞 IO 也会阻塞事件循环。见 [8. 安全与边界](#8-安全与边界)。
 
-### 4.4 字段归一与注入消息
+### 4.4 权限门与决定票
+
+`before_tool` 上的决定语义与内置权限门（完整规则、文案与已知风险见 [`permissions.md`](permissions.md)）：
+
+- `ctx.decide(action, reason="")`：登记一票，`action ∈ {allow, ask, deny}`；非法值抛 `ValueError`，该回调按失败处理、票丢弃。
+- 同一回调多次 `decide` 以最后一次为准；票来源由派发器自动标注（外部扩展 `nano_extension_<名字>`，内置 `builtin:permission`）。
+- 回调结束时为票记录参数快照；后续回调改写了参数则票作废（记日志）并视为弃权，权限门按最终参数判定。
+- 回调按 `user → observer → gate` 三个阶段排序，同阶段内保持注册顺序：外部扩展只能注册 `user` 阶段；内置观察者在 `observer`；内置权限门固定在 `gate` 最后执行，看到所有参数改写与全部投票。
+- 权限门裁决顺序：地板（硬编码，永远拒绝）→ 用户表态（规则 + 扩展票；动作一致采用，冲突弹确认卡）→ 默认层（破坏性命令 / 越界路径 → 询问，否则允许）。
+- `StepPolicy.use_extensions=False` 只跳过外部回调（所有事件一律跳过）；内置观察者与权限门照常，地板与规则仍然生效。
+- `api.on()` 不向外部扩展暴露阶段与 `fail_closed`；外部扩展没有任何公开注册点可以排到权限门之后。失败语义见 4.3。
+
+### 4.5 字段归一与注入消息
 
 事件派发结束后、写回主流程之前，派发器会做最小防御性归一：
 
@@ -210,7 +223,7 @@ def on_after_tool(ctx):
         )
 ```
 
-### 4.5 会话与生命周期
+### 4.6 会话与生命周期
 
 - **主循环**：`before_llm` 对 `messages` 的修改只用于本次模型调用。会话早在派发前已回写，回调中的增删不会持久化，下一回合会重新从会话加载。
 - **子代理**：`before_llm` 的修改以及 `after_llm` / `after_tool` 注入的消息会保留在该子代理的本地消息列表中，参与其后续轮次；但子代理全程不进主会话历史（只回传最终文本结论）。
@@ -244,7 +257,7 @@ def force_git_no_pager(ctx):
         ctx.args["command"] = "git --no-pager " + command[len("git "):]
 ```
 
-修改后的参数会回写到 `tool_call.function.arguments`，并用于渲染和**后续的权限检查**（权限门看到的是最终参数）。
+修改后的参数会回写到 `tool_call.function.arguments`，并用于渲染、执行和**后续的权限门裁决**（权限门固定在 gate 阶段最后执行，看到的是最终参数；基于旧参数投出的票会作废，见 4.4）。
 
 ### 5.3 拦截危险工具调用（`before_tool` + `block`）
 
@@ -259,7 +272,7 @@ def guard_dangerous_commands(ctx):
         ctx.block("危险命令已被扩展拦截")
 ```
 
-模型下一轮收到的工具结果为 `[Extension blocked] 危险命令已被扩展拦截`。
+模型下一轮收到的工具结果为 `[Extension blocked] 危险命令已被扩展拦截`；若同一调用还命中 allow 规则/扩展票，则改为弹冲突确认卡（见 4.4）。
 
 ### 5.4 结果脱敏 / 改写（`after_tool`）
 
@@ -334,7 +347,7 @@ async def local_web_search(ctx):
 | 日志文件 | 内容 |
 | --- | --- |
 | `.harness/log/loader.log` | 加载成功（INFO，含扩展名与注册回调数） / 清单缺失 / JSON 非法 / `enabled` 非严格 `true` / 导入失败 / 缺少 `register` / 注册中途抛错，前缀 `[Extension]` |
-| `.harness/log/dispatcher.log` | 每次 hook 执行成功（DEBUG，含模块名、函数名与事件名） / hook 运行期的异常（fail-open，ERROR） |
+| `.harness/log/dispatcher.log` | 每次回调执行成功（DEBUG，含模块名、函数名与事件名） / 回调运行期异常（外部扩展 fail-open、内置权限门 fail-closed，均记 ERROR） |
 
 ### 6.2 常见「扩展没生效」原因
 
@@ -344,7 +357,7 @@ async def local_web_search(ctx):
 4. **缺少 `__init__.py` 或 `register`**：该扩展被跳过，检查 `loader.log`。
 5. **`register` 里抛错**：例如 `api.on("before_llm", "not-callable")`（`TypeError`）或事件名拼写错误（`ValueError`）。原子提交意味着此时**该扩展零注册**，其它扩展不受影响。
 6. **写错了目录**：必须是**启动进程时工作目录**下的 `.harness/extensions/`，且只扫描直接子文件夹。
-7. **回调异常被 fail-open 吞掉**：看 `dispatcher.log`；`inject_messages` 写成非 list 也会被丢弃并记 ERROR。
+7. **回调异常被 fail-open 吞掉**：外部回调异常只记 `dispatcher.log` 并视为弃权（内置权限门是 fail-closed，异常会导致拒绝）；`inject_messages` / `decisions` 写成非 list 也会被丢弃并记 ERROR。
 8. **包内模块用了裸绝对导入**：`import helpers` / `from helpers import x` 不会命中扩展目录（扩展目录不在 `sys.path`），必须写成 `from .helpers import x`；此时扩展整体加载失败，见 `loader.log`。
 9. **`tool_execute` 接管没生效**：只写了 `ctx.result` 没调 `ctx.handle()`；或回调抛异常被 fail-open 吞掉（`dispatcher.log`）后回退执行了内置实现——注意这可能触发内置的真实副作用。
 
@@ -389,16 +402,17 @@ def test_blocks_rm_commands():
 - **无超时**：hook 同步阻塞会阻塞 agent；长耗时的网络 / 磁盘 / 计算请自行异步化或降级为快速操作。
 - **不阻断启动**：单个扩展加载失败只记日志并跳过。
 - **修改需重启**：`enabled` 与扩展代码不支持运行时热切换。
-- **覆盖范围**：主 agent 循环与子代理循环都会触发五个事件；`tool_execute` 接管时跳过后台路由与 diff 预览，内置 `pool.execute` 不执行。
+- **覆盖范围**：主 agent 循环与子代理循环都会触发五个事件；`tool_execute` 接管时跳过后台路由与 diff 预览，内置 `pool.execute` 不执行；`StepPolicy.use_extensions=False` 时外部回调在所有事件上被跳过，内置观察者与权限门照常。
 - **不在覆盖范围**：
   - 后台任务的执行结果不触发 `after_tool`（派发时的 `before_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
   - 上下文压缩、标题生成等辅助 LLM 调用不触发 `before_llm` / `after_llm`；
-  - 旧 `.hooks.json` 教学示例与旧事件系统相互独立，不参与加载；工具节点顺序固定为「外部 `before_tool` → 参数回写 → 旧权限门 → 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
+  - 根目录 `.hooks.json` 与 `examples/s08_hook_system.py` 是独立教学示例，不参与扩展加载；工具节点顺序固定为「外部 `before_tool`（参数改写 + 决定票）→ 内置观察者 → 内置权限门（gate）→ 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
   - 被扩展 / 权限拦截、后台任务占位、中断占位、参数 JSON 解析失败等路径没有真实执行结果，不触发 `after_tool`。
 
 ## 参考
 
-- 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)
+- 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（其「与旧 hook 的关系」一节已由 [`2026-10-13 权限策略设计`](superpowers/specs/2026-10-13-permission-policy-design.md) 取代）
+- 权限门与决定票：[`permissions.md`](permissions.md)
 - 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)
 - 进阶示例（`after_tool` 读取并按需改写 `web_search` 结果）：[`examples/jev-for-web-search/`](../examples/jev-for-web-search/)

@@ -11,7 +11,7 @@
 - **两层上下文压缩**：工具输出统一截断 + 历史摘要，阈值随当前模型动态解析；
 - **健壮性**：Esc 中断、按 provider 分类的错误退避重试、截断自动扩窗与续写恢复、会话逐条落盘；
 - **子代理**：独立提示词与工具池，后台运行、最多 30 轮，只回传最终文本结论；
-- **可扩展**：权限 Hook（危险命令二次确认）+ `.harness/extensions/` 外部扩展五个事件介入。
+- **可扩展**：`.harness/.permissions.json` 权限规则（allow / ask / deny）+ `.harness/extensions/` 外部扩展五个事件介入（`before_tool` 决定票与内置权限门）。
 
 ## 快速开始
 
@@ -67,6 +67,13 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 首次启动由 `core.bootstrap.bootstrap()` 自动创建 `.harness/`（配置、会话、技能、任务、日志等，
 幂等且线程安全）。完整目录清单与运行参数见 [`docs/configuration.md`](docs/configuration.md)。
 
+## 权限策略
+
+工具调用先过内置权限门（`before_tool` 的 gate 阶段）：硬编码地板永远拒绝（`sudo` 等），
+用户可在 `.harness/.permissions.json` 写规则（terminal 命令正则 / 文件工具越界策略）表达
+allow / ask / deny；外部扩展也能用 `decide()` 投票，冲突时弹确认卡。判定顺序、规则格式与
+已知风险见 [`docs/permissions.md`](docs/permissions.md)。
+
 ## 扩展系统
 
 外部扩展放在 `.harness/extensions/<name>/`，不改 harness 源码即可在 LLM 调用前/后、工具调用前/后
@@ -83,7 +90,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | [`docs/configuration.md`](docs/configuration.md) | 模型注册表、`.harness/` 目录、`/settings` 参数与压缩运行参数 |
 | [`docs/context-compaction.md`](docs/context-compaction.md) | 两层上下文压缩：触发 / 保留预算、切分与摘要、模型切换行为 |
 | [`docs/features.md`](docs/features.md) | MCP、Skills、Memory、Cron 调度 |
-| [`docs/permissions.md`](docs/permissions.md) | 权限与 Hook 策略 |
+| [`docs/permissions.md`](docs/permissions.md) | 权限策略：三层判定、规则文件、扩展决定票与风险 |
 | [`docs/teams.md`](docs/teams.md) | 子代理：独立提示词、工具池与轮次上限 |
 | [`docs/extensions.md`](docs/extensions.md) | 外部扩展系统完整指南 |
 | [`examples/`](examples/) | s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`）与扩展示例（`extension_example`、`jev-for-web-search`） |
