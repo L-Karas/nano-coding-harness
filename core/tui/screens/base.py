@@ -22,15 +22,16 @@ _MODEL_PROVIDER_STYLE = "#64748b"
 _MODEL_CURRENT_STYLE = "#34d399"  # 同 _SessionRow 的 current 标记色
 _ENTRY_NAME_STYLE = "bold #4ade80"  # 「● 名称」段（/skills、/mcp 工具列表共用）
 _ENTRY_DESC_STYLE = "#64748b"
+_ENTRY_TAG_STYLE = "#a5adce"  # [tag] 段（/skills 的来源标记 global/user/project）
 
 
 def _entry_row(name: str, desc: str = "", tag: str = "") -> Text:
-    """「● 名称」行；tag 非空时以 model provider 同款样式追加 [tag]；描述 strip 后自第二行起
+    """「● 名称」行；tag 非空时以源标记色追加 [tag]；描述 strip 后自第二行起
     （内部换行 / 缩进原样保留）。"""
     row = Text()
     row.append("● " + name, style=_ENTRY_NAME_STYLE)
     if tag:
-        row.append(f" [{tag}]", style=_MODEL_PROVIDER_STYLE)
+        row.append(f" [{tag}]", style=_ENTRY_TAG_STYLE)
     desc = (desc or "").strip()
     if desc:
         row.append("\n" + desc, style=_ENTRY_DESC_STYLE)
