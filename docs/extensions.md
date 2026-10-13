@@ -207,6 +207,7 @@ def register(api):
 | `result` | 一律 `str()` 后写回 |
 | `content` | 非 `None` 时 `str()`（`None` 表示无文本的 tool-call 响应，保留） |
 | `tool_calls` / `inject_messages` | 必须是 `list`；不是则置空并记 ERROR |
+| `decisions` | 必须是 `list`；不是则置空并记 ERROR |
 
 其余字段的类型契约由扩展自行保证，写坏类型可能在主循环抛出（属于扩展 bug）。
 

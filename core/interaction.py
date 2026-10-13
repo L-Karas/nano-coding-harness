@@ -1,6 +1,6 @@
 """域层 → UI 端口（叶子模块：不 import 任何 core 模块）。
 
-工具（clarify）、hook（permission）与 agent 主循环只依赖本端口，不直接依赖 TUI；
+工具（clarify）、内置权限门与 agent 主循环只依赖本端口，不直接依赖 TUI；
 TUI 适配器（core/tui/render.py）导入时经 register_interaction / register_render 注册实现，
 headless 场景使用默认策略：权限默认拒绝，澄清默认取消，渲染事件默认 no-op（见 ADR-0005）。
 """

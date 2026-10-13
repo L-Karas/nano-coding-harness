@@ -262,7 +262,7 @@ def ask_clarify(questions: list[str], multi_select: bool = False) -> str:
                          "ask_clarify must be called from a non-App thread (e.g. inside a tool handler)")
 
 
-# 渲染桥接入域层 UI 端口：工具（clarify）/ hook（permission）提问与渲染事件都经 core.interaction，
+# 渲染桥接入域层 UI 端口：工具（clarify）/ 内置权限门提问与渲染事件都经 core.interaction，
 # 域层不再反向 import TUI；未导入本模块的场景（子代理 / 队友 / 测试）走端口默认（拒绝 / 取消 / no-op）。
 register_interaction(ask_permission=ask_permission, ask_clarify=ask_clarify)
 register_render(
