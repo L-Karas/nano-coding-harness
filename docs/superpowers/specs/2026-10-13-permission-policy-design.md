@@ -98,7 +98,7 @@ return default_vote(tool, args)                   # 破坏性/越界 → ask；�
 }
 ```
 
-- `terminal.command`：键为正则字符串；匹配方式 `re.search`，编译带 `IGNORECASE`（与现有权限门一致；可用内联 `(?-i)` 局部关闭）。按 JSON 文件顺序逐条匹配，**最后一个命中的键生效**（对应「新引入的规则生效」）。
+- `terminal.command`：键为正则字符串；匹配方式 `re.search`，编译带 `IGNORECASE`（与现有权限门一致；可用作用域形式 `(?-i:...)` 局部关闭大小写不敏感，如 `(?-i:FOO)` 只匹配大写的 `FOO`）。按 JSON 文件顺序逐条匹配，**最后一个命中的键生效**（对应「新引入的规则生效」）。
 - 文件工具 `external_directory`：仅在解析后的路径位于 `WORKDIR` 之外时生效；目录内调用与规则无关，直接允许。
 - 未知顶层工具键：忽略并记 WARN（为未来工具留扩展空间）。
 - 非法 `action` 值、非法正则：丢弃该条规则并记 ERROR，其余规则照常生效。
