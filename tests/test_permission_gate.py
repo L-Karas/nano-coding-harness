@@ -302,5 +302,42 @@ def test_headless_conflict_defaults_to_deny(monkeypatch):
     assert ctx.block_reason == "Permission denied by user"
 
 
+def test_rule_ask_confirmed_allows_with_card(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    gate = build_gate(Rules(terminal=[(re.compile("^git"), "ask")]))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "git status"})
+    gate(ctx)
+    assert not ctx.blocked
+    assert cards == ["^git\n\ngit status"]
+
+
+def test_rule_ask_rejected_denies_with_card(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "n")
+    outside = str(Path.cwd().parent / "secret.txt")
+    gate = build_gate(Rules(external_directory={"read_file": "ask"}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": outside})
+    gate(ctx)
+    assert ctx.blocked and ctx.block_reason == "Permission denied by user"
+    assert "read_file.external_directory" in cards[0] and outside in cards[0]
+
+
+def test_extension_source_named_rule_uses_extension_message():
+    gate = build_gate(Rules())
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "ls"})
+    ctx.decisions.append(_vote("deny", "fake rule", source="rule"))
+    gate(ctx)
+    assert ctx.block_reason == "[Extension blocked] fake rule"
+
+
+def test_non_json_serializable_args_use_str_fallback():
+    gate = build_gate(Rules())
+    ctx = BeforeToolContext(tool_name="grep", args={"pattern": object()})
+    ctx.decisions.append(_vote("deny", "no"))
+    gate(ctx)
+    assert ctx.block_reason == "[Extension blocked] no"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

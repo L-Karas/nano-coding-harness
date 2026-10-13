@@ -123,6 +123,37 @@ def test_hook_exception_is_fail_open(monkeypatch):
     assert logger.exception.called
 
 
+def test_exception_rolls_back_uncommitted_votes(monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(dispatcher, "_LOGGER", logger)
+    calls = []
+
+    def broken(ctx):
+        ctx.decide("allow", "x")
+        raise RuntimeError("boom")
+
+    dispatcher.add("before_tool", broken, "ext_a")
+    dispatcher.add("before_tool", lambda ctx: calls.append("next"), "ext_b")
+    ctx = BeforeToolContext(tool_name="terminal", args={})
+    _run("before_tool", ctx)
+    assert ctx.decisions == []
+    assert calls == ["next"]
+    assert logger.exception.called
+
+
+def test_exception_rollback_keeps_earlier_committed_votes():
+    dispatcher.add("before_tool", lambda ctx: ctx.decide("deny", "earlier"), "ext_a")
+
+    def broken(ctx):
+        ctx.decide("allow", "late")
+        raise RuntimeError("boom")
+
+    dispatcher.add("before_tool", broken, "ext_b")
+    ctx = BeforeToolContext(tool_name="terminal", args={})
+    _run("before_tool", ctx)
+    assert [(d.action, d.source) for d in ctx.decisions] == [("deny", "ext_a")]
+
+
 def test_cancelled_error_propagates():
     async def cancelled(ctx):
         raise asyncio.CancelledError
@@ -141,6 +172,17 @@ def test_non_list_inject_messages_is_dropped(monkeypatch):
     ctx = AfterToolContext(tool_name="terminal", args={}, result="out")
     _run("after_tool", ctx)
     assert ctx.inject_messages == []
+    assert logger.error.called
+
+
+def test_non_list_decisions_is_dropped(monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(dispatcher, "_LOGGER", logger)
+
+    dispatcher.add("before_tool", lambda ctx: setattr(ctx, "decisions", "oops"), "ext_a")
+    ctx = BeforeToolContext(tool_name="terminal", args={})
+    _run("before_tool", ctx)
+    assert ctx.decisions == []
     assert logger.error.called
 
 
@@ -236,6 +278,13 @@ def test_stage_order_is_user_then_observer_then_gate():
                    "builtin:observers", stage="observer", builtin=True)
     _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
     assert seen == ["user", "observer", "gate"]
+
+
+def test_add_rejects_non_user_stage_without_builtin():
+    with pytest.raises(ValueError, match="仅内置扩展"):
+        dispatcher.add("before_tool", lambda ctx: None, "ext_a", stage="gate")
+    with pytest.raises(ValueError, match="仅内置扩展"):
+        dispatcher.add("before_tool", lambda ctx: None, "ext_a", stage="observer")
 
 
 def test_include_external_false_skips_external_but_runs_builtin():

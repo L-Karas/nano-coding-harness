@@ -208,6 +208,20 @@ def test_background_routing_respects_policy(monkeypatch):
     assert started == []
 
 
+def test_background_route_sees_rewritten_call_arguments(monkeypatch):
+    started = []
+    monkeypatch.setattr(step_mod, "start_background_task",
+                        lambda call, pool, tctx: started.append(call) or "bg-1")
+    monkeypatch.setattr(step_mod, "should_run_background", lambda *_: True)
+    add_hook("before_tool", lambda ctx: ctx.args.update({"command": "ls -la"}), "test")
+
+    outcome = _run(monkeypatch, [("", "", [_tool_call_cmd("ls")], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=True, background=True))
+    assert started
+    assert json.loads(started[0].function.arguments) == {"command": "ls -la"}
+    assert outcome.followup_messages[0]["content"].startswith("[Background task `bg-1` started]")
+
+
 def test_renderer_receives_tool_call_and_result(monkeypatch):
     seen = []
     renderer = StepRenderer(on_tool_call=lambda n, a: seen.append(("call", n, a)),

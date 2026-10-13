@@ -38,6 +38,24 @@ def test_builtin_api_accepts_gate_stage():
     assert api.commit() == [("before_tool", fn, "gate", True)]
 
 
+def test_on_rejects_unknown_stage_for_external_and_builtin():
+    with pytest.raises(ValueError, match="未知扩展阶段"):
+        ExtensionAPI("nano_extension_demo").on("before_tool", lambda ctx: None, stage="bogus")
+    with pytest.raises(ValueError, match="未知扩展阶段"):
+        ExtensionAPI("builtin:permission", builtin=True).on(
+            "before_tool", lambda ctx: None, stage="bogus")
+
+
+def test_builtin_flag_is_read_only():
+    external = ExtensionAPI("nano_extension_demo")
+    builtin = ExtensionAPI("builtin:permission", builtin=True)
+    assert external.builtin is False and builtin.builtin is True
+    with pytest.raises(AttributeError):
+        external.builtin = True
+    with pytest.raises(AttributeError):
+        builtin.builtin = False
+
+
 def test_five_events_are_declared():
     assert EVENTS == ("before_llm", "after_llm", "before_tool", "tool_execute", "after_tool")
 

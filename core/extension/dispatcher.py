@@ -33,9 +33,14 @@ def add(
     fail_closed: bool = False,
     builtin: bool = False,
 ) -> None:
-    """注册一个事件回调；stage 决定派发顺序，fail_closed 让异常短路为拒绝。"""
+    """注册一个事件回调；stage 决定派发顺序，fail_closed 让异常短路为拒绝。
+
+    只有内置回调可以声明非 user 阶段，保证外部扩展无法排到权限门之后。
+    """
     if stage not in STAGES:
         raise ValueError(f"unknown stage: {stage!r}")
+    if stage != "user" and not builtin:
+        raise ValueError(f"仅内置扩展可以声明 stage: {stage!r}")
     _HANDLERS.setdefault(event, []).append(
         _Handler(module_name, callback, stage, fail_closed, builtin)
     )
@@ -69,6 +74,9 @@ async def dispatch(event: str, ctx: Any, *, include_external: bool = True) -> No
         except Exception as exc:
             _LOGGER.exception(
                 f"[Extension] {handler.module_name}:{_callback_name(handler.callback)} failed at {event}")
+            # 异常 = 该回调弃权：回滚本次调用新登记的票，不能让崩溃回调的半票进入裁决。
+            if isinstance(getattr(ctx, "decisions", None), list):
+                ctx.decisions = ctx.decisions[:before]
             if handler.fail_closed and hasattr(ctx, "blocked"):
                 ctx.blocked = True
                 ctx.block_reason = f"Permission check failed: {type(exc).__name__}"

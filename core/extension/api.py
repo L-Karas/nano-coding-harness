@@ -11,8 +11,13 @@ class ExtensionAPI:
 
     def __init__(self, module_name: str, *, builtin: bool = False):
         self.module_name = module_name
-        self.builtin = builtin
+        self._builtin = builtin
         self._pending: list[tuple[str, Callable, str, bool]] = []
+
+    @property
+    def builtin(self) -> bool:
+        """是否内置扩展；只读，实例创建后不可改写（外部扩展无法自升为内置）。"""
+        return self._builtin
 
     def on(
         self,

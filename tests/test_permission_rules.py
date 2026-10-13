@@ -1,5 +1,6 @@
 """权限规则文件：解析、校验与匹配语义。"""
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from core.extension.builtin import permission
@@ -72,6 +73,43 @@ def test_non_dict_top_level_returns_empty_rules_and_logs_error(tmp_path, monkeyp
     rules = load_rules(_write(tmp_path, ["terminal"]))
     assert rules.terminal == [] and rules.external_directory == {}
     assert logger.error.called
+
+
+def test_empty_known_sections_warn_zero_rules(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    rules = load_rules(_write(tmp_path, {"terminal": {}, "read_file": {}}))
+    assert rules.terminal == [] and rules.external_directory == {}
+    messages = [call.args[0] for call in logger.warning.call_args_list]
+    assert any("terminal" in message and "未产出" in message for message in messages)
+    assert any("read_file" in message and "未产出" in message for message in messages)
+
+
+def test_terminal_without_command_warns(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    assert load_rules(_write(tmp_path, {"terminal": {"command": None}})).terminal == []
+    messages = [call.args[0] for call in logger.warning.call_args_list]
+    assert any("terminal" in message and "未产出" in message for message in messages)
+
+
+def test_read_failure_returns_empty_rules_and_logs_read_error(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    path = tmp_path / ".permissions.json"; path.write_text("{}", encoding="utf-8")
+
+    def boom(self, *args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_text", boom)
+    assert load_rules(path).terminal == []
+    message = logger.error.call_args.args[0]
+    assert "读取失败" in message and "PermissionError" in message and "denied" in message
+
+
+def test_json_parse_error_message_carries_exception_type(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    path = tmp_path / ".permissions.json"; path.write_text("{oops", encoding="utf-8")
+    assert load_rules(path).terminal == []
+    message = logger.error.call_args.args[0]
+    assert "JSON" in message and "JSONDecodeError" in message
 
 
 def test_invalid_section_types_drop_section_with_error(tmp_path, monkeypatch):

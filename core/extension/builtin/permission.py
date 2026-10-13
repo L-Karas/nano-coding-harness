@@ -38,9 +38,16 @@ def load_rules(path: Path) -> Rules:
     if not path.exists():
         return Rules()
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        _LOGGER.error(f"[Permission] 规则文件解析失败，忽略全部规则: {path}")
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        _LOGGER.error(
+            f"[Permission] 规则文件读取失败（{type(exc).__name__}: {exc}），忽略全部规则: {path}")
+        return Rules()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        _LOGGER.error(
+            f"[Permission] 规则文件 JSON 解析失败（{type(exc).__name__}: {exc}），忽略全部规则: {path}")
         return Rules()
     if not isinstance(data, dict):
         _LOGGER.error(f"[Permission] 规则文件顶层必须是对象，忽略全部规则: {path}")
@@ -83,10 +90,12 @@ def _parse_terminal_section(section: object, rules: Rules) -> None:
             _LOGGER.warning(f"[Permission] terminal 段未知字段，忽略: {key}")
     commands = section.get("command")
     if commands is None:
+        _LOGGER.warning("[Permission] terminal 段缺少 command，未产出任何规则")
         return
     if not isinstance(commands, dict):
         _LOGGER.error("[Permission] terminal.command 必须是对象，忽略该段")
         return
+    added = 0
     for pattern_text, action in commands.items():
         if action not in ACTIONS:
             _LOGGER.error(f"[Permission] 非法 action，忽略规则 {pattern_text!r}: {action!r}")
@@ -97,6 +106,9 @@ def _parse_terminal_section(section: object, rules: Rules) -> None:
             _LOGGER.error(f"[Permission] 非法正则，忽略规则: {pattern_text!r}")
             continue
         rules.terminal.append((compiled, action))
+        added += 1
+    if added == 0:
+        _LOGGER.warning("[Permission] terminal.command 未产出任何有效规则")
 
 
 def _parse_external_directory_section(tool_name: str, section: object, rules: Rules) -> None:
@@ -112,6 +124,8 @@ def _parse_external_directory_section(tool_name: str, section: object, rules: Ru
                 f"[Permission] 非法 action，忽略 {tool_name}.external_directory: {action!r}")
             continue
         rules.external_directory[tool_name] = action
+    if tool_name not in rules.external_directory:
+        _LOGGER.warning(f"[Permission] {tool_name} 段未产出任何有效规则")
 
 
 # ---------- 地板与默认层（迁移自旧 hook 权限门，行为与文案不变） ----------
@@ -238,7 +252,7 @@ def _call_desc(tool_name: str, args: dict) -> str:
         return str(args.get("command", ""))
     if tool_name in _FILE_TOOLS:
         return f"{tool_name}: {args.get('path', '')}"
-    return f"{tool_name}: {json.dumps(args, ensure_ascii=False)}"
+    return f"{tool_name}: {str(args)}"
 
 
 def _rule_vote(rules: Rules, tool_name: str, args: dict) -> Decision | None:
@@ -259,7 +273,8 @@ def _rule_vote(rules: Rules, tool_name: str, args: dict) -> Decision | None:
     return None
 
 
-def _apply_votes(ctx: BeforeToolContext, votes: list[Decision], desc: str) -> None:
+def _apply_votes(ctx: BeforeToolContext, votes: list[Decision], desc: str,
+                 rule_vote: Decision | None) -> None:
     """用户表态：动作唯一时采用；不唯一时弹冲突卡，拒绝统一收口为 Permission denied by user。"""
     if len({vote.action for vote in votes}) > 1:
         listing = "\n".join(
@@ -274,7 +289,7 @@ def _apply_votes(ctx: BeforeToolContext, votes: list[Decision], desc: str) -> No
     if action == "deny":
         ctx.blocked = True
         ctx.block_reason = (f"Permission denied by rule: {votes[0].reason}"
-                            if votes[0].source == "rule"
+                            if votes[0] is rule_vote
                             else f"[Extension blocked] {votes[0].reason}")
         return
     if not _confirm(f"{votes[0].reason}\n\n{desc}"):  # ask
@@ -332,10 +347,11 @@ def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
         rule_vote = _rule_vote(rules, tool_name, args)
         votes = ([rule_vote] if rule_vote else []) + list(ctx.decisions)
         if votes:
-            _apply_votes(ctx, votes, _call_desc(tool_name, args))
+            _apply_votes(ctx, votes, _call_desc(tool_name, args), rule_vote)
             return
 
         _apply_defaults(ctx, tool_name, args)
+        # todo: mcp_* 工具权限策略暂缺（保持直接放行）
 
     return gate
 

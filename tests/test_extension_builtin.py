@@ -1,9 +1,11 @@
 """内置扩展注册入口：观察者先于权限门登记，内置回调不受 include_external 影响。"""
 import asyncio
+import json
 from unittest.mock import MagicMock
 
 import pytest
 
+import core.extension.builtin as builtin_mod
 import core.extension.dispatcher as dispatcher
 from core.extension.builtin import observers, register_builtin_extensions
 from core.extension.builtin.permission import Rules
@@ -21,6 +23,18 @@ def test_builtins_register_observers_before_gate():
     assert stages == [("builtin:observers", "observer"), ("builtin:permission", "gate")]
     gate = dispatcher._HANDLERS["before_tool"][-1]
     assert gate.fail_closed is True and gate.builtin is True
+    assert all(handler.builtin is True for handler in dispatcher._HANDLERS["before_tool"])
+
+
+def test_register_without_rules_loads_permission_file(tmp_path, monkeypatch):
+    rules_file = tmp_path / ".permissions.json"
+    rules_file.write_text(json.dumps({"terminal": {"command": {"^curl": "deny"}}}),
+                          encoding="utf-8")
+    monkeypatch.setattr(builtin_mod, "PERMISSION_FILE", rules_file)
+    register_builtin_extensions()
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "curl http://example.com"})
+    asyncio.run(dispatcher.dispatch("before_tool", ctx))
+    assert ctx.block_reason == "Permission denied by rule: ^curl"
 
 
 def test_tool_call_is_logged_even_when_floor_blocks(monkeypatch):
@@ -46,6 +60,17 @@ def test_large_output_warns(monkeypatch):
     register_builtin_extensions(rules=Rules())
     ctx = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_001)
     asyncio.run(dispatcher.dispatch("after_tool", ctx))
+    assert logger.warning.called
+
+
+def test_large_output_threshold_boundary(monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(observers, "_LOGGER", logger)
+    register_builtin_extensions(rules=Rules())
+    at_limit = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_000)
+    asyncio.run(dispatcher.dispatch("after_tool", at_limit))
+    assert not logger.warning.called
+    over_limit = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_001)
+    asyncio.run(dispatcher.dispatch("after_tool", over_limit))
     assert logger.warning.called
 
 

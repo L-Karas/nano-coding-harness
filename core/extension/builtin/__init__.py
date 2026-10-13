@@ -1,4 +1,8 @@
-"""内置扩展：权限门与观察者（由 bootstrap 显式注册，不走外部扩展扫描）。"""
+"""内置扩展：权限门与观察者（由 bootstrap 显式注册，不走外部扩展扫描）。
+
+单次调用契约：`register_builtin_extensions` 由 bootstrap 在启动时调用一次；
+测试需先 `reset_extensions()` 清空注册表再调用，避免重复注册产生重复回调与票。
+"""
 from typing import Callable
 
 from core.config import PERMISSION_FILE
