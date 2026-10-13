@@ -44,8 +44,8 @@ class BeforeToolContext:
     decisions: list[Decision] = field(default_factory=list)
 
     def block(self, reason: str) -> None:
-        self.blocked = True
-        self.block_reason = str(reason)
+        """登记一票拒绝；是否拦截由权限门裁决。"""
+        self.decide("deny", reason)
 
     def decide(self, action: str, reason: str = "") -> None:
         """登记一票；仅 allow/ask/deny 合法，不改变 blocked。"""

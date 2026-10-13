@@ -42,14 +42,18 @@ def test_hooks_run_in_order_and_chain_mutations():
     assert seen == ["first", "second"]
 
 
-def test_block_short_circuits_remaining_hooks():
+def test_blocked_gate_short_circuits_remaining_hooks():
     calls = []
 
     def later(ctx):
         calls.append("later")
 
-    dispatcher.add("before_tool", lambda ctx: ctx.block("denied"), "ext_a")
-    dispatcher.add("before_tool", later, "ext_a")
+    def gate(ctx):
+        ctx.blocked = True
+        ctx.block_reason = "denied"
+
+    dispatcher.add("before_tool", gate, "builtin:permission", stage="gate", builtin=True)
+    dispatcher.add("before_tool", later, "builtin:late", stage="gate", builtin=True)
     ctx = BeforeToolContext(tool_name="terminal", args={})
     _run("before_tool", ctx)
     assert ctx.blocked and calls == []

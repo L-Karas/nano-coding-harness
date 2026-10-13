@@ -52,7 +52,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
         system_prompt = build_system_prompt("sub-agent", tools=pool.schemas())
         history = [{"role": "user", "content": description}]
         tctx = ToolContext(agent_run=ctx, agent_name="sub-agent")
-        policy = StepPolicy(use_extensions=True, permission_hooks=True)
+        policy = StepPolicy(use_extensions=True)
         renderer = StepRenderer(on_tool_call=lambda tool_name, _args: _set_phase(agent_id, "tool", tool_name))
 
         for _ in range(MAX_SUB_AGENT_ROUNDS):

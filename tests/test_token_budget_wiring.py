@@ -40,7 +40,7 @@ def test_step_clamps_max_tokens_to_current_model(monkeypatch):
         pool=ToolPool({}),
         tctx=ToolContext(),
         max_tokens=24_000,
-        policy=StepPolicy(use_extensions=False, permission_hooks=False),
+        policy=StepPolicy(use_extensions=False),
     ))
     assert captured["max_tokens"] == 8_000
 

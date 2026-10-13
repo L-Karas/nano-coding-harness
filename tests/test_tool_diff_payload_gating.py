@@ -78,7 +78,7 @@ def _run(
         pool=pool,
         tctx=ToolContext(),
         max_tokens=100,
-        policy=StepPolicy(use_extensions=False, permission_hooks=False, diff_preview=True),
+        policy=StepPolicy(use_extensions=False, diff_preview=True),
         renderer=renderer,
     ))
     return outcome, renders
@@ -166,7 +166,7 @@ def test_failure_passes_error_flag_to_render(ctx, monkeypatch):
         pool=ToolPool({"write_file": _tool(exc=RuntimeError("boom"))}),
         tctx=ToolContext(),
         max_tokens=100,
-        policy=StepPolicy(use_extensions=False, permission_hooks=False, diff_preview=True),
+        policy=StepPolicy(use_extensions=False, diff_preview=True),
         renderer=renderer,
     ))
     assert flags == [True]

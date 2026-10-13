@@ -74,7 +74,6 @@ def _patch(monkeypatch, rounds, execute_tool):
     monkeypatch.setattr(sa, "prepare_messages", recording_prepare)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(step_mod, "streaming_message", fake_streaming_message)
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a: None)
     monkeypatch.setattr(core.tools, "assemble_tool_pool", lambda *a, **k: _Pool())
     return seen, prepared, state
 

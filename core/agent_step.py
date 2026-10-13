@@ -22,7 +22,6 @@ from core.extension import (
     ToolExecuteContext,
     dispatch,
 )
-from core.hook.hook import trigger_hooks
 from core.log.log import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.runtime_context import ToolContext
@@ -49,13 +48,13 @@ def _tool_message(tool_call_id: str, content: str) -> dict:
 
 @dataclass(frozen=True)
 class StepPolicy:
-    """step 的行为差异：扩展四节点 / permission hooks / 后台路由 / diff 预览。
+    """step 的行为差异：扩展四节点 / 后台路由 / diff 预览。
 
+    use_extensions=False 只跳过外部回调（所有事件），内置观察者与权限门照常。
     defer_tools_on_length：finish_reason == "length" 时先不执行工具，把恢复决定留给外层（主循环的
     扩窗与续写重试必须在工具执行前发生）。
     """
     use_extensions: bool = True
-    permission_hooks: bool = True
     background: bool = False
     diff_preview: bool = False
     defer_tools_on_length: bool = False
@@ -95,23 +94,22 @@ async def run_agent_step(
         policy: StepPolicy = StepPolicy(),
         renderer: StepRenderer = StepRenderer(),
 ) -> StepOutcome:
-    """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展 → hooks → 执行 → 扩展）。"""
+    """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展（含权限门）→ 执行 → 扩展）。"""
     tools = pool.schemas()
     messages = [{"role": "system", "content": system_prompt}] + to_llm_messages(history)
 
     llm_ctx = BeforeLLMContext(messages=messages, tools=tools, max_tokens=max_tokens)
-    if policy.use_extensions:
-        await dispatch("before_llm", llm_ctx)
-        if llm_ctx.aborted:
-            return StepOutcome(
-                assistant_message={},
-                followup_messages=[],
-                tool_calls=[],
-                finish_reason="",
-                usage={},
-                aborted=True,
-                abort_reason=llm_ctx.abort_reason,
-            )
+    await dispatch("before_llm", llm_ctx, include_external=policy.use_extensions)
+    if llm_ctx.aborted:
+        return StepOutcome(
+            assistant_message={},
+            followup_messages=[],
+            tool_calls=[],
+            finish_reason="",
+            usage={},
+            aborted=True,
+            abort_reason=llm_ctx.abort_reason,
+        )
 
     with renderer.working_status():
         stream = await with_retry_async(
@@ -135,17 +133,16 @@ async def run_agent_step(
         "usage": usage,
     }
     injected: list[dict] = []
-    if policy.use_extensions:
-        result_ctx = AfterLLMContext(
-            content=content,
-            tool_calls=tool_calls or [],
-            finish_reason=finish_reason or "",
-            usage=usage,
-        )
-        await dispatch("after_llm", result_ctx)
-        assistant_message["content"] = result_ctx.content
-        tool_calls = result_ctx.tool_calls or []
-        injected = list(result_ctx.inject_messages)
+    result_ctx = AfterLLMContext(
+        content=content,
+        tool_calls=tool_calls or [],
+        finish_reason=finish_reason or "",
+        usage=usage,
+    )
+    await dispatch("after_llm", result_ctx, include_external=policy.use_extensions)
+    assistant_message["content"] = result_ctx.content
+    tool_calls = result_ctx.tool_calls or []
+    injected = list(result_ctx.inject_messages)
 
     if not tool_calls:
         return StepOutcome(
@@ -205,7 +202,7 @@ async def _prepare_tool_call(
         policy: StepPolicy,
         renderer: StepRenderer,
 ) -> _PreparedCall:
-    """准备阶段（串行）：中断检查 → 解析 → before_tool → 渲染调用 → 权限 → tool_execute → 后台路由。
+    """准备阶段（串行）：中断检查 → 解析 → before_tool（含权限门）→ 渲染调用 → tool_execute → 后台路由。
 
     立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 final_message 或 outcome 返回；
     其余留给执行阶段。
@@ -226,31 +223,23 @@ async def _prepare_tool_call(
     tool_name = call.function.name
     item.tool_name = tool_name
 
-    if policy.use_extensions:
-        tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args)
-        await dispatch("before_tool", tool_ctx)
-        tool_args = tool_ctx.args
-        call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
-        if tool_ctx.blocked:
-            item.final_message = _tool_message(tool_call_id, f"[Extension blocked] {tool_ctx.block_reason}")
-            return item
+    tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args)
+    await dispatch("before_tool", tool_ctx, include_external=policy.use_extensions)
+    tool_args = tool_ctx.args
+    call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
+    if tool_ctx.blocked:
+        item.final_message = _tool_message(tool_call_id, tool_ctx.block_reason)
+        return item
 
     item.tool_args = tool_args
     renderer.on_tool_call(tool_name, tool_args)
 
-    if policy.permission_hooks:
-        blocked = trigger_hooks("pre_tool_call", call)
-        if blocked:
-            item.final_message = _tool_message(tool_call_id, f"[{blocked}]")
-            return item
-
-    if policy.use_extensions:
-        exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
-        with renderer.working_status():
-            await dispatch("tool_execute", exec_ctx)
-        if exec_ctx.handled:
-            item.outcome = ToolResult(content=exec_ctx.result, is_error=exec_ctx.is_error)
-            return item
+    exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
+    with renderer.working_status():
+        await dispatch("tool_execute", exec_ctx, include_external=policy.use_extensions)
+    if exec_ctx.handled:
+        item.outcome = ToolResult(content=exec_ctx.result, is_error=exec_ctx.is_error)
+        return item
 
     if policy.background and should_run_background(tool_name, tool_args):
         bg_id = start_background_task(call, pool, tctx)
@@ -349,16 +338,15 @@ async def _run_tools(
                 is_error = outcome.is_error
                 if item.diff and not is_error:
                     renderer.on_diff(item.diff)
-                if policy.use_extensions:
-                    result_ctx = AfterToolContext(
-                        tool_name=item.tool_name,
-                        args=item.tool_args,
-                        result=output,
-                        is_error=is_error,
-                    )
-                    await dispatch("after_tool", result_ctx)
-                    output = result_ctx.result
-                    injected.extend(result_ctx.inject_messages)
+                result_ctx = AfterToolContext(
+                    tool_name=item.tool_name,
+                    args=item.tool_args,
+                    result=output,
+                    is_error=is_error,
+                )
+                await dispatch("after_tool", result_ctx, include_external=policy.use_extensions)
+                output = result_ctx.result
+                injected.extend(result_ctx.inject_messages)
 
                 renderer.on_tool_result(output, is_error)
 

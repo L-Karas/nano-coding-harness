@@ -6,6 +6,8 @@ import pytest
 import core.agent_step as step_mod
 from core.agent_step import StepPolicy, StepRenderer, run_agent_step
 from core.extension import reset_extensions
+from core.extension.builtin import register_builtin_extensions
+from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool
@@ -59,7 +61,7 @@ def _run(monkeypatch, tool_call, calls, *, policy=None, renderer=None):
         pool=_pool(calls),
         tctx=ToolContext(agent_run=AgentRunContext()),
         max_tokens=100,
-        policy=policy or StepPolicy(use_extensions=True, permission_hooks=False),
+        policy=policy or StepPolicy(use_extensions=True),
         renderer=renderer or StepRenderer(),
     ))
 
@@ -67,6 +69,7 @@ def _run(monkeypatch, tool_call, calls, *, policy=None, renderer=None):
 @pytest.fixture(autouse=True)
 def _clean_extensions():
     reset_extensions()
+    register_builtin_extensions(rules=Rules())
     yield
     reset_extensions()
 
@@ -129,7 +132,7 @@ def test_handled_tool_skips_background_routing(monkeypatch):
     add_hook("tool_execute", lambda ctx: ctx.handle("ext:x"), "ext_a")
     calls = []
     outcome = _run(monkeypatch, _tool_call(), calls,
-                   policy=StepPolicy(use_extensions=True, permission_hooks=False, background=True))
+                   policy=StepPolicy(use_extensions=True, background=True))
     assert started == []
     assert outcome.followup_messages[0]["content"] == "ext:x"
 
@@ -145,7 +148,7 @@ def test_handled_write_file_skips_diff_preview(monkeypatch):
                    _tool_call("write_file", '{"path": "a.txt", "content": "hi"}'),
                    calls,
                    renderer=renderer,
-                   policy=StepPolicy(use_extensions=True, permission_hooks=False, diff_preview=True))
+                   policy=StepPolicy(use_extensions=True, diff_preview=True))
     assert calls == []
     assert previews == [] and diffs == []
     assert outcome.followup_messages[0]["content"] == "ext:written"
@@ -163,18 +166,21 @@ def test_before_tool_block_precedes_tool_execute(monkeypatch):
 
 def test_permission_gate_runs_before_tool_execute(monkeypatch):
     calls = []
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a, **k: "denied")
     add_hook("tool_execute", lambda ctx: calls.append("execute"), "ext_a")
-    outcome = _run(monkeypatch, _tool_call(), [],
-                   policy=StepPolicy(use_extensions=True, permission_hooks=True))
+    outcome = _run(monkeypatch, _tool_call("terminal", '{"command": "sudo ls"}'), [],
+                   policy=StepPolicy(use_extensions=True))
     assert calls == []
-    assert outcome.followup_messages[0]["content"] == "[denied]"
+    assert outcome.followup_messages[0]["content"] == "Permission denied: 'sudo' is on the deny list."
 
 
 def test_use_extensions_false_does_not_dispatch(monkeypatch):
     calls = []
     add_hook("tool_execute", lambda ctx: ctx.handle("ext:x"), "ext_a")
     outcome = _run(monkeypatch, _tool_call(), calls,
-                   policy=StepPolicy(use_extensions=False, permission_hooks=False))
+                   policy=StepPolicy(use_extensions=False))
     assert calls == ["x"]
     assert outcome.followup_messages[0]["content"] == "echo:x"
+
+    blocked = _run(monkeypatch, _tool_call("terminal", '{"command": "sudo ls"}'), [],
+                   policy=StepPolicy(use_extensions=False))
+    assert blocked.followup_messages[0]["content"] == "Permission denied: 'sudo' is on the deny list."

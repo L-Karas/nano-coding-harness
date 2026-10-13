@@ -1,11 +1,14 @@
 """Agent step 契约：一次模型调用 + 工具派发；扩展注入顺序、abort、中断占位、请求视图与钳制。"""
 import asyncio
+import json
 
 import pytest
 
 import core.agent_step as step_mod
 from core.agent_step import StepPolicy, StepRenderer, group_parallel_tool_calls, run_agent_step
 from core.extension import reset_extensions
+from core.extension.builtin import register_builtin_extensions
+from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool
@@ -59,6 +62,10 @@ def _tool_call(name="echo", args='{"value": "x"}', call_id="t1"):
     return {"id": call_id, "type": "function", "function": {"name": name, "arguments": args}}
 
 
+def _tool_call_cmd(cmd, call_id="t1"):
+    return _tool_call("terminal", json.dumps({"command": cmd}), call_id)
+
+
 def _run(
     monkeypatch,
     responses,
@@ -81,7 +88,7 @@ def _run(
         pool=pool or ToolPool({"echo": Echo}),
         tctx=tctx or ToolContext(agent_run=AgentRunContext()),
         max_tokens=1000,
-        policy=policy or StepPolicy(use_extensions=False, permission_hooks=False),
+        policy=policy or StepPolicy(use_extensions=False),
         renderer=renderer or StepRenderer(),
     ))
 
@@ -89,6 +96,7 @@ def _run(
 @pytest.fixture(autouse=True)
 def _clean_extensions():
     reset_extensions()
+    register_builtin_extensions(rules=Rules())
     yield
     reset_extensions()
 
@@ -136,7 +144,7 @@ def test_after_llm_and_after_tool_injections_keep_order(monkeypatch):
     add_hook("after_llm", after_llm, "test")
     add_hook("after_tool", after_tool, "test")
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
-                   policy=StepPolicy(use_extensions=True, permission_hooks=False))
+                   policy=StepPolicy(use_extensions=True))
     assert outcome.followup_messages == [
         {"role": "user", "content": "llm-note"},
         {"role": "tool", "tool_call_id": "t1", "content": "rewritten"},
@@ -161,15 +169,21 @@ def test_before_llm_abort_returns_outcome_without_request(monkeypatch):
 def test_before_tool_block_writes_blocked_result(monkeypatch):
     add_hook("before_tool", lambda ctx: ctx.block("no shell"), "test")
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
-                   policy=StepPolicy(use_extensions=True, permission_hooks=False))
+                   policy=StepPolicy(use_extensions=True))
     assert outcome.followup_messages[0]["content"] == "[Extension blocked] no shell"
 
 
-def test_permission_hook_blocks(monkeypatch):
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a, **k: "denied by hook")
-    outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
-                   policy=StepPolicy(use_extensions=False, permission_hooks=True))
-    assert outcome.followup_messages[0]["content"] == "[denied by hook]"
+def test_floor_command_blocked_even_with_use_extensions_false(monkeypatch):
+    outcome = _run(monkeypatch, [("", "", [_tool_call_cmd("sudo ls")], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=False))
+    assert outcome.followup_messages[0]["content"] == "Permission denied: 'sudo' is on the deny list."
+
+
+def test_gate_sees_args_after_extension_rewrite(monkeypatch):
+    add_hook("before_tool", lambda ctx: ctx.args.update({"command": "sudo ls"}), "test")
+    outcome = _run(monkeypatch, [("", "", [_tool_call_cmd("ls")], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=True))
+    assert outcome.followup_messages[0]["content"].startswith("Permission denied: 'sudo'")
 
 
 def test_interrupted_context_places_placeholders(monkeypatch):
@@ -186,7 +200,7 @@ def test_background_routing_respects_policy(monkeypatch):
     monkeypatch.setattr(step_mod, "should_run_background", lambda *_: True)
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
-                   policy=StepPolicy(use_extensions=False, permission_hooks=False, background=True))
+                   policy=StepPolicy(use_extensions=False, background=True))
     assert started and outcome.followup_messages[0]["content"].startswith("[Background task `bg-1` started]")
 
     started.clear()
@@ -374,7 +388,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
             pool=ToolPool({"read_file": Probe, "grep": Probe}),
             tctx=ToolContext(agent_run=ctx),
             max_tokens=1000,
-            policy=StepPolicy(use_extensions=False, permission_hooks=False),
+            policy=StepPolicy(use_extensions=False),
             renderer=StepRenderer(),
         ))
         await started.wait()

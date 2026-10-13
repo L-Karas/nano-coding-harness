@@ -7,6 +7,8 @@ import core.agent_step as step_mod
 import core.sub_agent as sa
 import core.tools
 from core.extension import reset_extensions
+from core.extension.builtin import register_builtin_extensions
+from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.tools import ToolResult
 
@@ -23,6 +25,7 @@ TWO_TOOL_ROUND = ("", "", [
 @pytest.fixture(autouse=True)
 def _clean_extensions():
     reset_extensions()
+    register_builtin_extensions(rules=Rules())
     yield
     reset_extensions()
 
@@ -74,7 +77,6 @@ def _patch(monkeypatch, responses, execute):
         return responses.pop(0)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a: None)
     return calls
 
 

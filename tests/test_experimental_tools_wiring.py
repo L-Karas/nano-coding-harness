@@ -59,7 +59,6 @@ def _silence_step(monkeypatch):
         return ("done", "", [], "stop", None)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a, **k: None)
     monkeypatch.setattr(step_mod, "should_run_background", lambda *a: False)
 
 

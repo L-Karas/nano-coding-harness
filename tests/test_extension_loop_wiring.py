@@ -7,6 +7,8 @@ import core.agent_step as step_mod
 import core.agent_loop as lwi
 from core import interaction
 from core.extension import reset_extensions
+from core.extension.builtin import register_builtin_extensions
+from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.tools import ToolPool
 from core.tools.tool_base import BaseTool
@@ -18,6 +20,7 @@ TOOL_CALL = {"id": "t1", "type": "function",
 @pytest.fixture(autouse=True)
 def _clean_extensions():
     reset_extensions()
+    register_builtin_extensions(rules=Rules())
     yield
     reset_extensions()
 
@@ -98,7 +101,6 @@ def _prepare_runtime(
     monkeypatch.setattr(interaction, "render_thinking_status", lambda *a, **k: contextlib.nullcontext())
     monkeypatch.setattr(interaction, "render_scope", contextlib.nullcontext)
     monkeypatch.setattr(step_mod, "streaming_message", _streamer(responses))
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda *a, **k: None)
     monkeypatch.setattr(step_mod, "should_run_background", lambda *a: False)
 
     runtime = lwi.AgentRuntime()
@@ -167,7 +169,7 @@ def test_before_tool_block_writes_result_and_skips_execution(monkeypatch):
     assert tool_message["content"] == "[Extension blocked] no shell"
 
 
-def test_before_tool_args_mutation_reaches_executor_and_permission(monkeypatch):
+def test_before_tool_args_mutation_reaches_executor(monkeypatch):
     mgr = _Mgr()
     runtime, calls = _prepare_runtime(
         monkeypatch,
@@ -176,12 +178,9 @@ def test_before_tool_args_mutation_reaches_executor_and_permission(monkeypatch):
                                        ("done", "", [], "stop", None)],
         "raw",
     )
-    seen = []
-    monkeypatch.setattr(step_mod, "trigger_hooks", lambda event, tool_call: seen.append(tool_call) or None)
     add_hook("before_tool", lambda ctx: ctx.args.update({"command": "ls -la"}), "test")
     runtime.run_turn()
     assert calls["tools"] == [{"command": "ls -la"}]
-    assert '"command": "ls -la"' in seen[0].function.arguments
 
 
 def test_after_tool_result_rewrite_and_inject(monkeypatch):

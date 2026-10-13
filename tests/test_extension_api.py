@@ -49,7 +49,9 @@ def test_abort_and_block_helpers_capture_state():
 
     tool = BeforeToolContext(tool_name="terminal", args={"command": "ls"})
     tool.block("no shell")
-    assert tool.blocked and tool.block_reason == "no shell"
+    assert tool.decisions[-1].action == "deny"
+    assert tool.decisions[-1].reason == "no shell"
+    assert tool.blocked is False
 
 
 def test_after_contexts_start_with_empty_inject_messages():

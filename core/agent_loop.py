@@ -32,7 +32,6 @@ _LOGGER = get_logger(__name__)
 
 MAIN_STEP_POLICY = StepPolicy(
     use_extensions=True,
-    permission_hooks=True,
     background=True,
     diff_preview=True,
     defer_tools_on_length=True,
