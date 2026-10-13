@@ -1,0 +1,18 @@
+{
+  "terminal": {
+    "command": {
+      "pattern 1": "allow",
+      "pattern 2": "deny",
+      "pattern 3": "ask"
+    }
+  },
+  "write_file": {
+    "external_directory": "allow"
+  },
+  "edit_file": {
+    "external_directory": "deny"
+  },
+  "read_file": {
+    "external_directory": "ask"
+  }
+}
