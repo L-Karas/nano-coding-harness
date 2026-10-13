@@ -11,7 +11,7 @@ def test_on_buffers_and_commit_returns_registrations():
     api = ExtensionAPI("nano_extension_demo")
     fn = lambda ctx: None
     api.on("before_llm", fn)
-    assert api.commit() == [("before_llm", fn)]
+    assert api.commit() == [("before_llm", fn, "user", False)]
     assert api.commit() == []  # 已清空
 
 
@@ -21,6 +21,21 @@ def test_on_rejects_unknown_event_and_non_callable():
         api.on("never", lambda ctx: None)
     with pytest.raises(TypeError):
         api.on("before_llm", "not-callable")
+
+
+def test_external_api_rejects_builtin_stage_and_fail_closed():
+    api = ExtensionAPI("nano_extension_demo")
+    with pytest.raises(ValueError):
+        api.on("before_tool", lambda ctx: None, stage="gate")
+    with pytest.raises(ValueError):
+        api.on("before_tool", lambda ctx: None, fail_closed=True)
+
+
+def test_builtin_api_accepts_gate_stage():
+    api = ExtensionAPI("builtin:permission", builtin=True)
+    fn = lambda ctx: None
+    api.on("before_tool", fn, stage="gate", fail_closed=True)
+    assert api.commit() == [("before_tool", fn, "gate", True)]
 
 
 def test_five_events_are_declared():

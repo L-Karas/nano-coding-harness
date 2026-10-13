@@ -125,6 +125,15 @@ def test_underscore_folder_skipped(tmp_path):
     assert _count("before_llm") == 0
 
 
+def test_external_extension_handlers_use_default_stage_metadata(tmp_path):
+    _make_extension(tmp_path, "demo", REGISTER_LLM)
+    load_extensions(tmp_path)
+    (handler,) = dispatcher._HANDLERS["before_llm"]
+    assert handler.stage == "user"
+    assert handler.fail_closed is False
+    assert handler.builtin is False
+
+
 def test_load_is_idempotent(tmp_path):
     _make_extension(tmp_path, "demo", REGISTER_LLM)
     load_extensions(tmp_path)
