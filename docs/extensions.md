@@ -402,5 +402,5 @@ def test_blocks_rm_commands():
 - 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)
 - 进阶示例（`after_tool` 读取并按需改写 `web_search` 结果）：[`examples/jev-for-web-search/`](../examples/jev-for-web-search/)
-- 主循环接线：[`core/loop_with_interrupt.py`](../core/loop_with_interrupt.py)
+- 主循环接线：[`core/agent_loop.py`](../core/agent_loop.py)
 - 子代理接线：[`core/sub_agent.py`](../core/sub_agent.py)

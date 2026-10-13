@@ -4,7 +4,7 @@ import asyncio
 import threading
 from types import SimpleNamespace
 
-import core.loop_with_interrupt as lwi
+import core.agent_loop as lwi
 from core.runtime_context import AgentInterrupted
 
 

@@ -323,9 +323,9 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
 
 
 def _default_agent_turn() -> tuple[Callable[[str], None], Callable[[], None], Any]:
-    """无 handle_query 时的默认回合：接 core.loop_with_interrupt 的真实 agent。
+    """无 handle_query 时的默认回合：接 core.agent_loop 的真实 agent。
     延迟导入：--smoke 与离线 UI 演示不必拉起 openai / mcp 依赖。"""
-    from core.loop_with_interrupt import make_agent_turn, start_agent_runtime
+    from core.agent_loop import make_agent_turn, start_agent_runtime
 
     runtime = start_agent_runtime()
     return make_agent_turn(runtime), runtime.interrupt, runtime

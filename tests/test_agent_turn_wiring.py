@@ -1,6 +1,6 @@
 """make_agent_turn 的接线：cron / 后台任务自动线程必须拿到同一个 runtime（曾漏传参数 → 线程启动即
 TypeError、cron 永不自动触发）；runtime.interrupt 作为中断回调暴露。"""
-import core.loop_with_interrupt as lwi
+import core.agent_loop as lwi
 
 
 def test_turn_wires_cron_thread(monkeypatch):

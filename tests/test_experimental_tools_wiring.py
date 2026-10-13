@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import core.agent_step as step_mod
 import core.interaction as interaction
-import core.loop_with_interrupt as lwi
+import core.agent_loop as lwi
 import core.sub_agent as sa
 import core.tools as tools_mod
 from core.tools import ToolPool

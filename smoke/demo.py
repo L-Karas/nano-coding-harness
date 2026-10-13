@@ -1,5 +1,5 @@
 """离线演示 Agent：`--smoke` 自检与无模型时的 UI 演示，覆盖流式回复 / 工具卡片 / 右栏数据源 /
-权限确认（query 以 "sudo " 开头触发）；真实回合见 core.loop_with_interrupt.make_agent_turn。"""
+权限确认（query 以 "sudo " 开头触发）；真实回合见 core.agent_loop.make_agent_turn。"""
 
 from __future__ import annotations
 

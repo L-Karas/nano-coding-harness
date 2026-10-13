@@ -4,7 +4,7 @@ import contextlib
 import pytest
 
 import core.agent_step as step_mod
-import core.loop_with_interrupt as lwi
+import core.agent_loop as lwi
 from core import interaction
 from core.extension import reset_extensions
 from core.extension.dispatcher import add as add_hook

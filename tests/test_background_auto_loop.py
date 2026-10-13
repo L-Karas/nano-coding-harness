@@ -1,6 +1,6 @@
 """空闲时后台任务完成 → 自动开一轮读取结果（同 cron，无需用户输入触发）；未完的不触发。"""
+import core.agent_loop as lwi
 import core.background_task as bt
-import core.loop_with_interrupt as lwi
 from core import interaction
 from core.runtime_state import RuntimeState
 from core.tools import ToolResult

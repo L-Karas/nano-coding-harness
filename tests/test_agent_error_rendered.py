@@ -1,6 +1,6 @@
 """AgentRuntime LLM 调用失败必须同步渲染错误卡：曾只把 [Error] 落进会话不渲染，
 UI 表现为「输入信息后无响应」（如 API Key 401 被静默吞掉）。"""
-import core.loop_with_interrupt as lwi
+import core.agent_loop as lwi
 from core import interaction
 from types import SimpleNamespace
 

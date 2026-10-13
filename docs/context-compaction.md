@@ -23,7 +23,7 @@ prepare_messages(messages, ctx, sub_model=?)
 
 - 第一层原地修改、无模型调用；第二层在估算 token 超阈值时才做摘要。
 - `auto_compact=false` 时只做第一层：超长历史交给 API 报 context 超限，切模型后尤其要注意。
-- 主 agent 回合在 `prepare_messages` 后把结果写回会话（`core/loop_with_interrupt.py`）；
+- 主 agent 回合在 `prepare_messages` 后把结果写回会话（`core/agent_loop.py`）；
   `/compact` 只在真正压缩时回写。
 
 ## 2. 预算与触发
@@ -124,12 +124,12 @@ prepare_messages(messages, ctx, sub_model=?)
 
 | 入口            | 路径                                                                                          | 行为                                            |
 |---------------|---------------------------------------------------------------------------------------------|-----------------------------------------------|
-| 主 agent 每回合   | `core/loop_with_interrupt.py`：`prepare_messages(...)` → `update_messages(...)`              | 超阈值自动压缩；未触发时同样写回                              |
+| 主 agent 每回合   | `core/agent_loop.py`：`prepare_messages(...)` → `update_messages(...)`              | 超阈值自动压缩；未触发时同样写回                              |
 | sub-agent     | `core/sub_agent.py`：每轮 `prepare_messages(history, ctx, sub_model=True)`                     | 用子代理 client 的预算与摘要模型                          |
 | 手动 `/compact` | TUI → `AgentRuntime.run_compact()` → `TurnRunner` 锁 → `compact_history(auto_compact=False)` | 与用户回合 / cron 互斥；Esc 可中断；中断不落会话；成功后重放历史；空操作只提示 |
 
 UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），runtime 在
-`core/loop_with_interrupt.py`（`AgentRuntime.compact`）。
+`core/agent_loop.py`（`AgentRuntime.compact`）。
 
 ## 6. 配置与旧配置迁移
 

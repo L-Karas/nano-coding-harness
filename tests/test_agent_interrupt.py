@@ -5,7 +5,7 @@ import threading
 import time
 from types import SimpleNamespace
 
-import core.loop_with_interrupt as lwi
+import core.agent_loop as lwi
 
 
 class _StubClient:
