@@ -6,6 +6,14 @@ from core.runtime_context import ToolContext
 
 
 @dataclass
+class Decision:
+    action: str
+    reason: str = ""
+    source: str = ""
+    args_snapshot: dict | None = None
+
+
+@dataclass
 class BeforeLLMContext:
     messages: list[dict]
     tools: list[dict]
@@ -33,10 +41,17 @@ class BeforeToolContext:
     args: dict
     blocked: bool = False
     block_reason: str = ""
+    decisions: list[Decision] = field(default_factory=list)
 
     def block(self, reason: str) -> None:
         self.blocked = True
         self.block_reason = str(reason)
+
+    def decide(self, action: str, reason: str = "") -> None:
+        """登记一票；仅 allow/ask/deny 合法，不改变 blocked。"""
+        if action not in {"allow", "ask", "deny"}:
+            raise ValueError(f"unknown action: {action!r}")
+        self.decisions.append(Decision(action=action, reason=str(reason)))
 
 
 @dataclass
