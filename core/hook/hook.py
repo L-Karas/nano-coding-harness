@@ -8,7 +8,6 @@ import json
 import os
 import re
 import shlex
-from pathlib import Path
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
@@ -118,6 +117,18 @@ def _command_path_candidates(command: str):
                 yield value
 
 
+# Git Bash 盘符写法：/e/foo 指 E:\foo（terminal 在 Windows 上优先走 Git Bash，见 core.tools.shell）。
+# pathlib 会把它误解析为 E:\e\foo，需先还原盘符；POSIX 下 /e 是真实绝对路径，仅 Windows 翻译。
+_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(?:/|$)")
+
+
+def _msys_drive_to_windows(path: str) -> str:
+    """Windows 上将 /e/foo 还原为 e:/foo；其余路径原样返回。"""
+    if os.name != "nt":
+        return path
+    return _MSYS_DRIVE_RE.sub(lambda match: f"{match.group(1)}:/", path, count=1)
+
+
 def _is_outside_workdir(path: str) -> bool:
     return not (WORKDIR / path).resolve().is_relative_to(WORKDIR)
 
@@ -127,7 +138,10 @@ def _outside_paths(command: str) -> list[str]:
     outside = []
     for candidate in _command_path_candidates(command):
         expanded = os.path.expandvars(os.path.expanduser(candidate))
-        if expanded and _is_outside_workdir(expanded) and candidate not in outside:
+        # 只有 terminal 候选按 Git Bash 语义还原盘符：Python 文件工具不认 /e/...，
+        # 在这里翻译可避免「误报越界」，同时不放宽文件工具的路径检查。
+        resolved = _msys_drive_to_windows(expanded)
+        if expanded and _is_outside_workdir(resolved) and candidate not in outside:
             outside.append(candidate)
     return outside
 
@@ -173,7 +187,6 @@ def tool_call_log_hook(tool_call: ChatCompletionMessageToolCallUnion):
     return None
 
 
-# todo: 处理工具结果过多的情况
 def large_tool_output_hook(tool_call: ChatCompletionMessageToolCallUnion, tool_output: str = ""):
     size = len(str(tool_output))
     if size > 100_000:

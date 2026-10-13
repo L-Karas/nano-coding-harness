@@ -201,6 +201,38 @@ def test_terminal_workdir_absolute_does_not_prompt(monkeypatch):
     assert hook_permission.permission_hook(make_tool_call("terminal", {"command": f"cat {inside}"})) is None
 
 
+def _msys_workdir() -> str:
+    """当前工作目录的 Git Bash 盘符写法：E:/AI-Programs/... → /e/AI-Programs/..."""
+    posix = Path.cwd().as_posix()
+    return f"/{posix[0].lower()}{posix[2:]}"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Git Bash 盘符路径仅 Windows")
+def test_terminal_msys_drive_workdir_does_not_prompt(monkeypatch):
+    if not Path.cwd().drive:
+        pytest.skip("cwd 无盘符（UNC 路径）")
+
+    def fail(*args, **kwargs):
+        raise AssertionError("input should not be called for in-workspace msys path")
+
+    patch_input(monkeypatch, fail)
+    command = f"cd {_msys_workdir()} && cat notes.txt"
+    assert hook_permission.permission_hook(make_tool_call("terminal", {"command": command})) is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Git Bash 盘符路径仅 Windows")
+def test_terminal_msys_other_drive_rejected(monkeypatch):
+    drive = Path.cwd().drive
+    if not drive:
+        pytest.skip("cwd 无盘符（UNC 路径）")
+
+    patch_input(monkeypatch, lambda *a, **k: "n")
+    other = "z" if drive[0].lower() != "z" else "y"
+    command = f"cat /{other}/secret.txt"
+    assert hook_permission.permission_hook(make_tool_call("terminal", {"command": command})) \
+           == "Permission denied by user"
+
+
 def test_destructive_and_outside_prompts_once(monkeypatch):
     calls = []
 

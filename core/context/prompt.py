@@ -82,6 +82,8 @@ def build_guidelines() -> str:
     elif kind == "powershell":
         sections.append("- The `terminal` tool executes commands with Windows PowerShell: use PowerShell syntax")
 
+    # 文件工具走 Python，不认 terminal 的 shell 方言路径，提示统一使用平台原生路径格式
+    sections.append("- Use the platform-native path format for `read_file` / `write_file` / `edit_file`")
     sections.append(f"- Current platform: `{platform.platform(terse=True)}`")
 
     return "\n".join(sections)

@@ -125,6 +125,15 @@ def test_build_guidelines_without_preferred_shell(monkeypatch):
     assert "Current platform:" in text
 
 
+def test_build_guidelines_file_tools_use_native_paths(monkeypatch):
+    monkeypatch.setattr(shell, "find_shell", lambda: None)
+    text = prompt.build_guidelines()
+    line = next(line for line in text.splitlines() if "read_file" in line)
+    for name in ("read_file", "write_file", "edit_file"):
+        assert f"`{name}`" in line
+    assert "platform-native" in line
+
+
 def test_build_guidelines_builds_once(monkeypatch):
     calls = []
     monkeypatch.setattr(shell, "find_shell", lambda: calls.append(1) or None)
