@@ -1,5 +1,6 @@
 """AgentRuntime LLM 调用失败必须同步渲染错误卡：曾只把 [Error] 落进会话不渲染，
-UI 表现为「输入信息后无响应」（如 API Key 401 被静默吞掉）。"""
+UI 表现为「输入信息后无响应」（如 API Key 401 被静默吞掉）。
+错误信息与任务执行无关，不再落会话历史，只渲染通知卡。"""
 import core.agent_loop as lwi
 from core import interaction
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ class _StubClient:
         return create
 
 
-def test_llm_failure_writes_session_and_renders_card(monkeypatch):
+def test_llm_failure_renders_card_without_session_write(monkeypatch):
     saved, rendered = [], []
 
     class _Mgr:
@@ -48,5 +49,5 @@ def test_llm_failure_writes_session_and_renders_card(monkeypatch):
     runtime.run_turn()  # submit 内部阻塞至回合结束
 
     error_text = "[Error] ValueError: bad api key"
-    assert saved == [{"role": "assistant", "content": error_text}]
+    assert saved == [], "错误信息不进消息历史"
     assert rendered == [(error_text, "⚠️ Agent Error")]

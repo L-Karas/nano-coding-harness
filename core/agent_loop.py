@@ -127,12 +127,8 @@ class AgentRuntime:
                         renderer=_main_renderer(),
                     )
                 except Exception as e:
-                    # todo: 是否需要将模型调用错误信息作为消息历史的一部分
+                    # 模型调用错误信息与任务执行无关，不再作为消息历史的一部分
                     error_text = f"[Error] {type(e).__name__}: {e}"
-                    SESSION_MANAGER.add_message({
-                        "role": "assistant",
-                        "content": error_text
-                    })
                     interaction.render_background_notification(error_text, title="⚠️ Agent Error")
                     return
 
@@ -147,7 +143,7 @@ class AgentRuntime:
                     if not state.has_escalated:
                         max_tokens = CONFIGMANAGER.config.escalated_max_tokens
                         state.has_escalated = True
-                        _LOGGER.info(f"[Max tokens] retry with {max_tokens}")
+                        _LOGGER.info(f"[Max tokens] retry with escalated max tokens: {max_tokens}")
                         continue
 
                     SESSION_MANAGER.add_message(outcome.assistant_message)
