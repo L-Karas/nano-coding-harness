@@ -6,6 +6,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from core.runtime_state import RuntimeState, TodoEntry
+from core.tools import ToolResult
 from core.tui.info_panel import _InfoPanel
 from core.tui.ui_textual import ChatApp
 
@@ -171,5 +172,94 @@ def test_auto_expand_restores_last_width():
             state.set_todos([TodoEntry("again", "pending")])
             _refresh(app)  # 自动展开应回到用户宽度
             assert not _is_collapsed(app) and app._panel_pct == 40
+
+    asyncio.run(main())
+
+
+def test_running_cancellable_row_stop_click_cancels():
+    """运行中条目行尾 ■ = 指名停止；点它不触发展开。"""
+    state = RuntimeState()
+    calls = []
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    state.attach_cancel(bg_id, lambda: calls.append(bg_id))
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            _refresh(app)
+            row_stops = app.query_one("#bg-list").query(".-stop")
+            assert len(row_stops) == 1
+            await pilot.click(row_stops[0])
+            assert calls == [bg_id]
+            assert state.snapshot().background[0].cancellable is False
+            label = app.query_one("#bg-list").query(".-info-text")[0]
+            assert str(label.content)[:1] == "▸", "点 ■ 不应顺带展开"
+
+    asyncio.run(main())
+
+
+def test_row_text_click_still_toggles_expand():
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    state.attach_cancel(bg_id, lambda: None)
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            _refresh(app)
+            label = app.query_one("#bg-list").query(".-info-text")[0]
+            assert str(label.content)[:1] == "▸"
+            await pilot.click(label)
+            label = app.query_one("#bg-list").query(".-info-text")[0]
+            assert str(label.content)[:1] == "▾"
+
+    asyncio.run(main())
+
+
+def test_completed_row_has_no_stop_control():
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    state.attach_cancel(bg_id, lambda: None)
+    state.complete_background(bg_id, ToolResult(content="done"))
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test():
+            _refresh(app)
+            assert len(app.query_one("#bg-list").query(".-stop")) == 0
+
+    asyncio.run(main())
+
+
+def test_running_non_cancellable_row_has_no_stop_control():
+    """worker 线程路径（纯同步工具）没有可杀句柄：运行中条目也不给 ■。"""
+    state = RuntimeState()
+    state.register_background("bg-1", "terminal(pytest)")  # 未 attach_cancel
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test():
+            _refresh(app)
+            assert state.snapshot().background[0].status == "running"
+            assert len(app.query_one("#bg-list").query(".-stop")) == 0
+
+    asyncio.run(main())
+
+
+def test_subagent_background_record_not_listed_in_bg_section():
+    """子代理的 bg 记录只作结果回流：Background Tasks 不列它，只在 Subagents 分区露面。"""
+    state = RuntimeState()
+    state.register_background("bg-1", "terminal(pytest)")
+    state.register_background("bg-2", "spawn_subagent(description=explore)", is_subagent=True)
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test():
+            _refresh(app)
+            ids = [row.work_id for row in app.query_one("#bg-list").query(".info-row")]
+            assert ids == ["bg-1"]
 
     asyncio.run(main())

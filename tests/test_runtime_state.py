@@ -29,6 +29,16 @@ def test_background_lifecycle_and_atomic_pop():
     assert state.pop_completed_backgrounds() == []
 
 
+def test_register_background_records_subagent_origin():
+    """标记来源：子代理后台任务 vs 其他后台任务（右栏据此分区展示）。"""
+    state = RuntimeState()
+    state.register_background("bg-0001", "terminal(pytest)")
+    state.register_background("bg-0002", "spawn_subagent(description=explore)", is_subagent=True)
+    other, subagent = state.snapshot().background
+    assert other.is_subagent is False
+    assert subagent.is_subagent is True
+
+
 def test_running_background_is_not_popped():
     state = RuntimeState()
     bg_id = state.allocate_background_id()
@@ -94,3 +104,76 @@ def test_clear_resets_all_sections():
 
 def test_module_singleton_exists():
     assert RUNTIME_STATE.snapshot() is not None
+
+
+def test_cancel_work_invokes_attached_handle_once():
+    """取消句柄一次消费：点两下第二次是 no-op，不会二次投递。"""
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    calls = []
+    state.attach_cancel(bg_id, lambda: calls.append(bg_id))
+
+    assert state.cancel_work(bg_id) is True
+    assert calls == [bg_id]
+    assert state.cancel_work(bg_id) is False
+    assert calls == [bg_id]
+
+
+def test_background_entry_is_cancellable_only_with_handle():
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    assert state.snapshot().background[0].cancellable is False
+    state.attach_cancel(bg_id, lambda: None)
+    assert state.snapshot().background[0].cancellable is True
+
+
+def test_subagent_entry_is_cancellable_only_with_handle():
+    state = RuntimeState()
+    sa_id = state.allocate_subagent_id()
+    state.register_subagent(sa_id, "explore")
+    assert state.snapshot().subagents[0].cancellable is False
+    state.attach_cancel(sa_id, lambda: None)
+    assert state.snapshot().subagents[0].cancellable is True
+
+
+def test_completing_background_drops_cancel_handle():
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    state.attach_cancel(bg_id, lambda: None)
+    state.complete_background(bg_id, ToolResult(content="done"))
+    assert state.snapshot().background[0].cancellable is False
+    assert state.cancel_work(bg_id) is False
+
+
+def test_removing_subagent_drops_cancel_handle():
+    state = RuntimeState()
+    sa_id = state.allocate_subagent_id()
+    state.register_subagent(sa_id, "explore")
+    state.attach_cancel(sa_id, lambda: None)
+    state.remove_subagent(sa_id)
+    assert state.cancel_work(sa_id) is False
+
+
+def test_clear_drops_cancel_handles():
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    state.attach_cancel(bg_id, lambda: None)
+    state.clear()
+    assert state.cancel_work(bg_id) is False
+
+
+def test_cancel_work_reports_undeliverable_handle():
+    """投递失败（如 loop 已关闭）不抛出，返回 False。"""
+    state = RuntimeState()
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+
+    def boom():
+        raise RuntimeError("event loop is closed")
+
+    state.attach_cancel(bg_id, boom)
+    assert state.cancel_work(bg_id) is False

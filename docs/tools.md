@@ -51,6 +51,11 @@ MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main 
 或命令命中慢命令启发式（`make` / `pytest` / `sleep` / `pip install` / `npm test` / `cargo build` 等，
 只看每条子命令的命令词，宁可漏判不误判）。
 
-命中后立即返回 `[Background task <bg-id> started]` 占位结果，工具在守护线程中继续执行；
-下一轮开始时结果以 `<background-task-notification>` 注入会话，通知含 `<task-id>` / `<status>`
-（`completed` / `error`）/ `<tool>` / `<result>`，右栏 Background Tasks 同步显示状态。
+命中后立即返回 `[Background task <bg-id> started]` 占位结果，工具在后台继续执行（原生异步挂
+回合 loop，纯同步工具走守护线程）；下一轮开始时结果以 `<background-task-notification>` 注入会话，通知含 `<task-id>` / `<status>`
+（`completed` / `error` / `cancelled`）/ `<tool>` / `<result>`，右栏 Background Tasks 同步显示状态。
+
+运行中且可停的条目行尾有 `■`：点击即指名停止（句柄跨回合有效；Esc 仍按旧路径取消本回合
+启动的工作，见 [ADR-0009](adr/0009-background-cancel.md)）。原生异步任务经 `task.cancel()` 停掉（`terminal`
+会 terminate 子进程），结果仍经同一通知通道回传，状态为 `cancelled`。worker 线程路径
+（纯同步工具）没有可杀句柄，不给 `■`。

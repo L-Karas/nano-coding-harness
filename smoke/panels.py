@@ -31,9 +31,14 @@ async def run(app, pilot) -> None:
     RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc")
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
 
+    def _row_text(row) -> str:
+        """单条目行文本：.info-row 是容器，正文在 .-info-text；空态占位行自身即文本。"""
+        label = row.query(".-info-text")
+        return str(label[0].render()) if label else str(row.render())
+
     def _rows_text(sel: str) -> str:
-        """条目行文本拼接（每行一条 .info-row Static）"""
-        return " | ".join(str(w.render()) for w in app.query(sel))
+        """条目行文本拼接（每行一个 .info-row 容器，正文见 .-info-text）"""
+        return " | ".join(_row_text(w) for w in app.query(sel))
 
     todos_str = _rows_text("#todos-list .info-row")
     assert "add right-panel smoke checks" in todos_str and "hook up the real agent" in todos_str, todos_str
@@ -54,15 +59,15 @@ async def run(app, pilot) -> None:
     assert any(g in sub_str for g in _SPINNER_FRAMES), f"运行中子代理应有轮播字形: {sub_str}"
     # description 默认不展示，点行展开后以灰色补上全文，再点收起
     sub_row = next(r for r in app.query("#subagents-list .info-row.-expandable")
-                   if "sa-0001" in str(r.render()))
+                   if "sa-0001" in _row_text(r))
     sub_row.scroll_visible(animate=False, top=True, immediate=True)
     await pilot.pause(0.1)
     await pilot.click(sub_row, offset=(2, 0))
     await pilot.pause(0.1)
-    assert "summarize the asyncio doc" in str(sub_row.render()), "展开后应展示 description"
+    assert "summarize the asyncio doc" in _row_text(sub_row), "展开后应展示 description"
     await pilot.click(sub_row, offset=(2, 0))
     await pilot.pause(0.1)
-    assert "summarize the asyncio doc" not in str(sub_row.render()), "再点应收起 description"
+    assert "summarize the asyncio doc" not in _row_text(sub_row), "再点应收起 description"
     RUNTIME_STATE.update_subagent("sa-0001", "tool", "terminal")
     await pilot.pause(1.3)
     sub_str = _rows_text("#subagents-list .info-row")
@@ -70,6 +75,16 @@ async def run(app, pilot) -> None:
     RUNTIME_STATE.remove_subagent("sa-0001")
     await pilot.pause(1.3)
     assert _rows_text("#subagents-list .info-row") == "(Empty)", "子代理结束后应显示 (Empty)"
+    # 运行中条目行尾 ■ = 指名停止（ADR-0009）：挂探针句柄，点 ■ 应投递并撤下按钮
+    cancelled = []
+    RUNTIME_STATE.attach_cancel("bg-7777", lambda: cancelled.append("bg-7777"))
+    await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询，让 ■ 上屏
+    stops = app.query("#bg-list .-stop")
+    assert len(stops) == 1, "running 且挂句柄的 bg 行应有 ■"
+    await pilot.click(stops[0])
+    assert cancelled == ["bg-7777"], "点 ■ 应投递指名取消"
+    await pilot.pause(1.3)
+    assert not app.query("#bg-list .-stop"), "取消投递后 ■ 应撤下"
     RUNTIME_STATE.complete_background("bg-7777", ToolResult(content="(smoke finished)"))
     await pilot.pause(1.3)
     bg_str = _rows_text("#bg-list .info-row")
@@ -78,21 +93,21 @@ async def run(app, pilot) -> None:
     # 参数默认不展示，点行展开后以灰色补上全文（列表里可能还有演示回合遗留的其它任务，
     # 目标行先滚入视口再点；窄面板下行会高于视口，故钉到顶部后点首行，避免点行尾触到屏幕外）
     bg_row = next(r for r in app.query("#bg-list .info-row.-expandable")
-                  if "bg-7777" in str(r.render()))
-    assert "very/long/remote/path" not in str(bg_row.render()) and "…" not in str(bg_row.render()), \
+                  if "bg-7777" in _row_text(r))
+    assert "very/long/remote/path" not in _row_text(bg_row) and "…" not in _row_text(bg_row), \
         "折叠态不应展示参数列表"
     bg_row.scroll_visible(animate=False, top=True, immediate=True)
     await pilot.pause(0.1)
     await pilot.click(bg_row, offset=(2, 0))
     await pilot.pause(0.1)
-    expanded_bg = str(bg_row.render())
+    expanded_bg = _row_text(bg_row)
     assert expanded_bg.startswith("▾ ● bg-7777") and "very/long/remote/path" in expanded_bg, \
         f"展开应显示未截断调用: {expanded_bg}"
     bg_row.scroll_visible(animate=False, top=True, immediate=True)
     await pilot.pause(0.1)
     await pilot.click(bg_row, offset=(2, 0))
     await pilot.pause(0.1)
-    assert "very/long/remote/path" not in str(bg_row.render()), "再点应收起参数列表"
+    assert "very/long/remote/path" not in _row_text(bg_row), "再点应收起参数列表"
     await pilot.click(bg_section, offset=(2, 0))  # 点边框标题折叠 bg 分区（卡片收成只剩上下边框）
     assert bg_section.has_class("-collapsed")
     assert str(bg_section.border_title).startswith("▶ Background Tasks")

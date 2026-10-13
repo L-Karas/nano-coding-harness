@@ -4,7 +4,12 @@ Sub Agent
 跑在调用方的 event loop（AgentRuntime.loop）上：模型客户端绑定该 loop，子代理不另起线程/loop。
 后台语义（主代理不等结论、结果稍后注入）由 background_task 的占位符 + notification 提供，
 这里只负责跑完并把最终结论返回。
+
+取消：sa 条目在 RuntimeState 上挂线程安全句柄（ADR-0009），右栏可指名停它，
+与父回合的 Esc 解耦；任务被 cancel 时 finally 清理条目与句柄。
 """
+import asyncio
+
 from core.client import shared_sub_model_client
 from core.config import CONFIGMANAGER
 from core.context.compact import prepare_messages
@@ -34,6 +39,12 @@ async def spawn_subagent(description: str, ctx=None) -> str:
 
     agent_id = RUNTIME_STATE.allocate_subagent_id()
     RUNTIME_STATE.register_subagent(agent_id, description)
+
+    # 指名取消句柄：子代理就跑在当前 task 上（局部导入避开 tools ↔ sub_agent 的 import 环）
+    from core.background_task import threadsafe_cancel
+    task = asyncio.current_task()
+    if task is not None:
+        RUNTIME_STATE.attach_cancel(agent_id, threadsafe_cancel(task))
 
     try:
         pool = assemble_tool_pool("sub-agent",

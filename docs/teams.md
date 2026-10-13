@@ -7,3 +7,6 @@
   预算与摘要模型随子模型（见 [`context-compaction.md`](context-compaction.md)）。
 - **可见性**：工具池按 `agent_type` 过滤（`spawn_subagent` / `save_memory` / `load_skill` 等 main-only 工具
   对子代理不可见）；子代理的增删改经 `RuntimeState` 反映到右栏 Information 面板。
+- **取消**：运行中的子代理在右栏 Subagents 条目行尾给 `■`，点击指名停止
+  （`RuntimeState.cancel_work`，句柄跨回合有效，见 [ADR-0009](adr/0009-background-cancel.md)）；
+  停下的结论以 `<status>cancelled</status>` 的后台通知回传。

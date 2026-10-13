@@ -66,8 +66,12 @@ Toast, Toast:ansi { background: #1e293b; }
 #bg-section { border-title-color: #4ade80; }
 #subagents-section { border-title-color: #60a5fa; }
 
-/* 条目行（_InfoPanel._sync_rows 按数据源重建）：一行一个 Static，点整行在 ▸ 摘要 ↔ ▾ 全文间切换 */
+/* 条目行（_InfoPanel._sync_rows 按数据源重建）：一行一个 Horizontal，点行在 ▸ 摘要 ↔ ▾ 全文间
+   切换；运行中且可停的行尾 ■ 指名停止（ADR-0009） */
+.info-row { height: auto; }
 .info-row.-expandable { pointer: pointer; }
+.info-row > .-info-text { width: 1fr; height: auto; pointer: pointer; }
+.info-row > .-stop { width: 2; color: #f87171; text-align: right; pointer: pointer; }
 
 /* 组合键提示（_InfoPanel.compose 末行）：钉在右栏最底部一行；随 #info-panel 折叠一起隐藏 */
 #info-hint {

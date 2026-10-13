@@ -1,7 +1,9 @@
 """右栏信息面板：Todos / Background Tasks / Subagents 分区。
 
 数据源为 RuntimeState 单例的类型化快照（core.runtime_state，ADR-0004）；agent 等线程经具名
-写入口更新，面板 1s 轮询同步，有进行中项时 0.1s 轮播字形。分区与条目点击在本部件内处理。"""
+写入口更新，面板 1s 轮询同步，有进行中项时 0.1s 轮播字形。分区与条目点击在本部件内处理：
+运行中条目行尾 ■ = 指名停止（ADR-0009），行其余处 = 展开 / 折叠。
+"""
 
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ from collections.abc import Callable
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from core.runtime_state import RUNTIME_STATE, RuntimeSnapshot, RuntimeState
@@ -19,11 +21,11 @@ from core.tui.theme import _SPINNER_FRAMES
 _RUNNING_STATUSES = ("in_progress", "running")  # 需要轮播字形的状态
 
 
-class _InfoRow(Static):
+class _InfoRow(Horizontal):
     """右栏条目行：点击在单行摘要（超限截断附 …）与多行缩进全文间切换。
 
     in_progress / running 行首为轮播帧；bg / subagents 行折叠时只显示工具名 / 阶段，
-    展开后灰色补上参数 / description。"""
+    展开后灰色补上参数 / description。运行中且带取消句柄的行尾给 ■（点它指名停止）。"""
 
     _CLIP = {"todos": 72, "bg": 48, "subagents": 48}  # 折叠摘要单行字符上限
 
@@ -33,12 +35,22 @@ class _InfoRow(Static):
         data: dict,
         cursor: int,
     ) -> None:
-        super().__init__(markup=False, classes="info-row -expandable")
+        super().__init__(classes="info-row -expandable")
         self._kind = kind
         self._data = data
         self._cursor = cursor
         self._expanded = False
-        self.update(self._text())
+        self._label = Static(self._text(), markup=False, classes="-info-text")
+
+    @property
+    def work_id(self) -> str:
+        """本条工作的 id（bg-XXXX / sa-XXXX）：■ 点击时交给 RuntimeState.cancel_work。"""
+        return self._data["id"]
+
+    def compose(self) -> ComposeResult:
+        yield self._label
+        if self._data.get("cancellable"):
+            yield Static("■", markup=False, classes="-stop")
 
     def is_running(self) -> bool:
         return self._data["status"] in _RUNNING_STATUSES
@@ -46,11 +58,11 @@ class _InfoRow(Static):
     def tick(self, cursor: int) -> None:
         """推进一帧轮播字形（仅进行中的行由调用方调用）。"""
         self._cursor = cursor
-        self.update(self._text())
+        self._label.update(self._text())
 
     def toggle_expand(self) -> None:
         self._expanded = not self._expanded
-        self.update(self._text())
+        self._label.update(self._text())
 
     def _text(self) -> Text:
         frame = _SPINNER_FRAMES[self._cursor % len(_SPINNER_FRAMES)]
@@ -116,9 +128,16 @@ class _InfoPanel(Vertical):
         self.set_interval(1.0, self._refresh)
 
     def on_click(self, event: events.Click) -> None:
-        """条目行点击：摘要 ↔ 全文；分区边框点击：折叠 / 展开（就地处理，不冒泡到 App）。"""
+        """条目行点击：行尾 ■ = 指名停止；行其余处 = 摘要 ↔ 全文；分区边框点击：折叠 / 展开
+        （就地处理，不冒泡到 App）。"""
         target = event.widget
-        if target.has_class("-expandable"):
+        if target.has_class("-stop"):
+            event.stop()
+            self._state.cancel_work(target.parent.work_id)
+        elif target.has_class("-info-text"):
+            event.stop()
+            target.parent.toggle_expand()
+        elif target.has_class("-expandable"):
             event.stop()
             target.toggle_expand()
         elif target.has_class("info-section"):
@@ -147,26 +166,30 @@ class _InfoPanel(Vertical):
     def _items(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
         """分区条目快照 [{id, status, text}]；展示文案与签名逻辑留在面板。"""
         if kind == "todos":
-            return [{"id": t.content, "status": t.status, "text": t.content} for t in snap.todos]
+            return [{"id": t.content, "status": t.status, "text": t.content, "cancellable": False}
+                    for t in snap.todos]
         if kind == "subagents":
             # 条目只在子代理运行期间存在（finally 移除）；阶段拼进 text 以触发签名重建
             items = []
             for sa in snap.subagents:
                 label = f"tool: {sa.detail}" if sa.phase == "tool" else "thinking"
                 items.append({"id": sa.id, "status": "running", "phase": sa.phase,
-                              "text": f"[{label}]", "expand_text": sa.description})
+                              "text": f"[{label}]", "expand_text": sa.description,
+                              "cancellable": sa.cancellable})
             return items
         items = []
         for bg in snap.background:
+            if bg.is_subagent:
+                continue  # 子代理的 bg 记录只作结果回流：右栏只在 Subagents 分区展示
             name, _, args = bg.tool_call.partition("(")
             items.append({"id": bg.id, "status": bg.status, "text": name,
-                          "expand_text": args.removesuffix(")")})
+                          "expand_text": args.removesuffix(")"), "cancellable": bg.cancellable})
         return items
 
     def _sync_rows(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
         """按最新条目重建 #kind-list（签名未变则跳过，避免 1s 轮询反复重建）；返回本次快照。"""
         items = self._items(kind, snap)
-        sig = tuple((it["id"], it["status"], it["text"]) for it in items)
+        sig = tuple((it["id"], it["status"], it["text"], it["cancellable"]) for it in items)
         if sig == self._sig.get(kind):
             return items
         self._sig[kind] = sig
