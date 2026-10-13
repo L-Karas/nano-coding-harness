@@ -24,6 +24,7 @@ CUSTOM_MODEL_FILE = HARNESS_CONFIG_DIR / ".custom_models.json"
 SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
 MCP_CONFIG_FILE = MCP_DIR / ".mcp.json"
 CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
+PERMISSION_FILE = HARNESS_CONFIG_DIR / ".permissions.json"
 
 GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
