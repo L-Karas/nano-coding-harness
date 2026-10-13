@@ -203,6 +203,37 @@ def test_run_terminal_async_uses_shared_shell_invocation(monkeypatch):
     assert captured["invocation"] == shell.build_command_invocation("echo ok")
 
 
+def test_run_terminal_async_caps_output_at_50k(monkeypatch):
+    """异步 / 后台 terminal 与同步路径同样截到 5 万字符：后台结果走 notification
+    （role=user），不经过只处理 role=tool 的上下文截断，工具侧上限是唯一闸门。"""
+    import core.tools.base_tools.terminal as terminal
+
+    class _Process:
+        returncode = 0
+
+        async def communicate(self):
+            return b"x" * 60_000, b""
+
+    async def fake_start_process(invocation, cwd=None):
+        return _Process()
+
+    monkeypatch.setattr(terminal, "start_process", fake_start_process)
+
+    assert asyncio.run(terminal.Terminal(command="echo big").arun()) == "x" * 50_000
+
+
+def test_run_terminal_sync_caps_output_at_50k(monkeypatch):
+    import core.tools.base_tools.terminal as terminal
+
+    class _Completed:
+        stdout = b"x" * 60_000
+        stderr = b""
+
+    monkeypatch.setattr(terminal.subprocess, "run", lambda argv, **kwargs: _Completed())
+
+    assert terminal.Terminal(command="echo big").run() == "x" * 50_000
+
+
 # ---------- 子进程控制台隔离（防止子进程 SetConsoleTitle 覆盖 TUI 终端标题） ----------
 
 

@@ -1,6 +1,5 @@
 import asyncio
 import subprocess
-from pathlib import Path
 
 from pydantic import Field
 
@@ -67,7 +66,6 @@ class Terminal(BaseTool):
             if tctx:
                 tctx.raise_if_cancelled()
             output = (_to_text(out) + _to_text(error)).strip()
-            # todo: tool output budget
             return output[:int(5e4)] if output else "(Tool no output)"
         except asyncio.CancelledError:
             process.terminate()
