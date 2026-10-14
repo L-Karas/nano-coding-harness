@@ -287,6 +287,13 @@ def test_add_rejects_non_user_stage_without_builtin():
         dispatcher.add("before_tool", lambda ctx: None, "ext_a", stage="observer")
 
 
+def test_add_rejects_unknown_event_and_non_callable():
+    with pytest.raises(ValueError, match="未知扩展事件"):
+        dispatcher.add("never", lambda ctx: None, "ext_a")
+    with pytest.raises(TypeError, match="必须可调用"):
+        dispatcher.add("before_llm", "not-callable", "ext_a")
+
+
 def test_include_external_false_skips_external_but_runs_builtin():
     seen = []
     dispatcher.add("before_tool", lambda ctx: seen.append("external"), "ext_a")

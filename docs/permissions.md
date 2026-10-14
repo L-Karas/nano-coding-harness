@@ -112,7 +112,7 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
   主流程继续。
 - **内置权限门 fail-closed**：权限门自身抛异常 → 拒绝，工具结果为
   `Permission check failed: <ExceptionName>` 并记 ERROR，避免策略代码崩溃导致放行。
-- 内置观察者（调用日志、大输出告警）在 `observer` 阶段先于权限门执行：被拒绝的调用同样进入
+- 内置观察者（调用日志）在 `observer` 阶段先于权限门执行：被拒绝的调用同样进入
   调用日志。
 
 ### `use_extensions=False`

@@ -8,7 +8,7 @@
 
 扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
 
-> 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py`）
+> 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py` / `protocol.py`）
 > 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)
 
 - [1. 快速开始](#1-快速开始)
@@ -414,7 +414,7 @@ def test_blocks_rm_commands():
 
 - 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（其「与旧 hook 的关系」一节已由 [`2026-10-13 权限策略设计`](superpowers/specs/2026-10-13-permission-policy-design.md) 取代）
 - 权限门与决定票：[`permissions.md`](permissions.md)
-- 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`）
+- 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`、`protocol.py`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)
 - 进阶示例（`after_tool` 读取并按需改写 `web_search` 结果）：[`examples/jev-for-web-search/`](../examples/jev-for-web-search/)
 - 主循环接线：[`core/agent_loop.py`](../core/agent_loop.py)

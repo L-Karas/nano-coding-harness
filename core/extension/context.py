@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.extension.protocol import ACTIONS
 from core.runtime_context import ToolContext
 
 
@@ -49,7 +50,7 @@ class BeforeToolContext:
 
     def decide(self, action: str, reason: str = "") -> None:
         """登记一票；仅 allow/ask/deny 合法，不改变 blocked。"""
-        if action not in {"allow", "ask", "deny"}:
+        if action not in ACTIONS:
             raise ValueError(f"unknown action: {action!r}")
         self.decisions.append(Decision(action=action, reason=str(reason)))
 

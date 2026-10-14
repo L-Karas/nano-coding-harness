@@ -77,7 +77,7 @@ def _load_extension(folder: Path) -> None:
             _LOGGER.info(f"[Extension] 缺少可调用 register，跳过: {folder.name}")
             return
 
-        api = ExtensionAPI(module_name)
+        api = ExtensionAPI()
         register(api)
         registered = api.commit()
         for event, callback, stage, fail_closed in registered:

@@ -25,7 +25,7 @@ def register_builtin_extensions(*, rules: Rules | None = None) -> None:
 
 def _register(module_name: str, register: Callable[[ExtensionAPI], None]) -> None:
     """用内置模式缓冲注册一个扩展，正常返回后一次性提交到派发器。"""
-    api = ExtensionAPI(module_name, builtin=True)
+    api = ExtensionAPI(builtin=True)
     register(api)
     for event, callback, stage, fail_closed in api.commit():
         dispatcher.add(

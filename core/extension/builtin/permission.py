@@ -16,12 +16,12 @@ from typing import Callable
 from core.config import WORKDIR
 from core.extension.api import ExtensionAPI
 from core.extension.context import BeforeToolContext, Decision
+from core.extension.protocol import ACTIONS
 from core.interaction import ask_permission
 from core.log.log import get_logger
 
 _LOGGER = get_logger(__name__)
 
-ACTIONS = ("allow", "ask", "deny")
 _FILE_TOOLS = ("read_file", "write_file", "edit_file")
 
 

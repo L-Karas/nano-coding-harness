@@ -8,7 +8,7 @@ from core.extension.context import (
 
 
 def test_on_buffers_and_commit_returns_registrations():
-    api = ExtensionAPI("nano_extension_demo")
+    api = ExtensionAPI()
     fn = lambda ctx: None
     api.on("before_llm", fn)
     assert api.commit() == [("before_llm", fn, "user", False)]
@@ -16,7 +16,7 @@ def test_on_buffers_and_commit_returns_registrations():
 
 
 def test_on_rejects_unknown_event_and_non_callable():
-    api = ExtensionAPI("nano_extension_demo")
+    api = ExtensionAPI()
     with pytest.raises(ValueError):
         api.on("never", lambda ctx: None)
     with pytest.raises(TypeError):
@@ -24,7 +24,7 @@ def test_on_rejects_unknown_event_and_non_callable():
 
 
 def test_external_api_rejects_builtin_stage_and_fail_closed():
-    api = ExtensionAPI("nano_extension_demo")
+    api = ExtensionAPI()
     with pytest.raises(ValueError):
         api.on("before_tool", lambda ctx: None, stage="gate")
     with pytest.raises(ValueError):
@@ -32,7 +32,7 @@ def test_external_api_rejects_builtin_stage_and_fail_closed():
 
 
 def test_builtin_api_accepts_gate_stage():
-    api = ExtensionAPI("builtin:permission", builtin=True)
+    api = ExtensionAPI(builtin=True)
     fn = lambda ctx: None
     api.on("before_tool", fn, stage="gate", fail_closed=True)
     assert api.commit() == [("before_tool", fn, "gate", True)]
@@ -40,15 +40,15 @@ def test_builtin_api_accepts_gate_stage():
 
 def test_on_rejects_unknown_stage_for_external_and_builtin():
     with pytest.raises(ValueError, match="未知扩展阶段"):
-        ExtensionAPI("nano_extension_demo").on("before_tool", lambda ctx: None, stage="bogus")
+        ExtensionAPI().on("before_tool", lambda ctx: None, stage="bogus")
     with pytest.raises(ValueError, match="未知扩展阶段"):
-        ExtensionAPI("builtin:permission", builtin=True).on(
+        ExtensionAPI(builtin=True).on(
             "before_tool", lambda ctx: None, stage="bogus")
 
 
 def test_builtin_flag_is_read_only():
-    external = ExtensionAPI("nano_extension_demo")
-    builtin = ExtensionAPI("builtin:permission", builtin=True)
+    external = ExtensionAPI()
+    builtin = ExtensionAPI(builtin=True)
     assert external.builtin is False and builtin.builtin is True
     with pytest.raises(AttributeError):
         external.builtin = True

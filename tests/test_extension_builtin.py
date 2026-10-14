@@ -9,7 +9,7 @@ import core.extension.builtin as builtin_mod
 import core.extension.dispatcher as dispatcher
 from core.extension.builtin import observers, register_builtin_extensions
 from core.extension.builtin.permission import Rules
-from core.extension.context import AfterToolContext, BeforeToolContext
+from core.extension.context import BeforeToolContext
 
 
 @pytest.fixture(autouse=True)
@@ -53,33 +53,6 @@ def test_tool_call_log_text_keeps_legacy_format(monkeypatch):
     asyncio.run(dispatcher.dispatch("before_tool", ctx))
     logger.info.assert_called_once_with(
         '[HOOK] call tool terminal with arguments: {"command": "ls"}')
-
-
-def test_large_output_warns(monkeypatch):
-    logger = MagicMock(); monkeypatch.setattr(observers, "_LOGGER", logger)
-    register_builtin_extensions(rules=Rules())
-    ctx = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_001)
-    asyncio.run(dispatcher.dispatch("after_tool", ctx))
-    assert logger.warning.called
-
-
-def test_large_output_threshold_boundary(monkeypatch):
-    logger = MagicMock(); monkeypatch.setattr(observers, "_LOGGER", logger)
-    register_builtin_extensions(rules=Rules())
-    at_limit = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_000)
-    asyncio.run(dispatcher.dispatch("after_tool", at_limit))
-    assert not logger.warning.called
-    over_limit = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_001)
-    asyncio.run(dispatcher.dispatch("after_tool", over_limit))
-    assert logger.warning.called
-
-
-def test_large_output_warning_text_keeps_legacy_format(monkeypatch):
-    logger = MagicMock(); monkeypatch.setattr(observers, "_LOGGER", logger)
-    register_builtin_extensions(rules=Rules())
-    ctx = AfterToolContext(tool_name="terminal", args={}, result="x" * 100_001)
-    asyncio.run(dispatcher.dispatch("after_tool", ctx))
-    logger.warning.assert_called_once_with("[HOOK] large output from terminal: 100001 chars")
 
 
 def test_use_extensions_false_still_enforces_floor():

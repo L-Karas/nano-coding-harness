@@ -4,12 +4,10 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from core.extension.protocol import STAGE_ORDER, validate_registration
 from core.log.log import get_logger
 
 _LOGGER = get_logger(__name__)
-
-STAGES = ("user", "observer", "gate")
-_STAGE_ORDER = {"user": 0, "observer": 1, "gate": 2}
 
 
 @dataclass
@@ -37,10 +35,7 @@ def add(
 
     只有内置回调可以声明非 user 阶段，保证外部扩展无法排到权限门之后。
     """
-    if stage not in STAGES:
-        raise ValueError(f"unknown stage: {stage!r}")
-    if stage != "user" and not builtin:
-        raise ValueError(f"仅内置扩展可以声明 stage: {stage!r}")
+    validate_registration(event, callback, stage=stage, fail_closed=fail_closed, builtin=builtin)
     _HANDLERS.setdefault(event, []).append(
         _Handler(module_name, callback, stage, fail_closed, builtin)
     )
@@ -58,7 +53,7 @@ async def dispatch(event: str, ctx: Any, *, include_external: bool = True) -> No
         handler for handler in _HANDLERS.get(event, ())
         if include_external or handler.builtin
     ]
-    handlers.sort(key=lambda handler: _STAGE_ORDER[handler.stage])
+    handlers.sort(key=lambda handler: STAGE_ORDER[handler.stage])
 
     gate_seen = False
     for handler in handlers:
