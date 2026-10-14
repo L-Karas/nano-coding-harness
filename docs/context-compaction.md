@@ -36,7 +36,7 @@ prepare_messages(messages, ctx, sub_model=?)
 | `compact_reserve_tokens` | `50_000`  | `>= 0` | 自动压缩后保留的最近消息 token 预算          |
 | `summary_max_tokens`     | `20_000`  | 整数     | 生成摘要时的最大 token 生成数，经当前模型 `max_output` 钳制 |
 
-三个字段都是绝对值；阈值字段不再支持比例（旧比例配置的迁移见第 6 节）。
+三个字段都是绝对值；阈值字段不接受比例。
 
 ### 2.2 按当前模型解析（`core/client/model.py`）
 
@@ -131,19 +131,11 @@ prepare_messages(messages, ctx, sub_model=?)
 UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），runtime 在
 `core/agent_loop.py`（`AgentRuntime.compact`）。
 
-## 6. 配置与旧配置迁移
+## 6. 配置
 
-`.harness/.settings.json` 由 `/settings` 写入。旧字段与旧比例值在加载时一次性迁移
-（`core/config.py` 的 `AgentConfigManager.load_config` → `_upgrade_legacy_settings`）：
-
-| 旧 key               | 新 key                    | 迁移规则                                   |
-|---------------------|--------------------------|----------------------------------------|
-| `compact_threshold` | `compact_trigger_tokens` | 值 `<= 1`（旧比例语义）按 `× 1_000_000` 折算，其余取整 |
-| `reserve_threshold` | `compact_reserve_tokens` | 同上                                     |
-
-- 只有检测到旧 key 时才回写盘面，回写后是新 key + 整数值；旧 key 与比例语义随之废弃。
-- 新旧 key 并存时以新 key 为准，旧 key 仅被移除（不参与折算）。
-- `/settings` 中两个字段为整数输入（`type="integer"`），回显不再带 `.0`。
+`.harness/.settings.json` 由 `/settings` 写入，加载时直接交给 `AgentConfig` 校验。
+`/settings` 中两个压缩字段为整数输入（`type="integer"`），回显不带 `.0`。
+旧字段 `compact_threshold` / `reserve_threshold` 与比例语义已废弃，文件中残留的未知字段会被忽略。
 
 ## 7. 日志与排错
 
@@ -162,6 +154,6 @@ UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），ru
 - `core/context/compact/__init__.py`：导出 `truncate_large_tool_outputs` / `compact_history` / `prepare_messages`；
 - `core/context/token.py`：token 估算；
 - `core/context/truncate.py`：行数 / 字节截断；
-- `core/config.py`：预算字段、按模型解析、旧配置迁移；
+- `core/config.py`：预算字段、按模型解析；
 - `core/client/model.py`：`compact_trigger_tokens()` / `compact_reserve_tokens()` / `clamp_max_tokens()`；
 - `core/template/message_template.py`、`core/template/prompt_template.py`：落盘包裹与摘要模板。

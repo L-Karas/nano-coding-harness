@@ -29,28 +29,6 @@ PERMISSION_FILE = HARNESS_CONFIG_DIR / ".permissions.json"
 GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
 
-_LEGACY_SETTING_KEYS = {
-    "compact_threshold": "compact_trigger_tokens",
-    "reserve_threshold": "compact_reserve_tokens",
-}
-_LEGACY_RATIO_BASE = 1_000_000  # 旧比例值折算基准：注册表主流模型为 1M 上下文
-
-
-def _upgrade_legacy_settings(raw: dict) -> bool:
-    """就地迁移旧配置：字段改名 + 旧比例值（<=1）折算成绝对 token 数；返回是否发生迁移。"""
-    migrated = False
-    for old_key, new_key in _LEGACY_SETTING_KEYS.items():
-        if old_key not in raw:
-            continue
-        value = raw.pop(old_key)
-        migrated = True
-        if new_key in raw:  # 新旧 key 并存：以新 key 为准，旧 key 仅移除
-            continue
-        if isinstance(value, (int, float)):  # 非数字原样保留，交给 pydantic 报错
-            value = round(value * _LEGACY_RATIO_BASE) if value <= 1 else int(value)
-        raw[new_key] = value
-    return migrated
-
 
 class AgentConfig(BaseModel):
     default_model: str = Field(default="", description="Default model id, 'provider:model'")
@@ -121,12 +99,7 @@ class AgentConfigManager:
             return cls(config=AgentConfig())
 
         raw = json.loads(HARNESS_SETTING_FILE.read_text(encoding="utf-8"))
-        migrated = _upgrade_legacy_settings(raw)
-        config = AgentConfig.model_validate(raw)
-        if migrated:  # 一次性回写；不走 save_config：模块初始化时 CONFIGMANAGER 尚未绑定
-            HARNESS_SETTING_FILE.write_text(
-                config.model_dump_json(ensure_ascii=False, indent=4), encoding="utf-8")
-        return cls(config=config)
+        return cls(config=AgentConfig.model_validate(raw))
 
 
 CONFIGMANAGER = AgentConfigManager.load_config()

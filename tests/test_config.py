@@ -75,52 +75,21 @@ def test_legacy_tool_budget_fields_are_removed_and_ignored():
     assert not hasattr(cfg, "keep_recent_tool_results")
 
 
-def test_load_config_migrates_legacy_threshold_keys_and_ratio_values(tmp_path, monkeypatch):
-    """旧 key 改名；旧比例值按 1M 上下文折算成绝对 token 数，并回写盘面。"""
-    setting_file = tmp_path / ".settings.json"
-    setting_file.write_text(json.dumps({
-        "compact_threshold": 0.5,
-        "reserve_threshold": 100000.0,
-        "default_model": "p:m",
-    }), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
-
-    cfg = AgentConfigManager.load_config().config
-    assert cfg.compact_trigger_tokens == 500_000
-    assert cfg.compact_reserve_tokens == 100_000
-    assert cfg.default_model == "p:m"
-    # 迁移一次性回写：新 key、整数值，旧 key 不残留
-    raw = json.loads(setting_file.read_text(encoding="utf-8"))
-    assert "compact_threshold" not in raw and "reserve_threshold" not in raw
-    assert raw["compact_trigger_tokens"] == 500_000
-    assert raw["compact_reserve_tokens"] == 100_000
-
-
-def test_load_config_migrates_legacy_ratio_of_one(tmp_path, monkeypatch):
-    """旧语义 <=1 一律是比例：值 1 表示 100% 上下文，迁移为 1M 而非 1 token。"""
-    setting_file = tmp_path / ".settings.json"
-    setting_file.write_text(json.dumps({"compact_threshold": 1}), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
-    assert AgentConfigManager.load_config().config.compact_trigger_tokens == 1_000_000
-
-
-def test_load_config_prefers_new_key_when_old_and_new_coexist(tmp_path, monkeypatch):
-    """新旧 key 并存：以新 key 为准，旧 key 仅被移除（不参与折算）。"""
-    setting_file = tmp_path / ".settings.json"
-    setting_file.write_text(json.dumps({"compact_threshold": 0.5,
-                                        "compact_trigger_tokens": 300_000}), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
-    assert AgentConfigManager.load_config().config.compact_trigger_tokens == 300_000
-    assert "compact_threshold" not in json.loads(setting_file.read_text(encoding="utf-8"))
-
-
-def test_load_config_keeps_new_threshold_keys_untouched(tmp_path, monkeypatch):
+def test_load_config_reads_threshold_keys(tmp_path, monkeypatch):
     setting_file = tmp_path / ".settings.json"
     setting_file.write_text(json.dumps({"compact_trigger_tokens": 300_000,
                                         "compact_reserve_tokens": 30_000}), encoding="utf-8")
     monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
     cfg = AgentConfigManager.load_config().config
     assert (cfg.compact_trigger_tokens, cfg.compact_reserve_tokens) == (300_000, 30_000)
+
+
+def test_load_config_ignores_legacy_threshold_keys(tmp_path, monkeypatch):
+    """旧 key 已废弃：加载不报错，缺省回落到默认预算。"""
+    setting_file = tmp_path / ".settings.json"
+    setting_file.write_text(json.dumps({"compact_threshold": 0.5}), encoding="utf-8")
+    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
+    assert AgentConfigManager.load_config().config.compact_trigger_tokens == 500_000
 
 
 def test_manager_save_load_roundtrip(tmp_path, monkeypatch):
