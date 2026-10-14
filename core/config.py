@@ -29,7 +29,6 @@ PERMISSION_FILE = HARNESS_CONFIG_DIR / ".permissions.json"
 GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
 
-
 _LEGACY_SETTING_KEYS = {
     "compact_threshold": "compact_trigger_tokens",
     "reserve_threshold": "compact_reserve_tokens",
@@ -94,6 +93,7 @@ class AgentConfig(BaseModel):
         max_output 为空（无固定输出上限）时用 escalated_max_tokens，保证 输入 + 输出 < 上下文长度。"""
         if context_length <= 0:
             return 0
+        # todo: max output 与 context length 一样时，会出现问题
         output_reserve_tokens = max_output if max_output is not None else self.escalated_max_tokens
         return min(self.compact_trigger_tokens, max(1, context_length - output_reserve_tokens))
 
