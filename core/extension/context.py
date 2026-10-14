@@ -44,6 +44,7 @@ class BeforeToolContext:
     block_reason: str = ""
     decisions: list[Decision] = field(default_factory=list)
 
+    # todo: 是否统一接口
     def block(self, reason: str) -> None:
         """登记一票拒绝；是否拦截由权限门裁决。"""
         self.decide("deny", reason)

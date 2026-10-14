@@ -57,6 +57,7 @@ def load_rules(path: Path) -> Rules:
 
 def match_terminal(rules: Rules, command: str) -> tuple[str, str] | None:
     """按文件顺序返回最后一个命中命令的 (action, 正则原文)；无命中返回 None。"""
+    # todo: 多条规则命中，是否应只保留最后命中的规则
     matched = None
     for pattern, action in rules.terminal:
         if pattern.search(command):
@@ -306,6 +307,7 @@ def _apply_defaults(ctx: BeforeToolContext, tool_name: str, args: dict) -> None:
     if tool_name == "terminal":
         command = args.get("command", "")
         destructive = any(regex.search(command) for regex in DESTRUCTIVE_PATTERNS)
+        # todo: 优化 command 路径判断
         outside = _outside_paths(command)
         if not destructive and not outside:
             return
@@ -313,6 +315,7 @@ def _apply_defaults(ctx: BeforeToolContext, tool_name: str, args: dict) -> None:
         if destructive:
             reasons.append("Destructive command detected")
         if outside:
+            # todo: 触发显示越界规则数量
             shown = outside[:5]
             listing = "\n".join(f"- {path}" for path in shown)
             if len(outside) > len(shown):

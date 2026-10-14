@@ -23,13 +23,13 @@ _HANDLERS: dict[str, list[_Handler]] = {}
 
 
 def add(
-    event: str,
-    callback: Callable,
-    module_name: str,
-    *,
-    stage: str = "user",
-    fail_closed: bool = False,
-    builtin: bool = False,
+        event: str,
+        callback: Callable,
+        module_name: str,
+        *,
+        stage: str = "user",
+        fail_closed: bool = False,
+        builtin: bool = False,
 ) -> None:
     """注册一个事件回调；stage 决定派发顺序，fail_closed 让异常短路为拒绝。
 
@@ -58,6 +58,7 @@ async def dispatch(event: str, ctx: Any, *, include_external: bool = True) -> No
     gate_seen = False
     for handler in handlers:
         if handler.stage == "gate" and not gate_seen:
+            # todo: 多回调导致参数变化，进而影响决策过时，处理
             _drop_stale_decisions(ctx)
             gate_seen = True
 
