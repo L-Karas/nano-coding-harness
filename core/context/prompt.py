@@ -4,6 +4,7 @@ Prompt Assemble
 import platform
 import re
 from functools import cache
+from pathlib import Path
 from typing import Literal
 
 from core.config import WORKDIR
@@ -89,8 +90,11 @@ def build_guidelines() -> str:
     return "\n".join(sections)
 
 
-def build_system_prompt(agent_type: Literal["main", "sub-agent"] = "main",
-                        tools: list[dict] | None = None) -> str:
+def build_system_prompt(
+        agent_type: Literal["main", "sub-agent"] = "main",
+        tools: list[dict] | None = None,
+        work_directory: Path | None = None
+) -> str:
     tools = tools or []
     _LOGGER.debug(f"Building system prompt for {agent_type}, {len(tools)} tools")
     tools_table = build_tools_table(tools)
@@ -104,12 +108,12 @@ def build_system_prompt(agent_type: Literal["main", "sub-agent"] = "main",
             memory_list=memories_table,
             skill_list=skills_table,
             guidelines=guidelines,
-            working_directory=WORKDIR
+            working_directory=work_directory or WORKDIR
         )
     else:
         return SUB_AGENT_PROMPT_TEMPLATE.format(
             tool_list=tools_table,
             memory_list=memories_table,
             guidelines=guidelines,
-            working_directory=WORKDIR
+            working_directory=work_directory or WORKDIR
         )

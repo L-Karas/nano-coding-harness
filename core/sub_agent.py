@@ -46,6 +46,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
     if task is not None:
         RUNTIME_STATE.attach_cancel(agent_id, threadsafe_cancel(task))
 
+    # todo: 子代理工作目录及工具上下文，确保子代理在指定工作目录运行
     try:
         pool = assemble_tool_pool("sub-agent",
                                   enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
