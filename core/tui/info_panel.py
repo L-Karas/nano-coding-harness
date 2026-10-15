@@ -16,6 +16,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from core.runtime_state import RUNTIME_STATE, RuntimeSnapshot, RuntimeState
+from core.tui.surface import _strip_keycaps
 from core.tui.theme import _SPINNER_FRAMES
 
 _RUNNING_STATUSES = ("in_progress", "running")  # 需要轮播字形的状态
@@ -80,7 +81,7 @@ class _InfoRow(Horizontal):
             thinking = it["phase"] != "tool"
             glyph, color = frame, "#facc15" if thinking else "#60a5fa"
             text_style = color
-        lines = it["text"].splitlines() or [""]
+        lines = _strip_keycaps(it["text"]).splitlines() or [""]
         clip = self._CLIP[self._kind]
         row = Text()
         row.append("▾ " if self._expanded else "▸ ", style="#64748b")
@@ -92,7 +93,7 @@ class _InfoRow(Horizontal):
         elif len(lines[0]) > clip or len(lines) > 1:
             row.append("…", style=text_style)
         if self._kind in ("bg", "subagents") and self._expanded and it.get("expand_text"):
-            for line in it["expand_text"].splitlines():  # 折叠时完全不占位
+            for line in _strip_keycaps(it["expand_text"]).splitlines():  # 折叠时完全不占位
                 row.append(f"\n  {line}", style="#94a3b8")
         return row
 

@@ -116,6 +116,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._banner = banner
         self._busy = False
         self._markdown_stream: Any = None  # 流式卡片增量渲染句柄（surface._RenderSurface）
+        self._keycap_carry = ""  # 跨 chunk 的半截键帽前缀（surface._RenderSurface._stream_update）
         self._perm_pending = False
         self._perm_future: Any = None
         self._clarify_pending = False

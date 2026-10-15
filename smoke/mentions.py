@@ -38,8 +38,10 @@ async def run(app, pilot) -> None:
     await type_query(prompt, pilot, "view @ui")
     fuzzy = _match_project_entries("ui")
     assert prompt._file_candidates == fuzzy and len(fuzzy) >= 2, prompt._file_candidates
-    assert fuzzy[0] == "core/tui/"  # 短路径在前
-    assert "core/tui/ui_textual.py" in fuzzy, fuzzy
+    # 候选为字典序（目录条目先于其下深层文件）；名字恰含 ui 的其它目录（如 core/extension/builtin/）
+    # 也是合法命中，不保证 core/tui/ 全局第一
+    assert fuzzy == sorted(fuzzy), fuzzy
+    assert "core/tui/" in fuzzy and "core/tui/ui_textual.py" in fuzzy, fuzzy
     assert all(c.rstrip("/").rsplit("/", 1)[-1].lower().find("ui") >= 0 for c in fuzzy), \
         f"相似匹配应只含名称带 ui 的条目: {fuzzy}"
     shown = [flv.get_option_at_index(i).prompt.plain

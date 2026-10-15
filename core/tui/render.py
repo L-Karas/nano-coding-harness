@@ -20,6 +20,7 @@ from core.template import (
     TOOL_ERROR_PREFIX,
     UNKNOWN_TOOL_PREFIX,
 )
+from core.tui.surface import _strip_keycaps
 
 if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免循环导入
     from core.tui.ui_textual import ChatApp
@@ -53,7 +54,7 @@ def _exec(fn: Callable[[ChatApp], Any]) -> Any:
 
 def _dim_body(text: str) -> Text:
     """暗灰正文（用 Text 而非 Rich 标记：正文里的方括号不会被解析成样式标签）。"""
-    return Text(text, style=_DIM)
+    return Text(_strip_keycaps(text), style=_DIM)
 
 
 def _add_capped_card(
@@ -76,7 +77,7 @@ def _add_capped_card(
 
 def render_user_input(user_text: str) -> None:
     """用户输入卡片（加粗亮白）"""
-    _exec(lambda app: app._add_card("user", Text(user_text, style="bold #f9fafb")))
+    _exec(lambda app: app._add_card("user", Text(_strip_keycaps(user_text), style="bold #f9fafb")))
 
 
 def _format_arg_value(value: Any) -> str:
@@ -132,7 +133,7 @@ def render_tool_result(output: Any, is_error: bool | None = None, max_lines: int
 def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = DEFAULT_MAX_LINES) -> None:
     """diff 预览卡片：每行 "标记 行号 │ 内容"，超出折叠。"""
     width = max((len(str(n)) for _, n, _ in rows), default=1)
-    body = Text("\n").join(Text(f"{kind}{n:>{width}} │ {line}", style=_DIFF_STYLES.get(kind, "dim"))
+    body = Text("\n").join(Text(f"{kind}{n:>{width}} │ {_strip_keycaps(line)}", style=_DIFF_STYLES.get(kind, "dim"))
                            for kind, n, line in rows)
     _add_capped_card("diff", body, max_lines)
 
