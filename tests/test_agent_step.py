@@ -173,6 +173,16 @@ def test_before_tool_block_writes_blocked_result(monkeypatch):
     assert outcome.followup_messages[0]["content"] == "[Extension blocked] no shell"
 
 
+def test_before_tool_context_carries_tctx_cwd(monkeypatch, tmp_path):
+    """权限门/扩展看到的 cwd 必须来自调用方 ToolContext（子代理 working_directory）。"""
+    seen = []
+    add_hook("before_tool", lambda ctx: seen.append(ctx.cwd), "test")
+    _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
+         policy=StepPolicy(use_extensions=True),
+         tctx=ToolContext(agent_run=AgentRunContext(), cwd=tmp_path))
+    assert seen == [tmp_path]
+
+
 def test_floor_command_blocked_even_with_use_extensions_false(monkeypatch):
     outcome = _run(monkeypatch, [("", "", [_tool_call_cmd("sudo ls")], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=False))

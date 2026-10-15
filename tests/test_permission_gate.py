@@ -1,5 +1,6 @@
 """权限门行为测试：地板 / 默认层（destructive、路径越界）/ 规则与扩展表态的合并裁决。"""
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,8 +12,8 @@ from core.extension.builtin.permission import Rules, build_gate
 from core.extension.context import BeforeToolContext, Decision
 
 
-def run_gate(tool_name: str, args: dict) -> BeforeToolContext:
-    ctx = BeforeToolContext(tool_name=tool_name, args=args)
+def run_gate(tool_name: str, args: dict, cwd: Path | None = None) -> BeforeToolContext:
+    ctx = BeforeToolContext(tool_name=tool_name, args=args, cwd=cwd)
     build_gate(Rules())(ctx)
     return ctx
 
@@ -23,6 +24,20 @@ def _vote(action: str, reason: str = "", source: str = "nano_extension_x") -> De
 
 def _no_prompt(monkeypatch):
     monkeypatch.setattr(permission, "ask_permission", lambda q: pytest.fail("must not ask"))
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """建目录链接：优先 symlink，Windows 无权限时退回 junction（Path.resolve 对两者都生效）。"""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError:
+        pass
+    if sys.platform == "win32":
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        if result.returncode == 0:
+            return
+    pytest.skip("directory links not available")
 
 
 # --- 地板：命中即拒绝，不询问 ---
@@ -220,6 +235,44 @@ def test_destructive_and_outside_prompts_once(monkeypatch):
     assert len(calls) == 1
 
 
+# --- 调用方工作目录（子代理 working_directory）：越界判定按 tctx.cwd，而非仅 WORKDIR ---
+
+def test_custom_cwd_absolute_path_inside_does_not_prompt(monkeypatch, tmp_path):
+    _no_prompt(monkeypatch)
+    assert not run_gate("read_file", {"path": str(tmp_path / "a.txt")}, cwd=tmp_path).blocked
+
+
+def test_custom_cwd_absolute_path_outside_confirmed(monkeypatch, tmp_path):
+    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    ctx = run_gate("read_file", {"path": str(Path.cwd() / "a.txt")}, cwd=tmp_path)
+    assert ctx.blocked and ctx.block_reason == "Permission denied by user"
+
+
+def test_custom_cwd_terminal_absolute_path_does_not_prompt(monkeypatch, tmp_path):
+    _no_prompt(monkeypatch)
+    assert not run_gate("terminal", {"command": f"cat {tmp_path / 'a.txt'}"}, cwd=tmp_path).blocked
+
+
+def test_custom_cwd_terminal_workdir_path_outside_confirmed(monkeypatch, tmp_path):
+    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    ctx = run_gate("terminal", {"command": f"cat {Path.cwd() / 'a.txt'}"}, cwd=tmp_path)
+    assert ctx.blocked and ctx.block_reason == "Permission denied by user"
+
+
+def test_default_cwd_falls_back_to_workdir(monkeypatch):
+    _no_prompt(monkeypatch)
+    assert not run_gate("read_file", {"path": str(permission.WORKDIR / "a.txt")}).blocked
+
+
+def test_custom_cwd_directory_link_does_not_prompt(monkeypatch, tmp_path):
+    """cwd 是目录链接（未规范化）时，越界判定与工具一致（工具会 resolve），不误报。"""
+    real = tmp_path / "real"
+    real.mkdir()
+    _link_dir(tmp_path / "link", real)
+    _no_prompt(monkeypatch)
+    assert not run_gate("read_file", {"path": "a.txt"}, cwd=tmp_path / "link").blocked
+
+
 # --- 规则与扩展表态的合并裁决 ---
 
 def test_rule_allow_overrides_destructive_default(monkeypatch):
@@ -242,6 +295,21 @@ def test_external_directory_rule_allow_skips_prompt():
     ctx = BeforeToolContext(tool_name="write_file", args={"path": str(Path.cwd().parent / "x.txt")})
     gate(ctx)
     assert not ctx.blocked
+
+
+def test_external_directory_rule_uses_custom_cwd(monkeypatch, tmp_path):
+    _no_prompt(monkeypatch)
+    gate = build_gate(Rules(external_directory={"read_file": "deny"}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": str(tmp_path / "a.txt")}, cwd=tmp_path)
+    gate(ctx)
+    assert not ctx.blocked  # 位于调用方工作目录之内：规则不适用
+
+
+def test_external_directory_rule_applies_outside_custom_cwd(tmp_path):
+    gate = build_gate(Rules(external_directory={"read_file": "deny"}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": str(Path.cwd() / "a.txt")}, cwd=tmp_path)
+    gate(ctx)
+    assert ctx.blocked and ctx.block_reason == "Permission denied by rule: read_file.external_directory"
 
 
 def test_extension_vote_allow_overrides_default_ask():

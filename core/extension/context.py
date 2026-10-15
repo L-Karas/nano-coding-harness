@@ -1,5 +1,6 @@
 """外部扩展事件上下文对象：可写字段承载钩子对主流程的修改。"""
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from core.extension.protocol import ACTIONS
@@ -40,6 +41,7 @@ class AfterLLMContext:
 class BeforeToolContext:
     tool_name: str
     args: dict
+    cwd: Path | None = None  # 调用方工作目录（ToolContext.cwd）；缺省按 WORKDIR，权限门据此判定路径越界
     blocked: bool = False
     block_reason: str = ""
     decisions: list[Decision] = field(default_factory=list)

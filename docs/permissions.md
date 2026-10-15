@@ -16,6 +16,9 @@
    询问；否则允许。越界扫描是尽力而为的文本解析：变量拼接、`sh -c` 内层脚本与粘连 flag
    （`-o/tmp/x`）不覆盖。
 
+越界判定的基准是**调用方工作目录**：即 `BeforeToolContext.cwd`（`ToolContext.cwd`），
+主代理为 `WORKDIR`，子代理为其 `working_directory`（缺省与主代理一致）。
+
 默认层与冲突裁决共用同一张确认卡：用户答 `y` / `yes` → 允许，其余（含无 UI 的 headless 场景）
 → 拒绝。冲突卡会列出各方来源（规则 pattern / 扩展模块名及其 reason）与最终命令或路径。
 
@@ -66,7 +69,7 @@ action 取 `allow` / `ask` / `deny`（允许 / 询问 / 拒绝）。字段结构
 - `terminal.command`：键为正则字符串，对命令做 `re.search`（编译带 `IGNORECASE`；可用作用域
   形式 `(?-i:...)` 局部关闭大小写不敏感，如 `(?-i:FOO)` 只匹配大写的 `FOO`）。按 JSON 键顺序
   逐条匹配，**最后一个命中的键生效**（新引入的规则压过早先的）。
-- 文件工具 `external_directory`：仅在解析后的路径位于工作目录（`WORKDIR`）之外时生效；
+- 文件工具 `external_directory`：仅在解析后的路径位于调用方工作目录之外时生效（见上文基准定义）；
   目录内调用与规则无关，直接允许。
 - 非法 `action`、非法正则 → 丢弃该条规则并记 ERROR，其余规则照常生效。
 - JSON 整体解析失败或顶层不是对象 → 整个文件不生效（退化为默认层）并记 ERROR。

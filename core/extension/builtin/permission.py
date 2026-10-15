@@ -223,19 +223,25 @@ def _msys_drive_to_windows(path: str) -> str:
     return _MSYS_DRIVE_RE.sub(lambda match: f"{match.group(1)}:/", path, count=1)
 
 
-def _is_outside_workdir(path: str) -> bool:
-    return not (WORKDIR / path).resolve().is_relative_to(WORKDIR)
+def _workdir(ctx: BeforeToolContext) -> Path:
+    """调用方工作目录（`ToolContext.cwd`，缺省 `WORKDIR`）；resolve 与文件工具的路径解析口径一致。"""
+    return (ctx.cwd or WORKDIR).resolve()
 
 
-def _outside_paths(command: str) -> list[str]:
-    """命令中显式引用、且解析到工作目录之外的路径（去重、保持出现顺序）。"""
+def _is_outside_workdir(path: str, workdir: Path) -> bool:
+    """路径是否落在调用方工作目录之外。"""
+    return not (workdir / path).resolve().is_relative_to(workdir)
+
+
+def _outside_paths(command: str, workdir: Path) -> list[str]:
+    """命令中显式引用、且解析到调用方工作目录之外的路径（去重、保持出现顺序）。"""
     outside = []
     for candidate in _command_path_candidates(command):
         expanded = os.path.expandvars(os.path.expanduser(candidate))
         # 只有 terminal 候选按 Git Bash 语义还原盘符：Python 文件工具不认 /e/...，
         # 在这里翻译可避免「误报越界」，同时不放宽文件工具的路径检查。
         resolved = _msys_drive_to_windows(expanded)
-        if expanded and _is_outside_workdir(resolved) and candidate not in outside:
+        if expanded and _is_outside_workdir(resolved, workdir) and candidate not in outside:
             outside.append(candidate)
     return outside
 
@@ -256,8 +262,9 @@ def _call_desc(tool_name: str, args: dict) -> str:
     return f"{tool_name}: {str(args)}"
 
 
-def _rule_vote(rules: Rules, tool_name: str, args: dict) -> Decision | None:
-    """规则层每层最多一票；文件工具仅在路径越界且配置了 external_directory 时投票。"""
+def _rule_vote(rules: Rules, ctx: BeforeToolContext) -> Decision | None:
+    """规则层每层最多一票；文件工具仅在路径越过调用方工作目录且配置了 external_directory 时投票。"""
+    tool_name, args = ctx.tool_name, ctx.args
     if tool_name == "terminal":
         matched = match_terminal(rules, args.get("command", ""))
         if matched is None:
@@ -265,7 +272,7 @@ def _rule_vote(rules: Rules, tool_name: str, args: dict) -> Decision | None:
         action, pattern_text = matched
         return Decision(action=action, reason=pattern_text, source="rule")
     if tool_name in _FILE_TOOLS:
-        if not _is_outside_workdir(args.get("path", "")):
+        if not _is_outside_workdir(args.get("path", ""), _workdir(ctx)):
             return None
         action = external_directory_action(rules, tool_name)
         if action is None:
@@ -302,13 +309,14 @@ def _block_by_user(ctx: BeforeToolContext) -> None:
     ctx.block_reason = "Permission denied by user"
 
 
-def _apply_defaults(ctx: BeforeToolContext, tool_name: str, args: dict) -> None:
+def _apply_defaults(ctx: BeforeToolContext) -> None:
     """默认层：无任何用户表态时生效，沿用旧 hook 的确认卡文案。"""
+    tool_name, args = ctx.tool_name, ctx.args
     if tool_name == "terminal":
         command = args.get("command", "")
         destructive = any(regex.search(command) for regex in DESTRUCTIVE_PATTERNS)
         # todo: 优化 command 路径判断
-        outside = _outside_paths(command)
+        outside = _outside_paths(command, _workdir(ctx))
         if not destructive and not outside:
             return
         reasons = []
@@ -327,7 +335,7 @@ def _apply_defaults(ctx: BeforeToolContext, tool_name: str, args: dict) -> None:
 
     if tool_name in _FILE_TOOLS:
         path = args.get("path", "")
-        if _is_outside_workdir(path):
+        if _is_outside_workdir(path, _workdir(ctx)):
             if not _confirm(f"Access outside working directory:\n\n{tool_name}: {path}"):
                 _block_by_user(ctx)
 
@@ -347,13 +355,13 @@ def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
                     ctx.block_reason = f"Permission denied: '{pattern}' is on the deny list."
                     return
 
-        rule_vote = _rule_vote(rules, tool_name, args)
+        rule_vote = _rule_vote(rules, ctx)
         votes = ([rule_vote] if rule_vote else []) + list(ctx.decisions)
         if votes:
             _apply_votes(ctx, votes, _call_desc(tool_name, args), rule_vote)
             return
 
-        _apply_defaults(ctx, tool_name, args)
+        _apply_defaults(ctx)
         # todo: mcp_* 工具权限策略暂缺（保持直接放行）
 
     return gate

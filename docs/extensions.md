@@ -128,7 +128,7 @@ def register(api):
 | --- | --- | --- | --- |
 | `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history)`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
 | `after_llm` | `AfterLLMContext(content, tool_calls, finish_reason="", usage=None)` | **`content`**、**`tool_calls`**、**`inject_messages`** | 无 |
-| `before_tool` | `BeforeToolContext(tool_name, args)` | **`args`** | `ctx.decide(action, reason)` / `ctx.block(reason)` |
+| `before_tool` | `BeforeToolContext(tool_name, args, cwd=None)` | **`args`** | `ctx.decide(action, reason)` / `ctx.block(reason)` |
 | `tool_execute` | `ToolExecuteContext(tool_name, args, tctx=None)` | **`result`**、**`is_error`** | `ctx.handle(result, is_error=False)` |
 | `after_tool` | `AfterToolContext(tool_name, args, result, is_error=False)` | **`result`**、**`inject_messages`** | 无 |
 
@@ -138,6 +138,7 @@ def register(api):
 - `tool_calls` 在无工具调用时为空列表（不会为 `None`）。
 - `abort()` / `decide()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` 可读，`blocked` / `block_reason` 由内置权限门在裁决后写入（见 4.4）。
 - `tool_execute` **只有调用 `ctx.handle(result, is_error=False)` 才算接管**（`handled` 置真）；只写 `ctx.result` 不算接管，内置执行照常发生。`tctx` 是只读运行上下文（取消信号 / cwd / agent 身份）。
+- `before_tool` 的 `cwd` 只读，是本次调用的工作目录：权限门按它判定路径越界；子代理的 `working_directory` 由此生效（见 [`permissions.md`](permissions.md)）。
 - `finish_reason`、`usage`、`tool_name`、`is_error` 为只读信息，供回调判断，不要写入。
 
 ### 3.3 事件触发时机

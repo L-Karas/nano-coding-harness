@@ -223,7 +223,7 @@ async def _prepare_tool_call(
     tool_name = call.function.name
     item.tool_name = tool_name
 
-    tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args)
+    tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args, cwd=tctx.cwd)
     await dispatch("before_tool", tool_ctx, include_external=policy.use_extensions)
     tool_args = tool_ctx.args
     call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
