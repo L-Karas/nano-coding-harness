@@ -56,7 +56,7 @@ def test_subagent_lifecycle():
     state = RuntimeState()
     sa_id = state.allocate_subagent_id()
     assert sa_id == "sa-0001"
-    state.register_subagent(sa_id, "explore")
+    state.register_subagent(sa_id, "explore", "find the entry point")
     state.update_subagent(sa_id, "tool", "read_file")
     assert state.snapshot().subagents == [
         SubagentEntry(
@@ -64,6 +64,7 @@ def test_subagent_lifecycle():
             phase="tool",
             detail="read_file",
             description="explore",
+            goal="find the entry point",
         )]
     state.remove_subagent(sa_id)
     assert state.snapshot().subagents == []

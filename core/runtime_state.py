@@ -36,6 +36,7 @@ class SubagentEntry:
     phase: str
     detail: str
     description: str
+    goal: str = ""
     cancellable: bool = False
 
 
@@ -159,13 +160,14 @@ class RuntimeState:
             self._subagent_counter += 1
             return f"sa-{self._subagent_counter:04d}"
 
-    def register_subagent(self, agent_id: str, description: str) -> None:
+    def register_subagent(self, agent_id: str, description: str, goal: str = "") -> None:
         with self._lock:
             self._subagents[agent_id] = SubagentEntry(
                 id=agent_id,
                 phase="thinking",
                 detail="",
                 description=description,
+                goal=goal,
             )
 
     def update_subagent(

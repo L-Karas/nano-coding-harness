@@ -9,9 +9,10 @@ Sub Agent
 与父回合的 Esc 解耦；任务被 cancel 时 finally 清理条目与句柄。
 """
 import asyncio
+from pathlib import Path
 
 from core.client import shared_sub_model_client
-from core.config import CONFIGMANAGER
+from core.config import CONFIGMANAGER, WORKDIR
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
 from core.log.log import get_logger
@@ -27,9 +28,11 @@ def _set_phase(agent_id: str, phase: str, detail: str = "") -> None:
     RUNTIME_STATE.update_subagent(agent_id, phase, detail)
 
 
-async def spawn_subagent(description: str, ctx=None) -> str:
+async def spawn_subagent(description: str, ctx=None, goal: str = "",
+                         working_directory: Path | None = None) -> str:
     """在调用方 loop 上跑完一个子代理，返回它的最终文本结论。
 
+    goal 为右栏展示的简短目标；working_directory 为子代理工作目录（缺省与主代理一致的 WORKDIR）。
     ctx 为父回合的 AgentRunContext：每轮模型调用前协作式检查取消（Esc），
     透传给 step 的工具执行使中断能到达子进程；每轮调用前走与主代理相同的
     上下文预算管线（prepare_messages，作用于不含 system 的 history）。
@@ -38,7 +41,7 @@ async def spawn_subagent(description: str, ctx=None) -> str:
     from core.tools import assemble_tool_pool
 
     agent_id = RUNTIME_STATE.allocate_subagent_id()
-    RUNTIME_STATE.register_subagent(agent_id, description)
+    RUNTIME_STATE.register_subagent(agent_id, description, goal)
 
     # 指名取消句柄：子代理就跑在当前 task 上（局部导入避开 tools ↔ sub_agent 的 import 环）
     from core.background_task import threadsafe_cancel
@@ -46,13 +49,13 @@ async def spawn_subagent(description: str, ctx=None) -> str:
     if task is not None:
         RUNTIME_STATE.attach_cancel(agent_id, threadsafe_cancel(task))
 
-    # todo: 子代理工作目录及工具上下文，确保子代理在指定工作目录运行
+    work_dir = working_directory or WORKDIR
     try:
         pool = assemble_tool_pool("sub-agent",
                                   enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
-        system_prompt = build_system_prompt("sub-agent", tools=pool.schemas())
+        system_prompt = build_system_prompt("sub-agent", tools=pool.schemas(), work_directory=work_dir)
         history = [{"role": "user", "content": description}]
-        tctx = ToolContext(agent_run=ctx, agent_name="sub-agent")
+        tctx = ToolContext(agent_run=ctx, cwd=work_dir, agent_name="sub-agent")
         policy = StepPolicy(use_extensions=True)
         renderer = StepRenderer(on_tool_call=lambda tool_name, _args: _set_phase(agent_id, "tool", tool_name))
 

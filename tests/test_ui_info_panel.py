@@ -249,6 +249,31 @@ def test_running_non_cancellable_row_has_no_stop_control():
     asyncio.run(main())
 
 
+def test_subagent_row_expands_to_goal_not_description():
+    """折叠只显示阶段；展开补上 goal，description 不在右栏展示。"""
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            state.register_subagent("sa-1", "explore the whole repo", "find the entry point")
+            _refresh(app)
+            await pilot.pause()  # 等 Textual 处理行 mount
+            label = app.query_one("#subagents-list").query(".-info-text")[0]
+            collapsed = str(label.content)
+            assert "[thinking]" in collapsed
+            assert "find the entry point" not in collapsed
+            assert "explore the whole repo" not in collapsed
+
+            await pilot.click(label)
+            await pilot.pause()
+            expanded = str(app.query_one("#subagents-list").query(".-info-text")[0].content)
+            assert "find the entry point" in expanded
+            assert "explore the whole repo" not in expanded
+
+    asyncio.run(main())
+
+
 def test_subagent_background_record_not_listed_in_bg_section():
     """子代理的 bg 记录只作结果回流：Background Tasks 不列它，只在 Subagents 分区露面。"""
     state = RuntimeState()

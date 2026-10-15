@@ -60,7 +60,7 @@ class _SpawnCall:
 
     class function:
         name = "spawn_subagent"
-        arguments = '{"description": "explore"}'
+        arguments = '{"description": "explore", "goal": "explore"}'
 
 
 def test_cancel_work_reports_cancelled_notification(monkeypatch):

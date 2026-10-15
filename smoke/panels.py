@@ -28,7 +28,7 @@ async def run(app, pilot) -> None:
                              TodoEntry("hook up the real agent", "completed")])
     RUNTIME_STATE.register_background(
         "bg-7777", "terminal(command='pip install textual', cwd='/very/long/remote/path')")
-    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc")
+    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc", "explore asyncio docs")
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
 
     def _row_text(row) -> str:
@@ -55,19 +55,21 @@ async def run(app, pilot) -> None:
     assert bg_animated != bg_str, "running 后台任务应呈动态加载效果（帧未推进）"
     sub_str = _rows_text("#subagents-list .info-row")
     assert "sa-0001" in sub_str and "[thinking]" in sub_str, sub_str
+    assert "explore asyncio docs" not in sub_str, "折叠态不应展示 goal"
     assert "summarize the asyncio doc" not in sub_str, "折叠态不应展示 description"
     assert any(g in sub_str for g in _SPINNER_FRAMES), f"运行中子代理应有轮播字形: {sub_str}"
-    # description 默认不展示，点行展开后以灰色补上全文，再点收起
+    # goal 默认不展示，点行展开后以灰色补上；description 不在右栏展示
     sub_row = next(r for r in app.query("#subagents-list .info-row.-expandable")
                    if "sa-0001" in _row_text(r))
     sub_row.scroll_visible(animate=False, top=True, immediate=True)
     await pilot.pause(0.1)
     await pilot.click(sub_row, offset=(2, 0))
     await pilot.pause(0.1)
-    assert "summarize the asyncio doc" in _row_text(sub_row), "展开后应展示 description"
+    assert "explore asyncio docs" in _row_text(sub_row), "展开后应展示 goal"
+    assert "summarize the asyncio doc" not in _row_text(sub_row), "description 不在右栏展示"
     await pilot.click(sub_row, offset=(2, 0))
     await pilot.pause(0.1)
-    assert "summarize the asyncio doc" not in _row_text(sub_row), "再点应收起 description"
+    assert "explore asyncio docs" not in _row_text(sub_row), "再点应收起 goal"
     RUNTIME_STATE.update_subagent("sa-0001", "tool", "terminal")
     await pilot.pause(1.3)
     sub_str = _rows_text("#subagents-list .info-row")
@@ -194,6 +196,6 @@ async def run(app, pilot) -> None:
         if _bg.status == "completed":
             RUNTIME_STATE.complete_background(_bg.id, ToolResult(content=""))
     for _sa in saved.subagents:
-        RUNTIME_STATE.register_subagent(_sa.id, _sa.description)
+        RUNTIME_STATE.register_subagent(_sa.id, _sa.description, _sa.goal)
         RUNTIME_STATE.update_subagent(_sa.id, _sa.phase, _sa.detail)
     print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + independent collapse")

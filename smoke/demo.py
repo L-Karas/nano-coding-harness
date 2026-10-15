@@ -46,7 +46,7 @@ def _demo_agent(query: str) -> None:
                 TodoEntry("Color-code list rows by status", "completed")])
     bg_id = RUNTIME_STATE.allocate_background_id()
     RUNTIME_STATE.register_background(bg_id, "terminal(command='pip install -r requirements.txt')")
-    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc")
+    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc", "explore asyncio docs")
     time.sleep(1.6)  # 右栏可见 running 态（1s 轮询粒度）
     todo_write([TodoEntry("Refactor right panel into collapsible sections", "completed")])
     RUNTIME_STATE.complete_background(bg_id, ToolResult(content="(demo finished)"))

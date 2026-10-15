@@ -37,7 +37,7 @@
 | 工具 | 参数 | 可见 | 说明 |
 | --- | --- | --- | --- |
 | `todo_write` | `todos[{content,status}]` | main | 整体替换任务清单，右栏实时展示 |
-| `spawn_subagent` | `description` | main | 独立上下文子代理，后台运行，最多 30 轮，结论经后台通知回传 |
+| `spawn_subagent` | `description`, `goal`, `working_directory=""` | main | 独立上下文子代理，后台运行，最多 30 轮，结论经后台通知回传；`goal` 为右栏展示的简短目标，`working_directory` 指定子代理工作目录（缺省与主代理一致） |
 | `load_skill` | `name` | main | 返回技能正文与 `SKILL.md` 路径（`<skill>` 标签包裹） |
 | `save_memory` | `title`, `content`, `mem_type` | main | `mem_type`: user / feedback / project / reference |
 | `schedule_cron` | `cron_expression`, `prompt`, `recurring`, `durable` | main | 注册 5 段式 cron，触发时把 prompt 作为用户消息注入会话 |

@@ -26,7 +26,7 @@ class _InfoRow(Horizontal):
     """右栏条目行：点击在单行摘要（超限截断附 …）与多行缩进全文间切换。
 
     in_progress / running 行首为轮播帧；bg / subagents 行折叠时只显示工具名 / 阶段，
-    展开后灰色补上参数 / description。运行中且带取消句柄的行尾给 ■（点它指名停止）。"""
+    展开后灰色补上参数 / goal。运行中且带取消句柄的行尾给 ■（点它指名停止）。"""
 
     _CLIP = {"todos": 72, "bg": 48, "subagents": 48}  # 折叠摘要单行字符上限
 
@@ -170,12 +170,13 @@ class _InfoPanel(Vertical):
             return [{"id": t.content, "status": t.status, "text": t.content, "cancellable": False}
                     for t in snap.todos]
         if kind == "subagents":
-            # 条目只在子代理运行期间存在（finally 移除）；阶段拼进 text 以触发签名重建
+            # 条目只在子代理运行期间存在（finally 移除）；阶段拼进 text 以触发签名重建；
+            # 展开只补 goal（description 不在右栏展示）
             items = []
             for sa in snap.subagents:
                 label = f"tool: {sa.detail}" if sa.phase == "tool" else "thinking"
                 items.append({"id": sa.id, "status": "running", "phase": sa.phase,
-                              "text": f"[{label}]", "expand_text": sa.description,
+                              "text": f"[{label}]", "expand_text": sa.goal,
                               "cancellable": sa.cancellable})
             return items
         items = []
