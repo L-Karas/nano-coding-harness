@@ -103,7 +103,7 @@ def _validate_path(path: str = "", cwd: Path | None = None) -> Path:
     path = Path(path)
 
     if not path.is_absolute():
-        path = path.resolve()
+        path = (base / path).resolve()
     if not path.exists():
         raise Exception(f"path '{path}' does not exist.")
     if not path.is_dir():
