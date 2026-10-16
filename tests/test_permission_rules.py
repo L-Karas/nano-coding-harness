@@ -189,9 +189,10 @@ def test_resolve_matches_severity_and_last_of_same_action():
 def test_relative_path_inside_outside_and_dot(tmp_path):
     workdir = tmp_path / "proj"
     workdir.mkdir()
+    workdir = workdir.resolve()
     assert _relative_path((workdir / "src" / "a.py").resolve(), workdir) == "src/a.py"
-    assert _relative_path((tmp_path / "x.txt").resolve(), workdir) == "../x.txt"
-    assert _relative_path(workdir.resolve(), workdir) == "."
+    assert _relative_path((workdir.parent / "x.txt").resolve(), workdir) == "../x.txt"
+    assert _relative_path(workdir, workdir) == "."
 
 
 def test_relative_path_cross_drive_falls_back_to_absolute(tmp_path, monkeypatch):
@@ -204,3 +205,9 @@ def test_relative_path_cross_drive_falls_back_to_absolute(tmp_path, monkeypatch)
 
     monkeypatch.setattr(permission.os.path, "relpath", boom)
     assert _relative_path(resolved, workdir) == resolved.as_posix()
+
+
+def test_pattern_table_non_dict_message_says_table(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    load_rules(_write(tmp_path, {"read_file": {"path": "nope"}}))
+    assert any("忽略该表" in call.args[0] for call in logger.error.call_args_list)

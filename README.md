@@ -70,9 +70,9 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 ## 权限策略
 
 工具调用先过内置权限门（`before_tool` 的 gate 阶段）：硬编码地板永远拒绝（`sudo` 等），
-用户可在 `.harness/.permissions.json` 写规则（terminal 命令正则 / 文件工具越界策略）表达
-allow / ask / deny；外部扩展也能用 `decide()` 投票，冲突时弹确认卡。判定顺序、规则格式与
-已知风险见 [`docs/permissions.md`](docs/permissions.md)。
+用户可在 `.harness/.permissions.json` 写规则（terminal 命令正则与外部目录策略 / 文件工具
+path 正则与越界策略）表达 allow / ask / deny；外部扩展也能用 `decide()` 投票，冲突时弹确认卡。
+判定顺序、规则格式与已知风险见 [`docs/permissions.md`](docs/permissions.md)。
 
 ## 扩展系统
 

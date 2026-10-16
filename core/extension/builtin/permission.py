@@ -103,7 +103,7 @@ def _parse_pattern_table(label: str, table: object,
                          target: list[tuple[re.Pattern, str]]) -> int:
     """解析 `{正则: action}` 表并逐条校验，返回成功条目数；非法条目只丢自身。"""
     if not isinstance(table, dict):
-        _LOGGER.error(f"[Permission] {label} 必须是对象，忽略该段")
+        _LOGGER.error(f"[Permission] {label} 必须是对象，忽略该表")
         return 0
     added = 0
     for pattern_text, action in table.items():

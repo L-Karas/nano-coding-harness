@@ -706,6 +706,22 @@ def test_command_ask_beats_external_allow(monkeypatch):
     assert not ctx.blocked
 
 
+def test_external_deny_beats_command_allow():
+    gate = build_gate(Rules(terminal=[(re.compile("^cat "), "allow")],
+                            external_directory={"terminal": "deny"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
+    gate(ctx)
+    assert ctx.block_reason == "Permission denied by rule: terminal.external_directory"
+
+
+def test_external_allow_loses_to_command_deny():
+    gate = build_gate(Rules(terminal=[(re.compile("secret"), "deny")],
+                            external_directory={"terminal": "allow"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
+    gate(ctx)
+    assert ctx.block_reason == "Permission denied by rule: secret"
+
+
 def test_path_rule_matches_resolved_symlink_target(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()

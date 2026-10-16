@@ -102,8 +102,10 @@ action 取 `allow` / `ask` / `deny`（允许 / 询问 / 拒绝）。字段结构
 - 规则收敛：同一次调用的全部命中（`terminal.command` / 文件工具 `path`，加上越界时的
   `external_directory`）按 **deny > ask > allow** 取最严；同一 severity 多条命中时取 JSON 中
   靠后的一条；`external_directory` 命中视为追加在直接规则之后，因此规则层只产出至多一票。
+  该收敛对旧规则文件只会不变或变严：旧语义取最后一条命中，它必在命中集合内，而新语义取集合中
+  最严的一条，不存在「新代码放行了旧代码会拦下的调用」。
 - 已知后果：`external_directory: allow` 是一张规则票，会跳过该次调用的整个默认层（含破坏性
-  命令询问）；如需保留确认，可用 command `ask` 规则补回（同一 severity 取靠后，且 ask 压 allow）。
+  命令询问）；如需保留确认，可用 command `ask` 规则补回（ask 严于 allow，必然胜出）。
   `external_directory: deny` 不会被同次命中的 `path` allow 压过（deny 优先）。
 - 非法 `action`、非法正则 → 丢弃该条规则并记 ERROR，其余规则照常生效。
 - JSON 整体解析失败或顶层不是对象 → 整个文件不生效（退化为默认层）并记 ERROR。
