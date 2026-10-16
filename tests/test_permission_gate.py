@@ -23,7 +23,7 @@ def _vote(action: str, reason: str = "", source: str = "nano_extension_x") -> De
 
 
 def _no_prompt(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: pytest.fail("must not ask"))
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: pytest.fail("must not ask"))
 
 
 def _link_dir(link: Path, target: Path) -> None:
@@ -68,7 +68,7 @@ def test_word_boundary_no_false_positive(monkeypatch):
 
 def test_rm_absolute_path_is_not_floor_denied(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
     assert not run_gate("terminal", {"command": "rm -rf /tmp/foo"}).blocked
     assert "Destructive command detected" in cards[0]
 
@@ -90,14 +90,14 @@ def test_man_mkfs_not_denied(monkeypatch):
 
 def test_echo_format_drive_not_denied(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
     assert not run_gate("terminal", {"command": "echo format c:"}).blocked
     assert all("deny list" not in card for card in cards)
 
 
 def test_redirect_to_dev_null_not_floor_denied(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
     assert not run_gate("terminal", {"command": "echo hi > /dev/null"}).blocked
     assert all("deny list" not in card for card in cards)
 
@@ -109,7 +109,7 @@ def test_quoted_function_definition_not_denied(monkeypatch):
 
 def test_of_dev_path_in_argument_not_floor_denied(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
     assert not run_gate("terminal", {"command": "grep of=/dev/sda log.txt"}).blocked
     assert all("deny list" not in card for card in cards)
 
@@ -160,7 +160,7 @@ def test_floor_denies_with_label(monkeypatch, command, label):
 
 def test_dd_then_of_dev_path_not_floor_denied(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
     assert not run_gate("terminal", {"command": "dd --version; echo of=/dev/sda"}).blocked
     assert all("deny list" not in card for card in cards)
 
@@ -168,14 +168,23 @@ def test_dd_then_of_dev_path_not_floor_denied(monkeypatch):
 # --- 默认层：destructive 与文件工具越界 ---
 
 def test_destructive_confirmed_allows(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "y")
     assert not run_gate("terminal", {"command": "rm old.txt"}).blocked
 
 
 def test_destructive_rejected_denies(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "rm old.txt"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
+
+
+def test_destructive_prompt_carries_command_detail(monkeypatch):
+    """确认卡的触发摘要与工具卡参数行同构：command: <命令原文>。"""
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    run_gate("terminal", {"command": "rm old.txt"})
+    assert cards == [("Destructive command detected", ["command: rm old.txt"])]
 
 
 @pytest.mark.parametrize("command", [
@@ -197,7 +206,7 @@ def test_destructive_rejected_denies(monkeypatch):
     "dd if=x of=backup.img",
 ])
 def test_destructive_commands_prompt(monkeypatch, command):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": command})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
@@ -219,7 +228,7 @@ def test_kill_15_no_prompt(monkeypatch):
 
 def test_glued_system_redirect_gets_destructive_reason(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
     assert not run_gate("terminal", {"command": "echo x >/etc/hosts"}).blocked
     assert "Destructive command detected" in cards[0]
 
@@ -230,83 +239,124 @@ def test_path_inside_workdir_does_not_prompt(monkeypatch):
 
 
 def test_path_outside_workdir_confirmed(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "y")
     outside = str(Path.cwd().parent / "secret.txt")
     assert not run_gate("read_file", {"path": outside}).blocked
 
 
 def test_path_outside_workdir_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     outside = str(Path.cwd().parent / "secret.txt")
     ctx = run_gate("read_file", {"path": outside})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
+def test_file_path_prompt_carries_path_detail(monkeypatch):
+    """确认卡的触发摘要与工具卡参数行同构：path: <路径>。"""
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    outside = str(Path.cwd().parent / "secret.txt")
+    run_gate("read_file", {"path": outside})
+    assert cards == [("Access outside working directory:", [f"path: {outside}"])]
+
+
 # --- terminal 工作目录外路径 ---
 
 def test_terminal_relative_escape_confirmed(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "y")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "y")
     assert not run_gate("terminal", {"command": "cat ../secret.txt"}).blocked
 
 
 def test_terminal_relative_escape_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "cat ../secret.txt"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
+def test_outside_paths_listing_moves_to_detail(monkeypatch):
+    """越界路径清单属触发数据：移入 details（工具卡正文样式），确认文本只留标题。"""
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    run_gate("terminal", {"command": "cat ../secret.txt"})
+    assert cards == [("Access outside working directory:",
+                      ["- ../secret.txt", "command: cat ../secret.txt"])]
+
+
+def test_outside_paths_listing_truncates_in_detail(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    command = "cat ../a ../b ../c ../d ../e ../f"
+    run_gate("terminal", {"command": command})
+    question, details = cards[0]
+    assert question == "Access outside working directory:"
+    assert details == ["- ../a\n- ../b\n- ../c\n- ../d\n- ../e\n- ... and 1 more",
+                       f"command: {command}"]
+
+
+def test_destructive_and_outside_split_prose_from_listing(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    run_gate("terminal", {"command": "rm ../old.txt"})
+    assert cards == [("Destructive command detected\n\nAccess outside working directory:",
+                      ["- ../old.txt", "command: rm ../old.txt"])]
+
+
 def test_terminal_absolute_path_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "cat /etc/passwd"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_quoted_absolute_path_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": 'cat "/etc/passwd"'})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows drive-letter paths")
 def test_terminal_windows_drive_path_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     command = f"type {Path.cwd().drive}\\Windows\\win.ini"
     ctx = run_gate("terminal", {"command": command})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_equals_value_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "tool --file=/etc/x"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_home_path_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "cat ~/.gitconfig"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_cd_parent_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "cd .. && ls"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_bare_cd_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "cd && ls"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_semicolon_escape_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "cat ../x; echo done"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
 
 def test_terminal_glued_redirect_rejected(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": "echo x >/tmp/out.txt"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
@@ -354,7 +404,7 @@ def test_terminal_msys_other_drive_rejected(monkeypatch):
     if not drive:
         pytest.skip("cwd 无盘符（UNC 路径）")
 
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     other = "z" if drive[0].lower() != "z" else "y"
     ctx = run_gate("terminal", {"command": f"cat /{other}/secret.txt"})
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
@@ -363,7 +413,7 @@ def test_terminal_msys_other_drive_rejected(monkeypatch):
 def test_destructive_and_outside_prompts_once(monkeypatch):
     calls = []
 
-    def answer(question):
+    def answer(question, details):
         calls.append(question)
         return "y"
 
@@ -380,7 +430,7 @@ def test_custom_cwd_absolute_path_inside_does_not_prompt(monkeypatch, tmp_path):
 
 
 def test_custom_cwd_absolute_path_outside_confirmed(monkeypatch, tmp_path):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("read_file", {"path": str(Path.cwd() / "a.txt")}, cwd=tmp_path)
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
@@ -391,7 +441,7 @@ def test_custom_cwd_terminal_absolute_path_does_not_prompt(monkeypatch, tmp_path
 
 
 def test_custom_cwd_terminal_workdir_path_outside_confirmed(monkeypatch, tmp_path):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     ctx = run_gate("terminal", {"command": f"cat {Path.cwd() / 'a.txt'}"}, cwd=tmp_path)
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
 
@@ -413,7 +463,7 @@ def test_custom_cwd_directory_link_does_not_prompt(monkeypatch, tmp_path):
 # --- 规则与扩展表态的合并裁决 ---
 
 def test_rule_allow_overrides_destructive_default(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: pytest.fail("must not ask"))
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: pytest.fail("must not ask"))
     gate = build_gate(Rules(terminal=[(re.compile("^rm "), "allow")]))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"})
     gate(ctx)
@@ -459,18 +509,22 @@ def test_extension_vote_allow_overrides_default_ask():
 
 def test_conflict_rule_vs_extension_asks_and_yes_allows(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "y")
     gate = build_gate(Rules(terminal=[(re.compile("^git"), "allow")]))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "git push --force"})
     ctx.decisions.append(_vote("deny", "no force push", source="nano_extension_guard"))
     gate(ctx)
     assert not ctx.blocked
-    assert "Decision conflict" in cards[0]
-    assert "nano_extension_guard: deny (no force push)" in cards[0]
+    question, details = cards[0]
+    assert question == "Decision conflict:"
+    assert details == ["- rule: allow (^git)\n"
+                       "- nano_extension_guard: deny (no force push)",
+                       "command: git push --force"]
 
 
 def test_conflict_rejected_denies(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: "n")
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
     gate = build_gate(Rules(terminal=[(re.compile("^git"), "allow")]))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "git push --force"})
     ctx.decisions.append(_vote("deny", "no force push", source="nano_extension_guard"))
@@ -479,7 +533,7 @@ def test_conflict_rejected_denies(monkeypatch):
 
 
 def test_floor_beats_rule_and_extension(monkeypatch):
-    monkeypatch.setattr(permission, "ask_permission", lambda q: pytest.fail("floor must not ask"))
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: pytest.fail("floor must not ask"))
     gate = build_gate(Rules(terminal=[(re.compile("^sudo"), "allow")]))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "sudo ls"})
     ctx.decisions.append(_vote("allow", "trusted"))
@@ -509,23 +563,27 @@ def test_headless_conflict_defaults_to_deny(monkeypatch):
 
 def test_rule_ask_confirmed_allows_with_card(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "y")
     gate = build_gate(Rules(terminal=[(re.compile("^git"), "ask")]))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "git status"})
     gate(ctx)
     assert not ctx.blocked
-    assert cards == ["^git\n\ngit status"]
+    assert cards == [("^git", ["command: git status"])]
 
 
 def test_rule_ask_rejected_denies_with_card(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q: cards.append(q) or "n")
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
     outside = str(Path.cwd().parent / "secret.txt")
     gate = build_gate(Rules(external_directory={"read_file": "ask"}))
     ctx = BeforeToolContext(tool_name="read_file", args={"path": outside})
     gate(ctx)
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
-    assert "read_file.external_directory" in cards[0] and outside in cards[0]
+    question, details = cards[0]
+    assert "read_file.external_directory" in question
+    assert details == [f"path: {outside}"]
 
 
 def test_extension_source_named_rule_uses_extension_message():

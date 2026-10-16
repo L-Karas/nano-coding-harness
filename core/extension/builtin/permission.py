@@ -4,7 +4,7 @@
 文件整体非法时不生效并记 ERROR，单条规则非法只丢弃自身，未知键忽略并记 WARN。
 权限门按「地板 → 规则/扩展表态 → 默认层」裁决；地板与默认层迁移自旧 hook 权限门，
 此后收窄了误伤：清根只匹配根目录本身、提权/关机等词只在命令位命中、匹配前归一
-空白字符，裁决顺序与结果文案不变。模式表与匹配在 core.extension.builtin.permission_patterns。
+空白字符，裁决顺序与拒绝文案不变。模式表与匹配在 core.extension.builtin.permission_patterns。
 """
 import json
 import os
@@ -208,19 +208,21 @@ def _outside_paths(command: str, workdir: Path) -> list[str]:
     return outside
 
 
-def _confirm(question: str) -> bool:
-    """通过 UI 面板询问用户，确认（y/yes）返回 True，其余一律拒绝"""
-    return ask_permission(question).strip().lower() in ("y", "yes")
+def _confirm(question: str, details: list[str]) -> bool:
+    """通过 UI 面板询问用户（details 为触发数据段落，单独样式展示），
+    确认（y/yes）返回 True，其余一律拒绝"""
+    return ask_permission(question, details).strip().lower() in ("y", "yes")
 
 
 # ---------- 权限门 ----------
 
 def _call_desc(tool_name: str, args: dict) -> str:
-    """裁决卡中的调用摘要：terminal 用命令原文，文件工具用「工具: 路径」，其余回显参数。"""
+    """裁决卡中的调用摘要：terminal / 文件工具与工具卡参数行同构
+    （`command: <命令原文>` / `path: <路径>`），其余回显参数。"""
     if tool_name == "terminal":
-        return str(args.get("command", ""))
+        return f"command: {args.get('command', '')}"
     if tool_name in _FILE_TOOLS:
-        return f"{tool_name}: {args.get('path', '')}"
+        return f"path: {args.get('path', '')}"
     return f"{tool_name}: {str(args)}"
 
 
@@ -249,7 +251,8 @@ def _apply_votes(ctx: BeforeToolContext, votes: list[Decision], desc: str,
     if len({vote.action for vote in votes}) > 1:
         listing = "\n".join(
             f"- {vote.source}: {vote.action} ({vote.reason})" for vote in votes)
-        if not _confirm(f"Decision conflict:\n{listing}\n\n{desc}"):
+        details = [listing, desc]
+        if not _confirm("Decision conflict:", details):
             _block_by_user(ctx)
         return
 
@@ -262,7 +265,7 @@ def _apply_votes(ctx: BeforeToolContext, votes: list[Decision], desc: str,
                             if votes[0] is rule_vote
                             else f"[Extension blocked] {votes[0].reason}")
         return
-    if not _confirm(f"{votes[0].reason}\n\n{desc}"):  # ask
+    if not _confirm(votes[0].reason, [desc]):  # ask
         _block_by_user(ctx)
 
 
@@ -281,7 +284,7 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
         outside = _outside_paths(command, _workdir(ctx))
         if not destructive and not outside:
             return
-        reasons = []
+        reasons, details = [], []
         if destructive:
             reasons.append("Destructive command detected")
         if outside:
@@ -290,15 +293,17 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
             listing = "\n".join(f"- {path}" for path in shown)
             if len(outside) > len(shown):
                 listing += f"\n- ... and {len(outside) - len(shown)} more"
-            reasons.append("Access outside working directory:\n" + listing)
-        if not _confirm("\n\n".join(reasons + [command])):
+            reasons.append("Access outside working directory:")
+            details.append(listing)  # 路径清单属触发数据，与确认文本分开着色
+        details.append(_call_desc(tool_name, args))
+        if not _confirm("\n\n".join(reasons), details):
             _block_by_user(ctx)
         return
 
     if tool_name in _FILE_TOOLS:
         path = args.get("path", "")
         if _is_outside_workdir(path, _workdir(ctx)):
-            if not _confirm(f"Access outside working directory:\n\n{tool_name}: {path}"):
+            if not _confirm("Access outside working directory:", [_call_desc(tool_name, args)]):
                 _block_by_user(ctx)
 
 

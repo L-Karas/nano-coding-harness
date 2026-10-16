@@ -21,7 +21,7 @@ def test_permission_click_elsewhere_keeps_list_focused():
             app._add_card("user", "hello")  # 让 #chat 可见（欢迎态下隐藏）
             await pilot.pause()
             future: Future[str] = Future()
-            app._begin_permission("Allow?", future)
+            app._begin_permission("Allow?", [], future)
             await pilot.pause()
             perm = app.query_one("#perm-list", OptionList)
             assert app.focused is perm and perm.highlighted == 1, "初始聚焦权限列表，默认 No"

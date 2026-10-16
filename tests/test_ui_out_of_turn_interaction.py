@@ -23,7 +23,7 @@ def test_out_of_turn_permission_answer_restores_idle_ui():
     async def main() -> None:
         app = _app()
         async with app.run_test(size=(100, 32)) as pilot:
-            app._begin_permission("Allow?", Future())
+            app._begin_permission("Allow?", [], Future())
             await pilot.pause()
             assert app.query_one("#prompt").disabled, "询问挂起时输入条禁用"
 
@@ -61,7 +61,7 @@ def test_in_turn_answer_keeps_prompt_disabled_until_idle():
         app = _app()
         async with app.run_test(size=(100, 32)) as pilot:
             app._busy = True
-            app._begin_permission("Allow?", Future())
+            app._begin_permission("Allow?", [], Future())
             app._answer_permission("yes")
             await pilot.pause()
             assert app.query_one("#prompt").disabled, "回合仍在跑：先别放开输入"
@@ -81,7 +81,7 @@ def test_turn_end_resolves_pending_ask_so_asker_is_not_left_blocked():
         async with app.run_test(size=(100, 32)):
             app._busy = True
             perm_future: Future[str] = Future()
-            app._begin_permission("Allow?", perm_future)
+            app._begin_permission("Allow?", [], perm_future)
             app._set_idle()
             assert perm_future.done(), "回合收尾必须作答（拒绝），否则等待线程永久阻塞"
             assert perm_future.result(timeout=0) == "no"

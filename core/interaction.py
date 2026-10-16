@@ -7,7 +7,7 @@ headless 场景使用默认策略：权限默认拒绝，澄清默认取消，�
 from contextlib import nullcontext
 from typing import Any, Callable, ContextManager
 
-_ask_permission: Callable[[str], str] | None = None
+_ask_permission: Callable[[str, list[str]], str] | None = None
 _ask_clarify: Callable[[list[str], bool], str] | None = None
 _stream_assistant_response: Callable[[str], None] | None = None
 _render_tool_call: Callable[[str, Any], None] | None = None
@@ -19,7 +19,7 @@ _render_working_status: Callable[[str], ContextManager] | None = None
 _render_scope: Callable[[], ContextManager] | None = None
 
 
-def register_interaction(*, ask_permission: Callable[[str], str] | None = None,
+def register_interaction(*, ask_permission: Callable[[str, list[str]], str] | None = None,
                          ask_clarify: Callable[[list[str], bool], str] | None = None) -> None:
     """TUI 注入交互实现；只覆盖传入的项，重复注册幂等。"""
     global _ask_permission, _ask_clarify
@@ -61,11 +61,12 @@ def register_render(
         _render_scope = render_scope
 
 
-def ask_permission(message: str) -> str:
-    """权限确认：返回 "yes"/"no"；未接入 UI 时默认拒绝。"""
+def ask_permission(message: str, details: list[str]) -> str:
+    """权限确认：message 为确认文本，details 为触发数据段落（越界路径清单、
+    `command: ...` / `path: ...` 等）；返回 "yes"/"no"；未接入 UI 时默认拒绝。"""
     if _ask_permission is None:
         return "no"
-    return _ask_permission(message)
+    return _ask_permission(message, details)
 
 
 def ask_clarify(questions: list[str], multi_select: bool = False) -> str:

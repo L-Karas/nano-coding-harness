@@ -250,9 +250,10 @@ def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: s
         return ""
 
 
-def ask_permission(message: str) -> str:
-    """渲染权限确认并阻塞等待回答（仅非 App 线程，如 handle_query 内）：返回 "yes"/"no"。"""
-    return _ask_blocking(lambda app, future: app._begin_permission(message, future),
+def ask_permission(message: str, details: list[str]) -> str:
+    """渲染权限确认并阻塞等待回答（仅非 App 线程，如 handle_query 内）：返回 "yes"/"no"。
+    message 为确认文本，details 为触发数据段落（`command: ...` / `path: ...` 等）。"""
+    return _ask_blocking(lambda app, future: app._begin_permission(message, details, future),
                          "ask_permission must be called from a non-App thread (e.g. inside handle_query)")
 
 

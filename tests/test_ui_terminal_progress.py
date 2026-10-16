@@ -232,7 +232,7 @@ def test_permission_pauses_progress_and_answer_restores_working(monkeypatch):
         app = ChatApp(handle_query=lambda _query: None)
         async with app.run_test():
             app._busy = True  # 前景回合仍在跑
-            app._begin_permission("Allow?", Future())
+            app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]  # 等待用户：黄色暂停
             app._answer_permission("yes")
             assert _progress_seqs(writes) == [_WAITING, _WORKING]
@@ -248,7 +248,7 @@ def test_permission_answered_outside_turn_clears_progress(monkeypatch):
     async def main() -> None:
         app = ChatApp(handle_query=lambda _query: None)
         async with app.run_test():
-            app._begin_permission("Allow?", Future())
+            app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]
             app._answer_permission("yes")
             assert _progress_seqs(writes) == [_WAITING, _CLEAR]
@@ -319,7 +319,7 @@ def test_turn_end_clears_pending_waiting_progress(monkeypatch):
         app = ChatApp(handle_query=lambda _query: None, runtime_state=RuntimeState())
         async with app.run_test():
             app._busy = True
-            app._begin_permission("Allow?", Future())
+            app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]
             app._set_idle()  # 回合结束：_reset_interactions 先清挂起，再重估进度
             assert _progress_seqs(writes) == [_WAITING, _CLEAR]
@@ -337,7 +337,7 @@ def test_permission_answer_resumes_running_while_background_active(monkeypatch):
         app = ChatApp(handle_query=lambda _query: None, runtime_state=state)
         async with app.run_test():
             state.register_background("bg-1", "terminal(pytest)")
-            app._begin_permission("Allow?", Future())
+            app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]
             app._progress_sync()  # tick 到点：等待优先，不覆盖黄色
             assert _progress_seqs(writes) == [_WAITING]

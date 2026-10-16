@@ -11,8 +11,25 @@ from rich.text import Text
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
+from core.tui.render import _dim_body
 from core.tui.theme import _PLACEHOLDER
 from core.tui.widgets import ClarifyConfirmed, _ClarifyList
+
+
+_CONFIRM_STYLE = "bold #fef3c7"  # 权限确认文本（原因 / 冲突标题）
+
+
+def _permission_body(message: str, details: list[str]) -> Text:
+    """确认卡正文：确认文本保持 _CONFIRM_STYLE；details 为触发数据段落，按工具卡正文
+    （_dim_body，dim #e2e8f0）逐段展示，段间空一行。"""
+    body = Text()
+    body.append(message, style=_CONFIRM_STYLE)
+    for detail in details:
+        if not detail:
+            continue
+        body.append("\n\n")
+        body.append_text(_dim_body(detail))
+    return body
 
 
 class _DockInteractions:
@@ -20,10 +37,11 @@ class _DockInteractions:
 
     # ---------- 权限确认 ----------
 
-    def _begin_permission(self, message: str, future: Future[str]) -> None:
-        """渲染确认卡 + 停靠区 yes/no 列表并聚焦（Enter 确认高亮项 / Esc 拒绝）。"""
+    def _begin_permission(self, message: str, details: list[str], future: Future[str]) -> None:
+        """渲染确认卡（确认文本 + 触发数据段落两种文本样式）+ 停靠区 yes/no 列表并聚焦
+        （Enter 确认高亮项 / Esc 拒绝）。"""
         self._perm_future = future
-        self._add_card("perm", Text(message, style="bold #fef3c7"))
+        self._add_card("perm", _permission_body(message, details))
         self._perm_pending = True
         self._prompt().disabled = True
         perm = self.query_one("#perm-list", OptionList)
