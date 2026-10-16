@@ -196,6 +196,9 @@ async def run(app, pilot) -> None:
                "/login (logout)    Register/unregister custom provider or model",
                "/exit (quit)       Quit the app"], \
         "候选行应含指令简短说明且说明列左端对齐"
+    # 候选区最多同屏 6 行（max-height 按含上下边框的外框算）
+    assert suggest.content_size.height == 6, \
+        f"候选区应最多同屏 6 行: {suggest.content_size.height}"
     await pilot.press("down")
     await pilot.press("tab")
     assert prompt.text == "/sessions", f"Tab 接受高亮失败: {prompt.text!r}"

@@ -154,7 +154,7 @@ Toast, Toast:ansi { background: #1e293b; }
     background: transparent;   /* OptionList 默认 $surface */
     border: round #475569;
 }
-#cmd-suggest  { max-height: 6; }    /* / 指令候选最多 6 行 */
+#cmd-suggest  { max-height: 8; }    /* / 指令候选最多 6 行（外框含上下边框 2 行） */
 #file-suggest { max-height: 10; }   /* @ 文件候选最多 10 行 */
 
 /* 权限确认 yes/no：琥珀描边（同 perm 卡），默认隐藏，请求时显示并聚焦 */
