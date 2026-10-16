@@ -29,9 +29,10 @@ _FILE_TOOLS = ("read_file", "write_file", "edit_file")
 
 @dataclass
 class Rules:
-    """规则文件解析结果：terminal 按文件顺序保存，命中的后者覆盖前者。"""
+    """规则文件解析结果：命令 / path 规则按文件顺序保存，external_directory 四工具共用。"""
 
     terminal: list[tuple[re.Pattern, str]] = field(default_factory=list)
+    paths: dict[str, list[tuple[re.Pattern, str]]] = field(default_factory=dict)
     external_directory: dict[str, str] = field(default_factory=dict)
 
 
@@ -78,28 +79,20 @@ def _parse_sections(data: dict) -> Rules:
         if tool_name == "terminal":
             _parse_terminal_section(section, rules)
         elif tool_name in _FILE_TOOLS:
-            _parse_external_directory_section(tool_name, section, rules)
+            _parse_file_tool_section(tool_name, section, rules)
         else:
             _LOGGER.warning(f"[Permission] 未知工具键，忽略: {tool_name}")
     return rules
 
 
-def _parse_terminal_section(section: object, rules: Rules) -> None:
-    if not isinstance(section, dict):
-        _LOGGER.error("[Permission] terminal 段必须是对象，忽略该段")
-        return
-    for key in section:
-        if key != "command":
-            _LOGGER.warning(f"[Permission] terminal 段未知字段，忽略: {key}")
-    commands = section.get("command")
-    if commands is None:
-        _LOGGER.warning("[Permission] terminal 段缺少 command，未产出任何规则")
-        return
-    if not isinstance(commands, dict):
-        _LOGGER.error("[Permission] terminal.command 必须是对象，忽略该段")
-        return
+def _parse_pattern_table(label: str, table: object,
+                         target: list[tuple[re.Pattern, str]]) -> int:
+    """解析 `{正则: action}` 表并逐条校验，返回成功条目数；非法条目只丢自身。"""
+    if not isinstance(table, dict):
+        _LOGGER.error(f"[Permission] {label} 必须是对象，忽略该段")
+        return 0
     added = 0
-    for pattern_text, action in commands.items():
+    for pattern_text, action in table.items():
         if action not in ACTIONS:
             _LOGGER.error(f"[Permission] 非法 action，忽略规则 {pattern_text!r}: {action!r}")
             continue
@@ -108,26 +101,53 @@ def _parse_terminal_section(section: object, rules: Rules) -> None:
         except re.error:
             _LOGGER.error(f"[Permission] 非法正则，忽略规则: {pattern_text!r}")
             continue
-        rules.terminal.append((compiled, action))
+        target.append((compiled, action))
         added += 1
-    if added == 0:
-        _LOGGER.warning("[Permission] terminal.command 未产出任何有效规则")
+    return added
 
 
-def _parse_external_directory_section(tool_name: str, section: object, rules: Rules) -> None:
+def _parse_terminal_section(section: object, rules: Rules) -> None:
+    if not isinstance(section, dict):
+        _LOGGER.error("[Permission] terminal 段必须是对象，忽略该段")
+        return
+    for key in section:
+        if key not in ("command", "external_directory"):
+            _LOGGER.warning(f"[Permission] terminal 段未知字段，忽略: {key}")
+    produced = 0
+    if "external_directory" in section:
+        action = section["external_directory"]
+        if action in ACTIONS:
+            rules.external_directory["terminal"] = action
+            produced += 1
+        else:
+            _LOGGER.error(
+                f"[Permission] 非法 action，忽略 terminal.external_directory: {action!r}")
+    if "command" in section:
+        produced += _parse_pattern_table("terminal.command", section["command"], rules.terminal)
+    if produced == 0:
+        _LOGGER.warning("[Permission] terminal 段未产出任何有效规则")
+
+
+def _parse_file_tool_section(tool_name: str, section: object, rules: Rules) -> None:
     if not isinstance(section, dict):
         _LOGGER.error(f"[Permission] {tool_name} 段必须是对象，忽略该段")
         return
-    for key, action in section.items():
-        if key != "external_directory":
+    for key in section:
+        if key not in ("external_directory", "path"):
             _LOGGER.warning(f"[Permission] {tool_name} 段未知字段，忽略: {key}")
-            continue
-        if action not in ACTIONS:
+    produced = 0
+    if "external_directory" in section:
+        action = section["external_directory"]
+        if action in ACTIONS:
+            rules.external_directory[tool_name] = action
+            produced += 1
+        else:
             _LOGGER.error(
                 f"[Permission] 非法 action，忽略 {tool_name}.external_directory: {action!r}")
-            continue
-        rules.external_directory[tool_name] = action
-    if tool_name not in rules.external_directory:
+    if "path" in section:
+        produced += _parse_pattern_table(
+            f"{tool_name}.path", section["path"], rules.paths.setdefault(tool_name, []))
+    if produced == 0:
         _LOGGER.warning(f"[Permission] {tool_name} 段未产出任何有效规则")
 
 

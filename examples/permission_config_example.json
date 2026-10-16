@@ -1,5 +1,6 @@
 {
   "terminal": {
+    "external_directory": "allow",
     "command": {
       "pattern 1": "allow",
       "pattern 2": "deny",
@@ -7,12 +8,27 @@
     }
   },
   "write_file": {
-    "external_directory": "allow"
+    "external_directory": "allow",
+    "path": {
+      "pattern 1": "allow",
+      "pattern 2": "deny",
+      "pattern 3": "ask"
+    }
   },
   "edit_file": {
-    "external_directory": "deny"
+    "external_directory": "deny",
+    "path": {
+      "pattern 1": "allow",
+      "pattern 2": "deny",
+      "pattern 3": "ask"
+    }
   },
   "read_file": {
-    "external_directory": "ask"
+    "external_directory": "ask",
+    "path": {
+      "pattern 1": "allow",
+      "pattern 2": "deny",
+      "pattern 3": "ask"
+    }
   }
 }

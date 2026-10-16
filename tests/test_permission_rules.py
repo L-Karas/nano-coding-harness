@@ -123,3 +123,42 @@ def test_invalid_section_types_drop_section_with_error(tmp_path, monkeypatch):
     assert external_directory_action(rules, "read_file") is None
     assert external_directory_action(rules, "write_file") == "deny"
     assert logger.error.call_count == 2
+
+
+def test_terminal_external_directory_parsed(tmp_path):
+    rules = load_rules(_write(tmp_path, {"terminal": {"external_directory": "allow"}}))
+    assert external_directory_action(rules, "terminal") == "allow"
+
+
+def test_terminal_with_only_external_directory_does_not_warn(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    load_rules(_write(tmp_path, {"terminal": {"external_directory": "allow"}}))
+    assert not logger.warning.called
+
+
+def test_file_tool_path_rules_parsed_in_order(tmp_path):
+    rules = load_rules(_write(tmp_path, {"read_file": {"path": {"^\\.env$": "deny", "secret": "allow"}}}))
+    assert [(pattern.pattern, action) for pattern, action in rules.paths["read_file"]] == [
+        ("^\\.env$", "deny"), ("secret", "allow")]
+
+
+def test_bad_path_entry_drops_only_that_entry(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    rules = load_rules(_write(tmp_path, {"read_file": {"path": {"(": "deny", "^\\.env$": "maybe", "secret": "allow"}}}))
+    assert [(pattern.pattern, action) for pattern, action in rules.paths["read_file"]] == [("secret", "allow")]
+    assert logger.error.call_count == 2
+
+
+def test_path_non_dict_drops_table_keeps_external_directory(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    rules = load_rules(_write(tmp_path, {"read_file": {"external_directory": "ask", "path": "nope"}}))
+    assert external_directory_action(rules, "read_file") == "ask"
+    assert not rules.paths.get("read_file")
+    assert logger.error.called
+
+
+def test_file_tool_unknown_field_warns_rule_still_applies(tmp_path, monkeypatch):
+    logger = MagicMock(); monkeypatch.setattr(permission, "_LOGGER", logger)
+    rules = load_rules(_write(tmp_path, {"read_file": {"unknown": 1, "path": {"^a": "allow"}}}))
+    assert rules.paths["read_file"][0][0].pattern == "^a"
+    assert logger.warning.called
