@@ -5,9 +5,12 @@ from unittest.mock import MagicMock
 
 from core.extension.builtin import permission
 from core.extension.builtin.permission import (
+    _relative_path,
     external_directory_action,
     load_rules,
-    match_terminal,
+    match_command,
+    match_path,
+    resolve_matches,
 )
 
 
@@ -17,15 +20,15 @@ def _write(tmp_path, payload):
     return path
 
 
-def test_parses_rules_in_file_order_last_match_wins(tmp_path):
-    rules = load_rules(_write(tmp_path, {"terminal": {"command": {"^git": "allow", "force": "deny"}}}))
-    assert match_terminal(rules, "git push --force") == ("deny", "force")
+def test_match_command_returns_all_hits_in_file_order(tmp_path):
+    rules = load_rules(_write(tmp_path, {"terminal": {"command": {"^git": "allow", "force": "deny", "^git push": "ask"}}}))
+    assert match_command(rules, "git push --force") == [("allow", "^git"), ("deny", "force"), ("ask", "^git push")]
 
 
 def test_missing_file_returns_empty_rules(tmp_path):
     rules = load_rules(tmp_path / "none.json")
     assert rules.terminal == [] and rules.external_directory == {}
-    assert match_terminal(rules, "ls") is None
+    assert match_command(rules, "ls") == []
 
 
 def test_invalid_json_returns_empty_rules_and_logs_error(tmp_path, monkeypatch):
@@ -44,7 +47,7 @@ def test_bad_regex_and_bad_action_drop_only_that_entry(tmp_path, monkeypatch):
 
 def test_matching_is_case_insensitive(tmp_path):
     rules = load_rules(_write(tmp_path, {"terminal": {"command": {"SUDO": "deny"}}}))
-    assert match_terminal(rules, "sudo ls") == ("deny", "SUDO")
+    assert match_command(rules, "sudo ls") == [("deny", "SUDO")]
 
 
 def test_external_directory_per_tool(tmp_path):
@@ -162,3 +165,42 @@ def test_file_tool_unknown_field_warns_rule_still_applies(tmp_path, monkeypatch)
     rules = load_rules(_write(tmp_path, {"read_file": {"unknown": 1, "path": {"^a": "allow"}}}))
     assert rules.paths["read_file"][0][0].pattern == "^a"
     assert logger.warning.called
+
+
+def test_match_path_returns_all_hits_in_file_order(tmp_path):
+    rules = load_rules(_write(tmp_path, {"read_file": {"path": {"\\.env": "deny", "^src/": "allow"}}}))
+    assert match_path(rules, "read_file", "src/.env") == [("deny", "\\.env"), ("allow", "^src/")]
+
+
+def test_match_path_is_case_insensitive(tmp_path):
+    rules = load_rules(_write(tmp_path, {"read_file": {"path": {"SECRET": "deny"}}}))
+    assert match_path(rules, "read_file", "Secret.txt") == [("deny", "SECRET")]
+
+
+def test_resolve_matches_severity_and_last_of_same_action():
+    assert resolve_matches([]) is None
+    assert resolve_matches([("allow", "a"), ("deny", "d")]) == ("deny", "d")
+    assert resolve_matches([("deny", "d"), ("allow", "a")]) == ("deny", "d")
+    assert resolve_matches([("allow", "a"), ("ask", "k")]) == ("ask", "k")
+    assert resolve_matches([("allow", "a"), ("ask", "k"), ("deny", "d")]) == ("deny", "d")
+    assert resolve_matches([("ask", "k1"), ("ask", "k2")]) == ("ask", "k2")
+
+
+def test_relative_path_inside_outside_and_dot(tmp_path):
+    workdir = tmp_path / "proj"
+    workdir.mkdir()
+    assert _relative_path((workdir / "src" / "a.py").resolve(), workdir) == "src/a.py"
+    assert _relative_path((tmp_path / "x.txt").resolve(), workdir) == "../x.txt"
+    assert _relative_path(workdir.resolve(), workdir) == "."
+
+
+def test_relative_path_cross_drive_falls_back_to_absolute(tmp_path, monkeypatch):
+    workdir = tmp_path / "proj"
+    workdir.mkdir()
+    resolved = (tmp_path / "other" / "x.txt").resolve()
+
+    def boom(path, start):
+        raise ValueError("path is on mount 'D:', start on mount 'E:'")
+
+    monkeypatch.setattr(permission.os.path, "relpath", boom)
+    assert _relative_path(resolved, workdir) == resolved.as_posix()

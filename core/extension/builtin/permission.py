@@ -58,18 +58,32 @@ def load_rules(path: Path) -> Rules:
     return _parse_sections(data)
 
 
-def match_terminal(rules: Rules, command: str) -> tuple[str, str] | None:
-    """按文件顺序返回最后一个命中命令的 (action, 正则原文)；无命中返回 None。"""
-    # todo: 多条规则命中，是否应只保留最后命中的规则
-    matched = None
-    for pattern, action in rules.terminal:
-        if pattern.search(command):
-            matched = (action, pattern.pattern)
-    return matched
+def match_command(rules: Rules, command: str) -> list[tuple[str, str]]:
+    """按文件顺序返回命令规则的全部命中 (action, 正则原文)。"""
+    return [(action, pattern.pattern) for pattern, action in rules.terminal
+            if pattern.search(command)]
+
+
+def match_path(rules: Rules, tool_name: str, relative: str) -> list[tuple[str, str]]:
+    """按文件顺序返回该工具 path 规则的全部命中 (action, 正则原文)。"""
+    return [(action, pattern.pattern) for pattern, action in rules.paths.get(tool_name, [])
+            if pattern.search(relative)]
+
+
+_SEVERITY = {"deny": 0, "ask": 1, "allow": 2}
+
+
+def resolve_matches(matches: list[tuple[str, str]]) -> tuple[str, str] | None:
+    """deny > ask > allow；同 severity 取列表中最后一条；空列表返回 None。"""
+    decided = None
+    for match in matches:
+        if decided is None or _SEVERITY[match[0]] <= _SEVERITY[decided[0]]:
+            decided = match
+    return decided
 
 
 def external_directory_action(rules: Rules, tool_name: str) -> str | None:
-    """返回该文件工具的越界目录策略；未配置或工具未覆盖时返回 None。"""
+    """返回该工具的越界目录策略；未配置或工具未覆盖时返回 None。"""
     return rules.external_directory.get(tool_name)
 
 
@@ -215,6 +229,14 @@ def _is_outside_workdir(path: str, workdir: Path) -> bool:
     return not (workdir / path).resolve().is_relative_to(workdir)
 
 
+def _relative_path(resolved: Path, workdir: Path) -> str:
+    """path 规则的匹配串：工作区相对 POSIX 路径；跨盘符没有相对形式，退化为绝对路径。"""
+    try:
+        return Path(os.path.relpath(resolved, workdir)).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
 def _outside_paths(command: str, workdir: Path) -> list[str]:
     """命令中显式引用、且解析到调用方工作目录之外的路径（去重、保持出现顺序）。"""
     outside = []
@@ -246,22 +268,33 @@ def _call_desc(tool_name: str, args: dict) -> str:
     return f"{tool_name}: {str(args)}"
 
 
+def _rule_decision(matches: list[tuple[str, str]]) -> Decision | None:
+    """把全部命中按 severity 收敛为一票；无命中返回 None。"""
+    decided = resolve_matches(matches)
+    if decided is None:
+        return None
+    return Decision(action=decided[0], reason=decided[1], source="rule")
+
+
 def _rule_vote(rules: Rules, ctx: BeforeToolContext) -> Decision | None:
-    """规则层每层最多一票；文件工具仅在路径越过调用方工作目录且配置了 external_directory 时投票。"""
+    """规则层每层最多一票：全部命中按 deny > ask > allow 收敛；
+    文件工具 path 规则按工作区相对路径匹配，external_directory 仅在路径越界时参与。"""
     tool_name, args = ctx.tool_name, ctx.args
     if tool_name == "terminal":
-        matched = match_terminal(rules, args.get("command", ""))
-        if matched is None:
-            return None
-        action, pattern_text = matched
-        return Decision(action=action, reason=pattern_text, source="rule")
+        command = args.get("command", "")
+        matches = match_command(rules, command)
+        action = external_directory_action(rules, "terminal")
+        if action is not None and _outside_paths(command, _workdir(ctx)):
+            matches.append((action, "terminal.external_directory"))
+        return _rule_decision(matches)
     if tool_name in _FILE_TOOLS:
-        if not _is_outside_workdir(args.get("path", ""), _workdir(ctx)):
-            return None
+        workdir = _workdir(ctx)
+        resolved = (workdir / args.get("path", "")).resolve()
+        matches = match_path(rules, tool_name, _relative_path(resolved, workdir))
         action = external_directory_action(rules, tool_name)
-        if action is None:
-            return None
-        return Decision(action=action, reason=f"{tool_name}.external_directory", source="rule")
+        if action is not None and not resolved.is_relative_to(workdir):
+            matches.append((action, f"{tool_name}.external_directory"))
+        return _rule_decision(matches)
     return None
 
 

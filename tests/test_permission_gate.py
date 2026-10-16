@@ -602,5 +602,122 @@ def test_non_json_serializable_args_use_str_fallback():
     assert ctx.block_reason == "[Extension blocked] no"
 
 
+def test_command_rule_severity_deny_beats_later_allow():
+    gate = build_gate(Rules(terminal=[(re.compile("^git"), "deny"), (re.compile("force"), "allow")]))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "git push --force"})
+    gate(ctx)
+    assert ctx.block_reason == "Permission denied by rule: ^git"
+
+
+def test_path_rule_deny_blocks_inside_workdir():
+    gate = build_gate(Rules(paths={"read_file": [(re.compile(r"\.env$"), "deny")]}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": "config/.env"})
+    gate(ctx)
+    assert ctx.block_reason == r"Permission denied by rule: \.env$"
+
+
+def test_path_rule_allow_outside_skips_prompt(monkeypatch):
+    _no_prompt(monkeypatch)
+    outside = str(Path.cwd().parent / "shared" / "x.txt")
+    gate = build_gate(Rules(paths={"read_file": [(re.compile(r"^\.\./shared/"), "allow")]}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": outside})
+    gate(ctx)
+    assert not ctx.blocked
+
+
+def test_path_rule_ask_prompts_with_pattern(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "n")
+    gate = build_gate(Rules(paths={"write_file": [(re.compile(r"^dist/"), "ask")]}))
+    ctx = BeforeToolContext(tool_name="write_file", args={"path": "dist/bundle.js"})
+    gate(ctx)
+    assert cards == ["^dist/"]
+    assert ctx.block_reason == "Permission denied by user"
+
+
+def test_external_deny_beats_path_allow():
+    outside = str(Path.cwd().parent / "shared" / "x.txt")
+    gate = build_gate(Rules(
+        paths={"read_file": [(re.compile(r"^\.\./shared/"), "allow")]},
+        external_directory={"read_file": "deny"}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": outside})
+    gate(ctx)
+    assert ctx.block_reason == "Permission denied by rule: read_file.external_directory"
+
+
+def test_external_allow_loses_to_path_deny():
+    outside = str(Path.cwd().parent / "shared" / "x.txt")
+    gate = build_gate(Rules(
+        paths={"read_file": [(re.compile(r"^\.\./"), "deny")]},
+        external_directory={"read_file": "allow"}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": outside})
+    gate(ctx)
+    assert ctx.block_reason == r"Permission denied by rule: ^\.\./"
+
+
+def test_terminal_external_directory_allow_skips_outside_prompt(monkeypatch):
+    _no_prompt(monkeypatch)
+    gate = build_gate(Rules(external_directory={"terminal": "allow"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
+    gate(ctx)
+    assert not ctx.blocked
+
+
+def test_terminal_external_directory_allow_skips_destructive_prompt(monkeypatch):
+    # 决策 A：external allow 是规则票，整层跳过默认层（含 destructive 询问）
+    _no_prompt(monkeypatch)
+    gate = build_gate(Rules(external_directory={"terminal": "allow"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm ../old.txt"})
+    gate(ctx)
+    assert not ctx.blocked
+
+
+def test_terminal_external_directory_deny_blocks():
+    gate = build_gate(Rules(external_directory={"terminal": "deny"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
+    gate(ctx)
+    assert ctx.block_reason == "Permission denied by rule: terminal.external_directory"
+
+
+def test_terminal_external_directory_ask_prompts(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append((q, details)) or "n")
+    gate = build_gate(Rules(external_directory={"terminal": "ask"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
+    gate(ctx)
+    assert cards == [("terminal.external_directory", ["command: cat ../secret.txt"])]
+
+
+def test_terminal_external_directory_ignores_inside_command(monkeypatch):
+    _no_prompt(monkeypatch)
+    gate = build_gate(Rules(external_directory={"terminal": "deny"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ./notes.txt"})
+    gate(ctx)
+    assert not ctx.blocked
+
+
+def test_command_ask_beats_external_allow(monkeypatch):
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
+    gate = build_gate(Rules(terminal=[(re.compile("^rm "), "ask")], external_directory={"terminal": "allow"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm ../old.txt"})
+    gate(ctx)
+    assert cards == ["^rm "]
+    assert not ctx.blocked
+
+
+def test_path_rule_matches_resolved_symlink_target(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("x", encoding="utf-8")
+    workdir = tmp_path / "proj"
+    workdir.mkdir()
+    _link_dir(workdir / "link", outside)
+    gate = build_gate(Rules(paths={"read_file": [(re.compile(r"^\.\./outside/"), "deny")]}))
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": "link/secret.txt"}, cwd=workdir)
+    gate(ctx)
+    assert ctx.block_reason == r"Permission denied by rule: ^\.\./outside/"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
