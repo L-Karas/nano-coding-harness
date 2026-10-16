@@ -3,7 +3,8 @@
 规则只覆盖 terminal 与三个文件工具（read_file / write_file / edit_file）；
 文件整体非法时不生效并记 ERROR，单条规则非法只丢弃自身，未知键忽略并记 WARN。
 权限门按「地板 → 规则/扩展表态 → 默认层」裁决；地板与默认层迁移自旧 hook 权限门，
-行为与文案不变。
+此后收窄了误伤：清根只匹配根目录本身、提权/关机等词只在命令位命中、匹配前归一
+空白字符，裁决顺序与结果文案不变。模式表与匹配在 core.extension.builtin.permission_patterns。
 """
 import json
 import os
@@ -15,6 +16,7 @@ from typing import Callable
 
 from core.config import WORKDIR
 from core.extension.api import ExtensionAPI
+from core.extension.builtin.permission_patterns import floor_denial, is_destructive
 from core.extension.context import BeforeToolContext, Decision
 from core.extension.protocol import ACTIONS
 from core.interaction import ask_permission
@@ -128,46 +130,6 @@ def _parse_external_directory_section(tool_name: str, section: object, rules: Ru
     if tool_name not in rules.external_directory:
         _LOGGER.warning(f"[Permission] {tool_name} 段未产出任何有效规则")
 
-
-# ---------- 地板与默认层（迁移自旧 hook 权限门，行为与文案不变） ----------
-
-# 硬拒绝：不可逆的系统级操作，直接拒绝、不给确认机会。
-DENY_LIST = [
-    "rm -rf /", "rm -fr /", "rm -rf /*",  # 清根
-    "sudo", "doas",  # 提权
-    "shutdown", "reboot", "poweroff",  # 关机/重启
-    "mkfs", "wipefs",  # 格式化/抹除签名
-    "dd if=", "dd of=",  # dd 读写
-    "> /dev/sd", "> /dev/hd", "> /dev/nvme", "> /dev/vd",  # 覆写裸设备
-    ":(){",  # fork bomb
-    "diskpart", "format c:", "clear-disk",  # Windows 磁盘操作
-]
-
-# 危险命令：弹出确认卡，用户确认后才放行。
-DESTRUCTIVE = [
-    "rm ", "rmdir ", "del ", "rd ", "remove-item", "shred ", "truncate -s", "mkswap",
-    "> /etc/", "> /usr/", "> /var/", "> /bin/", "> /sbin/", "> /boot/", "> /lib/", "> /lib64/",
-    "chmod 777", "chmod -R 777", "chown -R", "chgrp -R", "takeown", "reg delete",
-    "fdisk", "parted",
-    "kill -9", "kill -KILL", "killall", "pkill", "taskkill /f",
-    "git reset --hard", "git clean -f", "git push --force", "git push -f",
-    "git restore .", "git checkout .", "git checkout -- ", "-delete",
-    "crontab -r", "iptables -F", "ufw disable", "nft flush",
-    "| sh", "|sh", "| bash", "|bash", "| zsh", "|zsh", "| python", "|python", "| iex", "|iex",
-    "/dev/tcp/",  # 反弹 shell
-]
-
-
-def _compile_pattern(pattern: str) -> re.Pattern:
-    """大小写不敏感的子串匹配；词形态的首尾加单词边界，'sudo' 不命中 'sudoku'、'| sh' 不命中 '| shasum'"""
-    left = r"(?<!\w)" if pattern[0].isalnum() else ""
-    right = r"(?!\w)" if pattern[-1].isalnum() else ""
-    return re.compile(left + re.escape(pattern) + right, re.IGNORECASE)
-
-
-# 模式表静态不变，导入时编译一次；地板项保留原文用于错误文案
-FLOOR_PATTERNS = [(_compile_pattern(pattern), pattern) for pattern in DENY_LIST]
-DESTRUCTIVE_PATTERNS = [_compile_pattern(pattern) for pattern in DESTRUCTIVE]
 
 # 重定向前缀：>/tmp/f、2>>log、&>out、<in
 _REDIRECT_PREFIX_RE = re.compile(r"^(?:&|[0-9])?(?:>>?|<)\s*")
@@ -314,7 +276,7 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
     tool_name, args = ctx.tool_name, ctx.args
     if tool_name == "terminal":
         command = args.get("command", "")
-        destructive = any(regex.search(command) for regex in DESTRUCTIVE_PATTERNS)
+        destructive = is_destructive(command)
         # todo: 优化 command 路径判断
         outside = _outside_paths(command, _workdir(ctx))
         if not destructive and not outside:
@@ -348,12 +310,11 @@ def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
         args = ctx.args
 
         if tool_name == "terminal":
-            command = args.get("command", "")
-            for regex, pattern in FLOOR_PATTERNS:
-                if regex.search(command):
-                    ctx.blocked = True
-                    ctx.block_reason = f"Permission denied: '{pattern}' is on the deny list."
-                    return
+            denial = floor_denial(args.get("command", ""))
+            if denial is not None:
+                ctx.blocked = True
+                ctx.block_reason = f"Permission denied: '{denial}' is on the deny list."
+                return
 
         rule_vote = _rule_vote(rules, ctx)
         votes = ([rule_vote] if rule_vote else []) + list(ctx.decisions)

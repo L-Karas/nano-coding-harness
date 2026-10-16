@@ -3,17 +3,27 @@
 每次工具调用先由**内置权限扩展**在 `before_tool` 的 `gate` 阶段统一裁决，再决定是否执行。
 判定按三层依次进行：
 
-1. **地板（floor）**：仅 `terminal`。硬编码的 `DENY_LIST`（清根删除、提权 `sudo`/`doas`、
-   关机重启、`mkfs`/`wipefs`、`dd` 与裸设备覆写、fork bomb、Windows `diskpart`/`format c:` 等）
-   命中即拒绝：不询问、不可被规则或扩展票覆盖。匹配大小写不敏感；词条首尾为字母或数字时要求
-   单词边界（`sudo` 不命中 `sudoku`）。
+1. **地板（floor）**：仅 `terminal`。硬编码规则分两类（模式表在 `permission_patterns.py`），
+   命中即拒绝，不询问、不可被规则或扩展票覆盖；匹配大小写不敏感，匹配前把 tab 与连续空格
+   归一为单空格。
+   - `DENY_LIST`：灾难子串，命令任意位置命中即拒绝。清根只匹配根目录本身
+     （`rm -rf /tmp/foo` 降为确认卡）；此外包括 `--no-preserve-root`、`> /dev/<块设备>`、
+     结构匹配的 fork bomb。
+   - `DENY_COMMAND_LIST`：危险词，只在命令位命中（行首或 `;` `&&` `||` `|` `(` `{` 换行、
+     `$(`、反引号之后，允许前置 `VAR=x` 与命令路径前缀，如 `/usr/bin/sudo`）：提权
+     `sudo`/`doas`、关机重启（含 `systemctl reboot|poweroff|halt`）、`mkfs`/`wipefs`、
+     `dd of=/dev/<块设备>` 写裸设备、Windows `diskpart`/`format <盘符>:`/`clear-disk`。
+     因此 `echo sudo`、`man reboot` 不再被硬拒；wrapper 调用（`env`/`nice`/`xargs sudo`）
+     与 `sh -c 'sudo ...'` 内层这类非命令位写法不再单独覆盖（灾难后果仍由清根等子串兜底）。
+   子串条目首尾为字母或数字时要求单词边界（`sudo` 不命中 `sudoku`）。
 2. **用户表态（votes）**：用户规则文件（规则层内部已按「后者覆盖前者」收敛为最多一票）+
    代码扩展的决定票（每个回调最多一票）。动作全部相同 → 采用该动作；动作不一致
    （规则 vs 扩展、扩展 vs 扩展）→ **弹确认卡由用户当场决定**，不静默选边。
 3. **默认层（defaults）**：没有任何用户表态时生效。`terminal` 命中危险命令模式（删除类、
-   系统目录重定向、递归 chmod/chown、强杀进程、`git reset --hard`/强推、`crontab -r`、
-   `curl | sh` 等管道执行）或命令中显式引用了工作目录之外的路径 → 询问；文件工具路径越界 →
-   询问；否则允许。越界扫描是尽力而为的文本解析：变量拼接、`sh -c` 内层脚本与粘连 flag
+   系统目录重定向（含 `>/etc` 粘连写法）、递归 chmod/chown、世界可写 chmod、强杀进程、
+   `git reset --hard`/`git clean -fd`/强推、`crontab -r`、`curl | sh`/`| python3` 等管道
+   执行、`dd` 等）或命令中显式引用了工作目录之外的路径 → 询问；文件工具路径越界 → 询问；
+   否则允许。越界扫描是尽力而为的文本解析：变量拼接、`sh -c` 内层脚本与粘连 flag
    （`-o/tmp/x`）不覆盖。
 
 越界判定的基准是**调用方工作目录**：即 `BeforeToolContext.cwd`（`ToolContext.cwd`），
@@ -146,6 +156,7 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 
 - 设计契约：[`superpowers/specs/2026-10-13-permission-policy-design.md`](superpowers/specs/2026-10-13-permission-policy-design.md)
 - 实现：[`core/extension/builtin/permission.py`](../core/extension/builtin/permission.py)、
+  [`core/extension/builtin/permission_patterns.py`](../core/extension/builtin/permission_patterns.py)、
   [`core/extension/dispatcher.py`](../core/extension/dispatcher.py)
 - 外部扩展事件与决定票接口：[`extensions.md`](extensions.md)
 - 示例规则：[`examples/permission_config_example.json`](../examples/permission_config_example.json)
