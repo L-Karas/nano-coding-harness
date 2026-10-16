@@ -14,6 +14,7 @@ from openai.types.chat import ChatCompletionMessageToolCall
 
 from core.background_task import should_run_background, start_background_task
 from core.context import to_llm_messages
+from core.diff import DIFF_TOOLS, preview_edit, preview_write
 from core.extension import (
     AfterLLMContext,
     AfterToolContext,
@@ -28,7 +29,6 @@ from core.runtime_context import ToolContext
 from core.streaming import streaming_message
 from core.template import USER_INTERRUPT_PROMPT
 from core.tools import ToolPool, ToolResult
-from core.tools.base_tools.diff import DIFF_TOOLS, preview_edit, preview_write
 
 _LOGGER = get_logger(__name__)
 
@@ -189,6 +189,7 @@ class _PreparedCall:
     tool_call_id: str
     tool_name: str = ""
     tool_args: dict = field(default_factory=dict)
+    # todo: 改为更直白且有辨识性的命名
     final_message: dict | None = None  # 已定型：直接入历史，跳过 after_tool / 渲染 / diff
     outcome: ToolResult | None = None  # 待收尾：走 after_tool / 渲染 / diff
     diff: str = ""

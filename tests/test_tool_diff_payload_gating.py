@@ -8,7 +8,7 @@ import json
 import pytest
 
 import core.agent_step as step_mod
-import core.tools.base_tools.diff as git_module
+import core.diff as diff_module
 from core.agent_step import StepPolicy, StepRenderer, run_agent_step
 from core.runtime_context import ToolContext
 from core.tools import ToolPool
@@ -17,7 +17,7 @@ from core.tools.tool_base import BaseTool
 
 @pytest.fixture
 def ctx(tmp_path, monkeypatch):
-    monkeypatch.setattr(git_module, "WORKDIR", tmp_path)  # preview_* 基于 git 模块的 WORKDIR 解析
+    monkeypatch.setattr(diff_module, "WORKDIR", tmp_path)  # preview_* 基于 diff 模块的 WORKDIR 解析
     (tmp_path / "a.py").write_text("old line\n", encoding="utf-8")
 
     renders = []

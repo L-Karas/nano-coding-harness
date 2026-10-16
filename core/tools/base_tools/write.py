@@ -4,8 +4,8 @@ import tempfile
 import aiofiles
 from pydantic import Field
 
+from core.diff import _resolve, _read_old
 from core.runtime_context import ToolContext
-from core.tools.base_tools.diff import _resolve, _read_old
 from core.tools.tool_base import BaseTool
 
 

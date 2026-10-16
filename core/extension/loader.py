@@ -8,9 +8,9 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import core.extension.dispatcher as dispatcher
 from core.config import EXTENSION_DIR
 from core.extension.api import ExtensionAPI
-import core.extension.dispatcher as dispatcher
 from core.log.log import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -29,6 +29,7 @@ def load_extensions(directory: Path | None = None) -> None:
     if not target.exists():
         return
 
+    # todo: 回调顺序与扩展文件夹名相关，应由用户控制
     for folder in sorted(target.iterdir()):
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
