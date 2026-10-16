@@ -16,9 +16,10 @@
      因此 `echo sudo`、`man reboot` 不再被硬拒；wrapper 调用（`env`/`nice`/`xargs sudo`）
      与 `sh -c 'sudo ...'` 内层这类非命令位写法不再单独覆盖（灾难后果仍由清根等子串兜底）。
    子串条目首尾为字母或数字时要求单词边界（`sudo` 不命中 `sudoku`）。
-2. **用户表态（votes）**：用户规则文件（规则层内部已按「后者覆盖前者」收敛为最多一票）+
-   代码扩展的决定票（每个回调最多一票）。动作全部相同 → 采用该动作；动作不一致
-   （规则 vs 扩展、扩展 vs 扩展）→ **弹确认卡由用户当场决定**，不静默选边。
+2. **用户表态（votes）**：用户规则文件（规则层内部先按「deny > ask > allow，同 severity 取
+   文件内靠后一条」收敛为最多一票）+ 代码扩展的决定票（每个回调最多一票）。动作全部相同 →
+   采用该动作；动作不一致（规则 vs 扩展、扩展 vs 扩展）→ **弹确认卡由用户当场决定**，
+   不静默选边。
 3. **默认层（defaults）**：没有任何用户表态时生效。`terminal` 命中危险命令模式（删除类、
    系统目录重定向（含 `>/etc` 粘连写法）、递归 chmod/chown、世界可写 chmod、强杀进程、
    `git reset --hard`/`git clean -fd`/强推、`crontab -r`、`curl | sh`/`| python3` 等管道
@@ -38,6 +39,7 @@
 | --- | --- |
 | 地板命中（无论规则/扩展投什么票） | 拒绝 |
 | 只有规则命中或只有扩展表态 | 采用该表态 |
+| 同一次调用命中多条规则 | 按 deny > ask > allow；同 severity 取文件内靠后一条 |
 | 规则与扩展动作相同 | 采用该动作 |
 | 规则与扩展动作不同 / 扩展之间动作不同 | 弹确认卡 |
 | 有用户表态且动作一致，默认层持不同动作 | 采用用户表态（默认层不参与） |
@@ -60,13 +62,21 @@
 ```json
 {
   "terminal": {
+    "external_directory": "allow",
     "command": {
       "^git status": "allow",
       "git push --force": "deny",
       "^rm ": "ask"
     }
   },
-  "read_file":  { "external_directory": "allow" },
+  "read_file": {
+    "external_directory": "allow",
+    "path": {
+      "^src/": "allow",
+      "\\.env$": "deny",
+      "^\\.\\./": "ask"
+    }
+  },
   "write_file": { "external_directory": "deny" },
   "edit_file":  { "external_directory": "ask" }
 }
@@ -80,9 +90,21 @@ action 取 `allow` / `ask` / `deny`（允许 / 询问 / 拒绝）。字段结构
 
 - `terminal.command`：键为正则字符串，对命令做 `re.search`（编译带 `IGNORECASE`；可用作用域
   形式 `(?-i:...)` 局部关闭大小写不敏感，如 `(?-i:FOO)` 只匹配大写的 `FOO`）。按 JSON 键顺序
-  逐条匹配，**最后一个命中的键生效**（新引入的规则压过早先的）。
+  收集全部命中。
+- `terminal.external_directory`：仅在命令（经默认层同一套越界扫描）引用了调用方工作目录之外的
+  路径时参与；未配置时行为不变（默认层询问）。
+- 文件工具 `path`：键为正则字符串，对**工作区相对路径**做 `re.search`（同样 `IGNORECASE`）：
+  参数路径先 `resolve()`，再换算成相对调用方工作目录的 POSIX 路径（`./src/a.py` → `src/a.py`，
+  工作区外的 `../secret.txt`；Windows 跨盘符没有相对形式时退化为绝对 POSIX 路径）。
+  目录内与目录外的路径都会匹配；`path` 只对 `read_file` / `write_file` / `edit_file` 生效。
 - 文件工具 `external_directory`：仅在解析后的路径位于调用方工作目录之外时生效（见上文基准定义）；
-  目录内调用与规则无关，直接允许。
+  目录内调用不受它影响（但仍受 `path` 规则影响）。
+- 规则收敛：同一次调用的全部命中（`terminal.command` / 文件工具 `path`，加上越界时的
+  `external_directory`）按 **deny > ask > allow** 取最严；同一 severity 多条命中时取 JSON 中
+  靠后的一条；`external_directory` 命中视为追加在直接规则之后，因此规则层只产出至多一票。
+- 已知后果：`external_directory: allow` 是一张规则票，会跳过该次调用的整个默认层（含破坏性
+  命令询问）；如需保留确认，可用 command `ask` 规则补回（同一 severity 取靠后，且 ask 压 allow）。
+  `external_directory: deny` 不会被同次命中的 `path` allow 压过（deny 优先）。
 - 非法 `action`、非法正则 → 丢弃该条规则并记 ERROR，其余规则照常生效。
 - JSON 整体解析失败或顶层不是对象 → 整个文件不生效（退化为默认层）并记 ERROR。
 - 未知顶层工具键、段内未知字段 → 忽略并记 WARN。
@@ -140,7 +162,7 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 | 来源 | 工具结果 |
 | --- | --- |
 | 地板 | `Permission denied: '<pattern>' is on the deny list.` |
-| 规则裁定拒绝 | `Permission denied by rule: <pattern>`（文件工具为 `<tool>.external_directory`） |
+| 规则裁定拒绝 | `Permission denied by rule: <pattern>`（command / path 规则为 JSON 中的正则原文；`external_directory` 为 `<tool>.external_directory`，`terminal` 同理） |
 | 扩展裁定拒绝 | `[Extension blocked] <reason>` |
 | 用户拒绝（询问或冲突卡被拒） | `Permission denied by user` |
 | 权限门自身异常 | `Permission check failed: <ExceptionName>` |
@@ -157,6 +179,7 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 ## 参考
 
 - 设计契约：[`superpowers/specs/2026-10-13-permission-policy-design.md`](superpowers/specs/2026-10-13-permission-policy-design.md)
+- 规则扩展设计（terminal 外部目录 / 文件工具 path 正则）：[`superpowers/specs/2026-10-16-permission-path-rules-design.md`](superpowers/specs/2026-10-16-permission-path-rules-design.md)
 - 实现：[`core/extension/builtin/permission.py`](../core/extension/builtin/permission.py)、
   [`core/extension/builtin/permission_patterns.py`](../core/extension/builtin/permission_patterns.py)、
   [`core/extension/dispatcher.py`](../core/extension/dispatcher.py)
