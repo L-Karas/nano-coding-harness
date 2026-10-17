@@ -93,7 +93,7 @@ class RegisterProviderScreen(_ArrowNav, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         picker = Vertical(
             _field(Input(placeholder="Provider name", id="reg-provider-name")),
-            _field(Input(placeholder="Base URL (e.g. https://api.example.com/v1)",
+            _field(Input(placeholder="OpenAI-compatible Base URL",
                          id="reg-provider-url")),
             _field(Input(placeholder="API Key (optional, masked)", password=True,
                          id="reg-provider-key")),
