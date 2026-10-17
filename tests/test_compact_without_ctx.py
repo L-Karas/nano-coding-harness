@@ -27,7 +27,7 @@ def test_summarize_history_without_ctx(monkeypatch):
     async def _create(**kwargs):  # 与 AsyncOpenAI 一致：create(...) 需 await 才拿到流
         return _FakeStream([_chunk("Earlier context "), _chunk("summarized.")])
 
-    fake_client = SimpleNamespace(get_model_client=lambda async_client=False: _create,
+    fake_client = SimpleNamespace(get_model_client=lambda: _create,
                                   clamp_max_tokens=lambda requested: requested)
     monkeypatch.setattr(compact_mod, "shared_model_client", lambda: fake_client)
     messages = [{"role": "user", "content": "hi"}]
@@ -42,7 +42,7 @@ def test_summarize_history_clamps_max_tokens(monkeypatch):
         captured.update(kwargs)
         return _FakeStream([_chunk("summary")])
 
-    fake_client = SimpleNamespace(get_model_client=lambda async_client=False: _create,
+    fake_client = SimpleNamespace(get_model_client=lambda: _create,
                                   clamp_max_tokens=lambda requested: 7_777)
     monkeypatch.setattr(compact_mod, "shared_model_client", lambda: fake_client)
     asyncio.run(compact_mod.summarize_history([{"role": "user", "content": "hi"}]))
@@ -56,7 +56,7 @@ def test_compact_history_uses_sub_model_client(monkeypatch):
         return _FakeStream([_chunk("summary")])
 
     fake_client = SimpleNamespace(
-        get_model_client=lambda async_client=False: _create,
+        get_model_client=lambda: _create,
         compact_trigger_tokens=lambda: 1,
         compact_reserve_tokens=lambda: 0,
         clamp_max_tokens=lambda requested: requested,

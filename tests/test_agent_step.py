@@ -51,7 +51,7 @@ class _Client:
         self.requested = requested
         return min(requested, 100)
 
-    def get_model_client(self, async_client=False):
+    def get_model_client(self):
         async def create(**kwargs):
             self.kwargs = kwargs
             return object()

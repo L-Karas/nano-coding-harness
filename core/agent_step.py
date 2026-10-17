@@ -118,7 +118,7 @@ async def run_agent_step(
 
     with renderer.working_status():
         stream = await with_retry_async(
-            lambda: client.get_model_client(async_client=True)(
+            lambda: client.get_model_client()(
                 messages=llm_ctx.messages,
                 tools=llm_ctx.tools,
                 max_tokens=client.clamp_max_tokens(llm_ctx.max_tokens),

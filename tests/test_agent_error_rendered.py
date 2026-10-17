@@ -13,7 +13,7 @@ class _StubClient:
     def clamp_max_tokens(self, requested):
         return requested
 
-    def get_model_client(self, async_client=False):
+    def get_model_client(self):
         async def create(**kwargs):
             return object()
         return create

@@ -160,7 +160,7 @@ async def summarize_history(messages: list, ctx=None, sub_model: bool = False) -
         "content": SUMMARY_PROMPT_TEMPLATE,
     }]
     client = shared_sub_model_client() if sub_model else shared_model_client()
-    stream = await client.get_model_client(async_client=True)(
+    stream = await client.get_model_client()(
         messages=request_messages,
         max_tokens=client.clamp_max_tokens(CONFIGMANAGER.config.summary_max_tokens),
         stream=True

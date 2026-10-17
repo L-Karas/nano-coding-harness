@@ -14,7 +14,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Optional
 
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI
 
 from core.config import CONFIGMANAGER, CUSTOM_MODEL_FILE, CUSTOM_PROVIDER_FILE, PROVIDER_AUTH_FILE
 from core.log import get_logger
@@ -293,7 +293,6 @@ class ModelClient:
         self.current_model = ""
         self.current_model_thinking = True
         self.current_thinking_level = ""
-        self.current_client: Optional[OpenAI] = None
         self.current_client_async: Optional[AsyncOpenAI] = None
         self.init_client()
 
@@ -352,7 +351,6 @@ class ModelClient:
             self.current_model = ""
             self.current_thinking_level = ""
             self.current_model_thinking = False
-            self.current_client = None
             self.current_client_async = None
             return
         self.set_model_client(provider, model, thinking)
@@ -361,7 +359,6 @@ class ModelClient:
         self._require_selection()
         api_key = _PROVIDER_AUTH[self.current_provider]["api_key"]
         base_url = _MODEL_LIST[self.current_provider]["base_url"]
-        self.current_client = OpenAI(api_key=api_key, base_url=base_url)
         self.current_client_async = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     def set_thinking_level(self, thinking_level: str) -> None:
@@ -402,14 +399,14 @@ class ModelClient:
                 kwargs["reasoning_effort"] = effort
         return kwargs
 
-    def get_model_client(self, async_client: bool = False) -> Callable[..., Any]:
-        """返回已绑定 model / thinking 参数的 chat.completions.create 调用入口。"""
+    def get_model_client(self) -> Callable[..., Any]:
+        """返回已绑定 model / thinking 参数的异步 chat.completions.create 调用入口。"""
         self._require_selection()
         request_args = self._request_kwargs()
         _LOGGER.info(f"Model: {self.current_model}({self.current_provider}), "
-                     f"request_args: {request_args}, async_client: {async_client}")
-        client = self.current_client_async if async_client else self.current_client
-        return partial(client.chat.completions.create, model=self.current_model, **request_args)
+                     f"request_args: {request_args}")
+        return partial(self.current_client_async.chat.completions.create,
+                       model=self.current_model, **request_args)
 
 
 # ---------- 进程内共享 ModelClient ----------

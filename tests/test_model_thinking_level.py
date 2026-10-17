@@ -1,4 +1,5 @@
 """模型/思考档位切换不落盘 + unconfigure 清理默认模型配置（provider:model 精确匹配）回归。"""
+import asyncio
 import json
 
 import pytest
@@ -18,7 +19,7 @@ def ctx(tmp_path, monkeypatch):
     auth_file.write_text(json.dumps({"Qwen": {"api_key": "test-key"}}), encoding="utf-8")
     monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
     monkeypatch.setattr(model, "PROVIDER_AUTH_FILE", auth_file)
-    monkeypatch.setattr(model, "OpenAI", FakeOpenAI)  # 不建真实连接
+    monkeypatch.setattr(model, "AsyncOpenAI", FakeAsyncOpenAI)  # 不建真实连接
     mgr = config_mod.AgentConfigManager.load_config()
     monkeypatch.setattr(model, "CONFIGMANAGER", mgr)
     monkeypatch.setattr(config_mod, "CONFIGMANAGER", mgr)
@@ -27,7 +28,7 @@ def ctx(tmp_path, monkeypatch):
 
 
 class FakeCompletions:
-    def create(self, **kwargs):
+    async def create(self, **kwargs):  # 与 AsyncOpenAI 一致：create(...) 需 await
         return kwargs
 
 
@@ -35,7 +36,7 @@ class FakeChat:
     completions = FakeCompletions()
 
 
-class FakeOpenAI:
+class FakeAsyncOpenAI:
     def __init__(self, **kwargs):
         self.chat = FakeChat()
 
@@ -101,7 +102,8 @@ def test_request_kwargs_mapping(ctx):
     client.set_model_client("Qwen", "qwen3.8-max", "max")
 
     def req_kwargs():
-        return {k: v for k, v in client.get_model_client()().items() if k != "model"}
+        return {k: v for k, v in asyncio.run(client.get_model_client()()).items()
+                if k != "model"}
 
     assert req_kwargs() == {
         "reasoning_effort": "xhigh",  # UI 键 "max" 在使用时映射成 API 值
@@ -128,7 +130,7 @@ def test_thinking_only_model_as_default(ctx):
     client = model.ModelClient()
     assert client.current_model_thinking is True
     assert client.current_thinking_level == "max"
-    req = {k: v for k, v in client.get_model_client()().items() if k != "model"}
+    req = {k: v for k, v in asyncio.run(client.get_model_client()()).items() if k != "model"}
     assert req == {"extra_body": {"thinking": {"type": "enabled"}}}
 
 
@@ -160,7 +162,7 @@ def test_unconfigure_default_provider_resets_client_and_files(ctx):
     assert "Qwen" not in json.loads(model.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
     stored = json.loads(ctx.read_text(encoding="utf-8"))
     assert stored["default_model"] == "" and "default_provider" not in stored
-    assert client.current_provider == "" and client.current_client is None, \
+    assert client.current_provider == "" and client.current_client_async is None, \
         "共享 client 不得继续持有已删 key"
     with pytest.raises(Exception, match="Please set provider and model"):
         client.get_model_client()

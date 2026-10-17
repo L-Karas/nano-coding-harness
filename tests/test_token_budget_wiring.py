@@ -26,7 +26,7 @@ def test_step_clamps_max_tokens_to_current_model(monkeypatch):
         def clamp_max_tokens(self, requested):
             return min(requested, 8_000)
 
-        def get_model_client(self, async_client=False):
+        def get_model_client(self):
             async def create(**kwargs):  # async client 的 create 与真实 AsyncOpenAI 一样可 await
                 captured.update(kwargs)
                 return object()
