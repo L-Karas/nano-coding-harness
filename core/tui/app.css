@@ -81,7 +81,7 @@ Toast, Toast:ansi { background: #1e293b; }
     color: #64748b;
 }
 
-/* ── 滚动条：所有滚动区共用（含 /settings 弹窗本体与其 Select 下拉浮层、
+/* ── 滚动条：所有滚动区共用（含 /settings 表单主体与其 Select 下拉浮层、
    注册模型窗与 /mcp 配置窗的 Select 下拉浮层）──
    宽度收窄为 1 列（Textual 默认 2 列），轨道透明，滑块色同卡片描边，hover / 拖动高亮 */
 #todos-list, #bg-list, #subagents-list,
@@ -89,7 +89,7 @@ Toast, Toast:ansi { background: #1e293b; }
 #cmd-suggest, #file-suggest, #perm-list, #clarify-list,
 #sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list,
 #mcp-stdio-args, #mcp-http-headers,
-#settings-picker, #settings-picker Select > SelectOverlay,
+#settings-form, #settings-picker Select > SelectOverlay,
 #reg-model-provider > SelectOverlay, #mcp-server-type > SelectOverlay {
     scrollbar-size-vertical: 1;
     scrollbar-background: transparent;
@@ -327,13 +327,17 @@ ModalScreen {
     background-tint: transparent;
 }
 
-/* 弹窗内列表：去掉 OptionList 默认边框与底色，撑满弹窗剩余高度 */
-#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list {
+/* 弹窗主体：撑满标题与提示行之间的剩余高度，内容超出时自身滚动（列表 / 设置表单共用） */
+#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list,
+#settings-form {
     border: none;
     background: transparent;
     height: 1fr;
     margin-top: 1;
 }
+/* 设置表单主体：字段行自带 margin-top，不再额外留白；padding 同 OptionList 默认内边距，
+   使字段与 /sessions、/skills 列表项左侧对齐 */
+#settings-form { margin-top: 0; padding: 0 1; }
 #mcp-list { height: auto; }  /* server 列表窗随内容收缩（尺寸见 #mcp-picker） */
 
 /* ── /mcp 配置弹窗：逐行字段表单（字段行样式同 /login 注册模型窗）；args / headers 为
@@ -386,8 +390,8 @@ ModalScreen {
 .switch-row:focus-within .switch-label { color: #7287fd; }
 
 /* ── /settings 弹窗：字段行 = 左侧参数显示名 + 无边框输入（无下划线，靠光标与标签变色指示焦点）；
-   开关样式同注册模型窗的 Supports thinking mode（去边框 → 滑块变薄）；字段多，封顶后可滚 ── */
-#settings-picker { width: 60%; height: auto; max-height: 80%; overflow-y: auto; }
+   开关样式同注册模型窗的 Supports thinking mode（去边框 → 滑块变薄）；窗口尺寸、主体滚动与
+   提示行结构同 /sessions、/skills（.picker 60% × 60% + 1fr 主体 + 底部提示） ── */
 /* id 选择器压过 .field-row 的 2 行下边框；padding 清零盖掉其借自注册表单行的 `padding: 0 1`
    （否则参数名比开关名右偏 1 列、控件右缘比开关短 1 列） */
 #settings-picker .field-row { border: none; height: 1; padding: 0; }
@@ -432,7 +436,7 @@ ModalScreen {
     background: transparent;
     background-tint: transparent;
 }
-/* 下拉浮层（thinking level / 模型）：圆弧边框 + ansi_default 底，同注册模型窗提供方下拉
+/* 下拉浮层（固定选项下拉 / 模型）：圆弧边框 + ansi_default 底，同注册模型窗提供方下拉
    （#reg-model-provider > SelectOverlay）；该处 offset/margin 是给 ❯ 标记对齐用的，本窗无需。
    min-width：窄终端下参数名吃掉整行，Select 仅剩几列，浮层宽度跟着 Select 算（width: 1fr）
    会缩到内容宽 0（rich divide_line 除零崩溃）；给浮层留一个可用下限，选项才看得清 */

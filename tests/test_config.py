@@ -28,6 +28,13 @@ def test_invalid_thinking_level_rejected():
         AgentConfig(default_thinking_level="ultra")
 
 
+def test_approval_mode_defaults_to_manual_and_rejects_unknown():
+    assert AgentConfig().approval_mode == "Manual"
+    assert AgentConfig(approval_mode="Yolo").approval_mode == "Yolo"
+    with pytest.raises(ValidationError):
+        AgentConfig(approval_mode="always-ask")
+
+
 def test_resolve_compact_trigger_tokens_caps_at_output_reserve():
     """绝对阈值取 min(值, 上下文 - 最大输出)，给单次最大输出留空间。"""
     cfg = AgentConfig(compact_trigger_tokens=500_000)

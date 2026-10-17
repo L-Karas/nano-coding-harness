@@ -2,6 +2,7 @@
 
 表单格式照注册弹窗：.field-row（左侧参数显示名 + 无边框控件）+ 开关行 + 提示行。
 模型字段为下拉框（选项来自 core.client.get_model_list，值为 'provider:model'）；
+thinking level / approval mode 为固定选项下拉框，样式与模型下拉一致；
 打开时按当前配置预填。交互约定（见 SettingsScreen）：
 - 浏览态字段锁定：打字 / 空格不生效，↑/↓ 或 Tab 切字段；
 - Enter 进入编辑态（输入框解锁全选、下拉展开）；编辑后再次 Enter 校验全部字段并写盘，成功后留在窗内；
@@ -12,23 +13,28 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Input, Select, Static, Switch
 
-from core.config import AgentConfig, AgentConfigManager
+from core.config import AgentConfig, AgentConfigManager, ApprovalMode
 from core.tui.screens.base import _ArrowNav, _error_text, _model_row_text
 from core.tui.screens.model import _EFFORT_LEVELS
 
 # 模型下拉字段（值为 'provider:model'）；分组顺序即表单顺序
 _MODEL_FIELDS = ("default_model", "default_sub_model", "default_fallback_model")
-_THINKING_FIELDS = ("default_thinking_level", "default_sub_model_thinking_level")
+# 固定选项下拉字段 → 可选值：顺序即表单顺序，选项值即落盘值
+_CHOICE_FIELDS: dict[str, tuple[str, ...]] = {
+    "default_thinking_level": _EFFORT_LEVELS,
+    "default_sub_model_thinking_level": _EFFORT_LEVELS,
+    "approval_mode": get_args(ApprovalMode),
+}
 # 数字字段 → 解析类型：顺序即表单顺序，控件 type= 与保存转换都由它决定
 _NUMBER_FIELDS: dict[str, type] = {
     "default_max_tokens": int,
@@ -45,6 +51,7 @@ _FIELD_LABELS: dict[str, str] = {
     "default_fallback_model": "Default fallback model",
     "default_thinking_level": "Default thinking level",
     "default_sub_model_thinking_level": "Sub model thinking level",
+    "approval_mode": "Approval mode",
     "default_max_tokens": "Default max tokens",
     "escalated_max_tokens": "Escalated max tokens",
     "summary_max_tokens": "Summary max tokens",
@@ -123,9 +130,9 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         widgets = [_labeled_field(name, Select([], prompt="Select a model",
                                                id=_FIELD_ID.format(name)))
                    for name in _MODEL_FIELDS]
-        widgets += [_labeled_field(name, Select([(level, level) for level in _EFFORT_LEVELS],
+        widgets += [_labeled_field(name, Select([(option, option) for option in options],
                                                 allow_blank=False, id=_FIELD_ID.format(name)))
-                    for name in _THINKING_FIELDS]
+                    for name, options in _CHOICE_FIELDS.items()]
         # 数字字段留空 = 回退默认值，占位即该默认值；整数 / 小数控件由解析类型决定
         widgets += [_labeled_field(name, _LockedInput(
             placeholder=str(AgentConfig.model_fields[name].default),
@@ -138,9 +145,13 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
                                Switch(value=False, id=_FIELD_ID.format(name)),
                                classes="switch-row")
                     for name in _BOOL_FIELDS]
-        widgets.append(Static("  Tab/click field    Enter edit / save    Esc close",
-                              classes="picker-hint"))
-        picker = Vertical(*widgets, classes="picker", id="settings-picker")
+        # 窗口结构同 /sessions：主体（1fr，内容多时自身滚动）+ 底部提示行
+        # can_focus=False：滚动主体不参与焦点链，Tab / 点击空白不会把焦点从字段移走
+        picker = Vertical(
+            VerticalScroll(*widgets, id="settings-form", can_focus=False),
+            Static("  Tab/click field    Enter edit / save    Esc close", classes="picker-hint"),
+            classes="picker", id="settings-picker",
+        )
         picker.border_title = "Settings"
         yield picker
 
@@ -148,7 +159,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         """按当前配置预填；配置读不出（损坏文件）时直接抛，由调用方兜底。"""
         self._config = AgentConfigManager.load_config().config
         self._fill_model_selects()
-        for name in _THINKING_FIELDS:
+        for name in _CHOICE_FIELDS:
             self.query_one(f"#{_FIELD_ID.format(name)}", Select).value = getattr(self._config, name)
         for name in _NUMBER_FIELDS:
             self.query_one(f"#{_FIELD_ID.format(name)}", Input).value = str(getattr(self._config, name))
@@ -204,7 +215,7 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             else:
                 provider, model = select.value
                 values[name] = f"{provider}:{model}" if provider else model
-        for name in _THINKING_FIELDS:
+        for name in _CHOICE_FIELDS:
             values[name] = self.query_one(f"#{_FIELD_ID.format(name)}", Select).value
         for name, cast in _NUMBER_FIELDS.items():
             text = self.query_one(f"#{_FIELD_ID.format(name)}", Input).value.strip()

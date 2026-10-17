@@ -29,6 +29,9 @@ PERMISSION_FILE = HARNESS_CONFIG_DIR / ".permissions.json"
 GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
 
+# 工具审批策略；下拉选项的取值即这里的字面量（顺序即表单顺序）
+ApprovalMode = Literal["LLM", "Decision Model", "Manual", "Yolo"]
+
 
 class AgentConfig(BaseModel):
     default_model: str = Field(default="", description="Default model id, 'provider:model'")
@@ -41,6 +44,10 @@ class AgentConfig(BaseModel):
               description="Reasoning effort for default_sub_model; falls back to default_thinking_level when default_sub_model is unset"))
     default_fallback_model: str = Field(default="",
                                         description="Model used when the default model is unavailable. Supports 'provider:model' to use a model from another provider")
+
+    approval_mode: ApprovalMode = Field(
+        default="Manual",
+        description="Tool approval mode: LLM / Decision Model / Manual / Yolo; reserved, not wired into the approval gate yet")
 
     default_max_tokens: int = Field(default=16_000, description="Max tokens per default model call")
     escalated_max_tokens: int = Field(default=32_000,

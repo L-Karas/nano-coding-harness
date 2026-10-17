@@ -51,6 +51,12 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 | Default thinking level | `default_thinking_level` | `max` | 主模型默认思考档位（minimal / low / medium / high / max），按模型 `thinking_level_map` 映射为 `reasoning_effort`；该档位不被模型支持时不发送 |
 | Sub model thinking level | `default_sub_model_thinking_level` | `max` | 子模型思考档位；未设置 `default_sub_model` 时回退 `default_thinking_level` |
 
+### 审批模式
+
+| 窗口显示名 | 字段 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| Approval mode | `approval_mode` | `Manual` | 工具审批策略：`LLM`（模型判断）/ `Decision Model`（决策模型判断）/ `Manual`（逐个询问用户）/ `Yolo`（全部放行）。预留字段：审批链路尚未读取该配置，改动暂不影响现有确认卡行为 |
+
 ### 输出 token
 
 | 窗口显示名 | 字段 | 默认 | 说明 |

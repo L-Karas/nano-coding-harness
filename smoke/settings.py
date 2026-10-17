@@ -41,6 +41,7 @@ async def run(app, pilot) -> None:
             msel = form.query_one("#set-default_model", Select)
             assert form.query_one("#set-default_thinking_level", Select).value == "max"
             assert form.query_one("#set-default_sub_model_thinking_level", Select).value == "max"
+            assert form.query_one("#set-approval_mode", Select).value == "Manual"
             # 缺省键取 AgentConfig 当前默认值（不写死，避免默认值调整后冒烟失真）
             assert form.query_one("#set-default_max_tokens", Input).value == \
                 str(config_mod.AgentConfig.model_fields["default_max_tokens"].default)
@@ -84,22 +85,31 @@ async def run(app, pilot) -> None:
             # 窄终端下参数名吃掉整行，Select 仅剩几列；浮层须保底可用宽
             # （回归：宽度缩到内容宽 0 时 OptionList 在 rich divide_line 崩溃）
             assert ov.region.width >= 24, f"浮层过窄: {ov.region}"
-            # 设置窗本体（表单超长时滚动）滑块同 /sessions 列表：共用同一组滑块规则
-            picker = form.query_one("#settings-picker")
-            assert picker.show_vertical_scrollbar, "设置表单超长时应有纵向滑块"
-            assert picker.styles.scrollbar_size_vertical == 1, picker.styles.scrollbar_size_vertical
-            assert picker.styles.scrollbar_color.hex.lower() == "#475569", picker.styles.scrollbar_color
-            assert picker.styles.scrollbar_background.is_transparent, picker.styles.scrollbar_background
-            assert picker.styles.scrollbar_color_hover.hex.lower() == "#94a3b8"
-            assert picker.styles.scrollbar_color_active.hex.lower() == "#38bdf8"
+            # 设置表单主体（超长时滚动）滑块同 /sessions 列表：共用同一组滑块规则
+            body = form.query_one("#settings-form")
+            assert body.show_vertical_scrollbar, "设置表单超长时应有纵向滑块"
+            assert body.styles.scrollbar_size_vertical == 1, body.styles.scrollbar_size_vertical
+            assert body.styles.scrollbar_color.hex.lower() == "#475569", body.styles.scrollbar_color
+            assert body.styles.scrollbar_background.is_transparent, body.styles.scrollbar_background
+            assert body.styles.scrollbar_color_hover.hex.lower() == "#94a3b8"
+            assert body.styles.scrollbar_color_active.hex.lower() == "#38bdf8"
             await pilot.press("escape")
             await settle(pilot)
             assert not msel.expanded and isinstance(app.screen_stack[-1], SettingsScreen), \
                 "Esc 应只关浮层、不关窗"
+            # 提示行在滚动主体之外、固定窗口底部（同 /sessions）：滚动时不随内容移出视野
+            hint = form.query_one("#settings-picker > .picker-hint", Static)
+            top_hint_y = hint.region.y
+            assert body.region.bottom <= hint.region.y, (body.region, hint.region)
+            body.scroll_end(animate=False)
+            await settle(pilot)
+            assert hint.region.y == top_hint_y, "提示行应固定在窗口底部，不随表单滚动"
+            body.scroll_home(animate=False)
+            await settle(pilot)
             rows = list(form.query(".field-row"))
             switches = list(form.query(".switch-row"))
-            assert len(rows) == 10 and len(switches) == 4, \
-                f"设置表单应为 10 个字段行 + 4 个开关行: {len(rows)} / {len(switches)}"
+            assert len(rows) == 11 and len(switches) == 4, \
+                f"设置表单应为 11 个字段行 + 4 个开关行: {len(rows)} / {len(switches)}"
             # 字段行无下划线（高 1 行），输入控件自身也无边框
             assert all(not r.styles.border_top[0] and not r.styles.border_bottom[0]
                        and r.styles.height.value == 1 for r in rows), "字段行不应有下划线"
@@ -108,6 +118,7 @@ async def run(app, pilot) -> None:
             labels = [str(w.render()) for w in field_labels]
             assert labels == ["Default model", "Default sub model", "Default fallback model",
                               "Default thinking level", "Sub model thinking level",
+                              "Approval mode",
                               "Default max tokens", "Escalated max tokens",
                               "Summary max tokens", "Compact trigger tokens",
                               "Compact reserve tokens"], labels
@@ -116,6 +127,10 @@ async def run(app, pilot) -> None:
             assert field_labels[-1].styles.color == switch_label.styles.color, \
                 (field_labels[-1].styles.color, switch_label.styles.color)
             # 参数名与开关名左对齐；控件右缘与开关右缘对齐（行内边距一致）
+            # 字段左侧 = 主体内容区左缘（主体 padding 1 同 OptionList 默认内边距）→ 与
+            # /sessions、/skills 列表项左缘一致
+            assert field_labels[0].region.x == body.region.x + int(body.styles.padding.left), \
+                (field_labels[0].region, body.region)
             assert field_labels[-1].region.x == switch_label.region.x, \
                 (field_labels[-1].region.x, switch_label.region.x)
             input_widget = form.query_one("#set-default_max_tokens", Input)
@@ -192,8 +207,19 @@ async def run(app, pilot) -> None:
             await pilot.press("enter")
             await settle(pilot)
             assert msel.value == ("qwen", "qwen-max"), msel.value
+            # 审批模式下拉：默认 Manual，浮动层 ↓ 一项到 Yolo，确认后即落盘
+            amode = form.query_one("#set-approval_mode", Select)
+            amode.focus()
+            await settle(pilot)
+            await pilot.press("enter")
+            await settle(pilot)
+            assert amode.expanded, "Enter 应展开审批模式下拉"
+            await pilot.press("down", "enter")
+            await settle(pilot)
+            assert amode.value == "Yolo", amode.value
             # 浮层里确认选项的 Enter 就是第二次 Enter：确认 + 立即落盘（含此前输入框编辑的 max_tokens）
             saved = json.loads(setting_file.read_text(encoding="utf-8"))
+            assert saved["approval_mode"] == "Yolo", "审批模式下拉确认后应落盘"
             assert saved["default_model"] == "qwen:qwen-max", saved
             assert saved["default_sub_model_thinking_level"] == "max", saved
             assert saved["default_max_tokens"] == 16000, saved

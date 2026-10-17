@@ -41,9 +41,11 @@ def test_settings_mouse_click_paths_persist(monkeypatch):
             saved = _FakeConfigManager.saved
             assert saved == [], "开窗预填不应落盘"
 
-            # 点开关：切换并落盘
+            # 点开关：切换并落盘（窗口高度同 /sessions：先滚到可见区再点）
             switch = form.query_one("#set-auto_compact", Switch)
             assert switch.value is True
+            switch.scroll_visible(animate=False)
+            await pilot.pause()
             await pilot.click("#set-auto_compact")
             await pilot.pause()
             assert switch.value is False, "单击开关应切换"
@@ -51,7 +53,7 @@ def test_settings_mouse_click_paths_persist(monkeypatch):
 
             # 点锁定输入框：进入编辑态（等同第一次 Enter），输入后 Enter 落盘
             tokens = form.query_one("#set-default_max_tokens", Input)
-            tokens.scroll_visible()
+            tokens.scroll_visible(animate=False)
             await pilot.pause()
             await pilot.click("#set-default_max_tokens")
             await pilot.pause()
@@ -65,7 +67,7 @@ def test_settings_mouse_click_paths_persist(monkeypatch):
 
             # 点下拉选项：选中并落盘（行偏移 = 边框 gutter.top + 选项行号）
             thinking = form.query_one("#set-default_thinking_level", Select)
-            thinking.scroll_visible()
+            thinking.scroll_visible(animate=False)
             await pilot.pause()
             await pilot.click("#set-default_thinking_level")
             await pilot.pause()
@@ -86,4 +88,23 @@ def test_settings_mouse_click_paths_persist(monkeypatch):
             await pilot.pause()
             assert form.focused.id == "set-default_sub_model", \
                 f"Tab 应切到下一字段: {form.focused.id}"
+
+            # 焦点边界：滚动主体不参与焦点链（Tab / Shift+Tab 只在字段间回环；点参数名不移焦点）
+            last = form.query_one("#set-enable_defer_skills", Switch)
+            last.focus()
+            await pilot.pause()
+            await pilot.press("tab")
+            await pilot.pause()
+            assert form.focused is first, f"末字段 Tab 应回环到首字段: {form.focused.id}"
+            first.focus()
+            await pilot.pause()
+            await pilot.press("shift+tab")
+            await pilot.pause()
+            assert form.focused is last, f"首字段 Shift+Tab 应回环到末字段: {form.focused.id}"
+            sub = form.query_one("#set-default_sub_model", Select)
+            sub.focus()
+            await pilot.pause()
+            await pilot.click(".field-label")
+            await pilot.pause()
+            assert form.focused is sub, f"点击参数名不应移走焦点: {form.focused.id}"
     asyncio.run(main())
