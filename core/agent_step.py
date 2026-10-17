@@ -27,7 +27,7 @@ from core.log.log import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.runtime_context import ToolContext
 from core.streaming import streaming_message
-from core.template import USER_INTERRUPT_PROMPT
+from core.template import BACKGROUND_STARTED_PROMPT, TOOL_ABORTED_PROMPT, USER_INTERRUPT_PROMPT
 from core.tools import ToolPool, ToolResult
 
 _LOGGER = get_logger(__name__)
@@ -44,6 +44,11 @@ def _null_cm() -> ContextManager:
 def _tool_message(tool_call_id: str, content: str) -> dict:
     """tool 角色消息：每个 tool_call_id 必须有且仅有一条结果消息。"""
     return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
+
+
+def _call_name(tool_call: dict) -> str:
+    """从原始 tool_call 取工具名（不依赖参数 JSON 解析）。"""
+    return (tool_call.get("function") or {}).get("name", "")
 
 
 @dataclass(frozen=True)
@@ -183,16 +188,15 @@ async def run_agent_step(
 class _PreparedCall:
     """一次工具调用的中间态。
 
-    final_message / outcome / exception 互斥：准备阶段定型为 final_message 的调用不再执行；
-    outcome 是待收尾的真实结局；exception 是待上抛的执行失败。
+    准备阶段定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 outcome，只是不再执行；
+    执行失败记在 exception：非中断失败直接上抛，中断的 CancelledError 先转成 outcome 占位再进收尾段。
+    所有结局都走同一收尾段：after_tool → 渲染 → 回填消息。
     """
     tool_call_id: str
     tool_name: str = ""
     tool_args: dict = field(default_factory=dict)
-    # todo: 改为更直白且有辨识性的命名
-    final_message: dict | None = None  # 已定型：直接入历史，跳过 after_tool / 渲染 / diff
-    outcome: ToolResult | None = None  # 待收尾：走 after_tool / 渲染 / diff
-    diff: str = ""
+    outcome: ToolResult | None = None  # 唯一结局载体（含占位结果），统一走收尾段
+    diff: list[tuple[str, int, str]] | str = ""
     exception: BaseException | None = None
 
 
@@ -205,34 +209,34 @@ async def _prepare_tool_call(
 ) -> _PreparedCall:
     """准备阶段（串行）：中断检查 → 解析 → before_tool（含权限门）→ 渲染调用 → tool_execute → 后台路由。
 
-    立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 final_message 或 outcome 返回；
-    其余留给执行阶段。
+    立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 outcome 返回，其余留给执行阶段；
+    定型结果与真实执行结果一样走 after_tool 与结果渲染。
     """
     tool_call_id = tool_call.get("id", "")
-    item = _PreparedCall(tool_call_id)
+    item = _PreparedCall(tool_call_id, tool_name=_call_name(tool_call))
 
     if tctx.interrupted:
-        item.final_message = _tool_message(tool_call_id, USER_INTERRUPT_PROMPT)
+        item.outcome = ToolResult.cancelled(USER_INTERRUPT_PROMPT)
         return item
 
     try:
         call = ChatCompletionMessageToolCall(**tool_call)
         tool_args = json.loads(call.function.arguments or "{}")
     except json.JSONDecodeError as e:
-        item.final_message = _tool_message(tool_call_id, f"[Error] {type(e).__name__}: {e}")
+        item.outcome = ToolResult.error(f"{type(e).__name__}: {e}")
         return item
     tool_name = call.function.name
-    item.tool_name = tool_name
 
     tool_ctx = BeforeToolContext(tool_name=tool_name, args=tool_args, cwd=tctx.cwd)
     await dispatch("before_tool", tool_ctx, include_external=policy.use_extensions)
     tool_args = tool_ctx.args
     call.function.arguments = json.dumps(tool_args, ensure_ascii=False)
+    item.tool_args = tool_args
     if tool_ctx.blocked:
-        item.final_message = _tool_message(tool_call_id, tool_ctx.block_reason)
+        # 拦截文案由权限门给定（模型可见），不加工具错误前缀：回放时按普通结果卡显示
+        item.outcome = ToolResult(content=tool_ctx.block_reason, is_error=True)
         return item
 
-    item.tool_args = tool_args
     renderer.on_tool_call(tool_name, tool_args)
 
     exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
@@ -244,11 +248,7 @@ async def _prepare_tool_call(
 
     if policy.background and should_run_background(tool_name, tool_args):
         bg_id = start_background_task(call, pool, tctx)
-        item.final_message = _tool_message(
-            tool_call_id,
-            f"[Background task `{bg_id}` started] "
-            f"Result will arrive with a `<background-task-notification>` tag.",
-        )
+        item.outcome = ToolResult(content=BACKGROUND_STARTED_PROMPT.format(task_id=bg_id))
         return item
 
     return item
@@ -277,7 +277,7 @@ async def _run_tools(
     """按组派发工具：parallel_safe 声明组内用 asyncio.gather，不可并发工具自成一组形成屏障。
 
     每组三段：准备（串行，含扩展 / 权限 / 后台路由）→ 执行（组内并发）→ 收尾（串行，按原调用
-    顺序回填消息、触发 after_tool 与渲染）。中断按占位收尾。
+    顺序回填消息、触发 after_tool 与渲染）。所有结局（含中断 / 解析失败 / 拦截 / 后台占位）都走收尾段。
     """
     results: list[dict] = []
     injected: list[dict] = []
@@ -295,7 +295,7 @@ async def _run_tools(
                 for tool_call in group
             ]
 
-            runnable = [item for item in prepared if item.final_message is None and item.outcome is None]
+            runnable = [item for item in prepared if item.outcome is None]
             if runnable:
                 with renderer.working_status():
                     for item in runnable:
@@ -322,22 +322,19 @@ async def _run_tools(
                         item.outcome = outcome
 
             for item in prepared:
-                if item.final_message is not None:
-                    results.append(item.final_message)
-                    executed_ids.add(item.tool_call_id)
-                    continue
                 if item.exception is not None:
                     if (isinstance(item.exception, asyncio.CancelledError)
                             and tctx.interrupted):
-                        results.append(_tool_message(item.tool_call_id, USER_INTERRUPT_PROMPT))
-                        executed_ids.add(item.tool_call_id)
-                        continue
-                    raise item.exception
+                        item.outcome = ToolResult.cancelled(USER_INTERRUPT_PROMPT)
+                    else:
+                        raise item.exception
 
                 outcome = item.outcome
                 output = outcome.content
                 is_error = outcome.is_error
-                if item.diff and not is_error:
+                # 失败 / 取消的结果没有落盘：预览 diff 既不渲染也不落 payload
+                show_diff = bool(item.diff) and not is_error and not outcome.is_cancelled
+                if show_diff:
                     renderer.on_diff(item.diff)
                 result_ctx = AfterToolContext(
                     tool_name=item.tool_name,
@@ -352,7 +349,7 @@ async def _run_tools(
                 renderer.on_tool_result(output, is_error)
 
                 message = _tool_message(item.tool_call_id, output)
-                if item.diff and not is_error:
+                if show_diff:
                     message["payload"] = item.diff
                 results.append(message)
                 executed_ids.add(item.tool_call_id)
@@ -362,7 +359,7 @@ async def _run_tools(
         for tool_call in tool_calls:
             tool_call_id = tool_call.get("id", "")
             if tool_call_id not in executed_ids:
-                results.append(_tool_message(tool_call_id, "[Error] tool call aborted before execution"))
+                results.append(_tool_message(tool_call_id, TOOL_ABORTED_PROMPT))
     return results, injected
 
 
@@ -371,7 +368,7 @@ def group_parallel_tool_calls(tool_calls: list[dict], pool: ToolPool) -> list[li
     其余工具各自单成一组的屏障，组间保持串行。"""
 
     def is_parallel(tool_call: dict) -> bool:
-        return pool.is_parallel_safe((tool_call.get("function") or {}).get("name", ""))
+        return pool.is_parallel_safe(_call_name(tool_call))
 
     groups: list[list[dict]] = []
     for parallel, chunk in groupby(tool_calls, key=is_parallel):

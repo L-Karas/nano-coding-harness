@@ -1,7 +1,7 @@
 """write/edit 工具 diff 只在执行成功时渲染并落 payload——回归保护。
 
 失败（ToolResult.is_error=True，来源是工具抛异常）时 diff 是未落地预览：不渲染、不记录，
-回放才不会把未应用改动显示成已应用。"""
+回放才不会把未应用改动显示成已应用；被取消（ToolResult.is_cancelled=True，同样未落盘）同理。"""
 import asyncio
 import json
 
@@ -10,7 +10,7 @@ import pytest
 import core.agent_step as step_mod
 import core.diff as diff_module
 from core.agent_step import StepPolicy, StepRenderer, run_agent_step
-from core.runtime_context import ToolContext
+from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool
 from core.tools.tool_base import BaseTool
 
@@ -143,6 +143,50 @@ def test_unknown_tool_renders_nothing(ctx, monkeypatch):
         None,
     )
     assert not renders
+    assert "payload" not in outcome.followup_messages[-1]
+
+
+def test_cancelled_write_renders_no_diff_and_no_payload(ctx, monkeypatch):
+    """中断占位的 write 没有真正落盘：预览 diff 不渲染、不落 payload。"""
+    tmp_path, renders = ctx
+    started = asyncio.Event()
+    tctx = ToolContext(agent_run=AgentRunContext())
+
+    class _Hang(BaseTool):
+        path: str = ""
+        content: str = ""
+
+        async def arun(self, tctx=None):
+            started.set()
+            await asyncio.Event().wait()
+
+    async def fake_stream(stream, on_text=None):
+        return ("", "", [{
+            "id": "call_1", "type": "function",
+            "function": {"name": "write_file", "arguments": json.dumps({"path": "a.py", "content": "new line\n"})},
+        }], "tool_calls", None)
+
+    monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
+
+    async def driver():
+        task = asyncio.create_task(run_agent_step(
+            [],
+            "sys",
+            client=_Client(),
+            pool=ToolPool({"write_file": _Hang}),
+            tctx=tctx,
+            max_tokens=100,
+            policy=StepPolicy(use_extensions=False, diff_preview=True),
+            renderer=StepRenderer(on_diff=renders.append),
+        ))
+        await started.wait()
+        tctx.agent_run.cancel()
+        task.cancel()
+        return await task
+
+    outcome = asyncio.run(driver())
+    assert [m["content"] for m in outcome.followup_messages] == ["[User interrupted]"]
+    assert not renders, "未执行的 write 不得渲染 diff"
     assert "payload" not in outcome.followup_messages[-1]
 
 

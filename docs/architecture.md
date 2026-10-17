@@ -42,9 +42,9 @@
 3. 重建工具池（内置 + MCP），把预算后的 history 交给 `run_agent_step()`；
 4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
    → 扩展 `after_llm` → 按 `parallel_safe` 声明分组派发工具（组内 `asyncio.gather` 并发，未声明工具作为屏障自成一组；
-   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool` → 渲染 diff/结果）；
+   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool`（所有结局，含中断 / 拦截 / 后台占位）→ 渲染 diff/结果）；
    结果写回会话后进入下一轮。工具结局统一为 `ToolResult`（内容 +
-   失败标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
+   失败 / 取消标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
 5. 模型不再请求工具即结束回合。
 
 `run_agent_step()`（`core/agent_step.py`）是 main 与子代理共用的唯一实现；子代理的外层循环

@@ -9,7 +9,7 @@
 扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
 
 > 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py` / `protocol.py`）
-> 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)
+> 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（`after_tool` 覆盖范围已由本文件 §3.3 / §8 取代）
 
 - [1. 快速开始](#1-快速开始)
 - [2. 加载规则](#2-加载规则)
@@ -149,12 +149,12 @@ def register(api):
 | `after_llm` | 流式响应解析后、工具执行前；`finish_reason == "length"` 也会触发，扩窗 / 续写恢复由外层决定 |
 | `before_tool` | 工具参数 JSON 解析后、权限门裁决前；回调可改写参数并投决定票 |
 | `tool_execute` | 权限门（内置权限扩展的 gate 阶段）通过后、后台路由与内置执行之前；有人 `handle()` 接管则跳过内置执行 |
-| `after_tool` | 工具真正执行完成后、结果写入消息前（内置执行与扩展接管共用） |
+| `after_tool` | 工具调用定型后、结果写入消息前（内置执行、扩展接管与各类占位结果共用；`is_error` 标记拦截 / 解析失败） |
 
 **并发组中的事件顺序**：同一轮里连续出现的多个 `parallel_safe` 工具（`read_file` / `grep` 等）构成一个并发组：
 先按调用顺序逐个工具触发 `before_tool` 与 `tool_execute`（同一调用内仍先 `before_tool` 后 `tool_execute`），
 随后整组并发执行；`after_tool` 等整组执行完毕后，再按调用顺序逐个触发。事件回调本身始终串行执行，
-不会被并发调用。整组被 Esc 取消时，组内未收尾的调用补中断占位，不触发 `after_tool`。
+不会被并发调用。整组被 Esc 取消时，组内未收尾的调用按中断占位收尾（`after_tool` 与结果渲染照常；内部结果标记为取消：`ToolResult.is_cancelled=True`、`is_error=False`）。
 
 ## 4. 执行语义
 
@@ -176,7 +176,7 @@ def register(api):
   - 子代理：返回文本 `(subagent aborted by extension: <reason>)`。
 - `ctx.handle(result, is_error=False)`（`tool_execute`）：跳过**该事件剩余回调**、跳过后台路由 / diff 预览 / 内置执行，接管结果作为本次工具结果；`after_tool` 照常触发。
 
-被权限门拒绝的工具调用**不会**触发 `after_tool`，下一轮模型会看到对应的拒绝文案（见 [`permissions.md`](permissions.md)）。
+被权限门拒绝的工具调用同样触发 `after_tool`（`is_error=True`，结果是拒绝文案），下一轮模型会看到该文案（见 [`permissions.md`](permissions.md)）。
 
 `tool_execute` 回调异常按 fail-open 处理：记 `dispatcher.log` 后视为**未接管**，继续后续回调；最终无人接管则回退内置执行（接管崩溃不代表内置不执行，扩展需自行 `try/except` 后 `handle(..., is_error=True)` 实现失败闭合）。
 
@@ -289,7 +289,7 @@ async def redact_secrets(ctx):
         ctx.result = _SECRET.sub("sk-***", ctx.result)
 ```
 
-`is_error=True` 表示工具自身报了错（结果以 harness 错误前缀开头），可按需跳过处理。
+`is_error=True` 表示结果不是正常成功：工具自身报错与参数解析失败（结果以 harness 错误前缀开头），或拦截等占位结果。可按需跳过处理。
 
 ### 5.5 审计日志（`after_tool`）
 
@@ -406,14 +406,14 @@ def test_blocks_rm_commands():
 - **修改需重启**：`enabled` 与扩展代码不支持运行时热切换。
 - **覆盖范围**：主 agent 循环与子代理循环都会触发五个事件；`tool_execute` 接管时跳过后台路由与 diff 预览，内置 `pool.execute` 不执行；`StepPolicy.use_extensions=False` 时外部回调在所有事件上被跳过，内置观察者与权限门照常。
 - **不在覆盖范围**：
-  - 后台任务的执行结果不触发 `after_tool`（派发时的 `before_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
+  - 后台任务异步完成的结果不触发 `after_tool`（派发时的 `before_tool` 与占位结果的 `after_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
   - 上下文压缩、标题生成等辅助 LLM 调用不触发 `before_llm` / `after_llm`；
   - 根目录 `.hooks.json` 与 `examples/s08_hook_system.py` 是独立教学示例，不参与扩展加载；工具节点顺序固定为「外部 `before_tool`（参数改写 + 决定票）→ 内置观察者 → 内置权限门（gate）→ 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
-  - 被扩展 / 权限拦截、后台任务占位、中断占位、参数 JSON 解析失败等路径没有真实执行结果，不触发 `after_tool`。
+  - 被扩展 / 权限拦截、后台任务占位、中断占位、参数 JSON 解析失败等路径没有真实执行结果，但同样以占位结果触发 `after_tool` 与结果渲染（拦截与解析失败 `is_error=True`；中断的内部结果 `ToolResult.is_cancelled=True`、`is_error=False`；后台派发占位为 `is_error=False`，接管结果沿用扩展传入的 `is_error`）。
 
 ## 参考
 
-- 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（其「与旧 hook 的关系」一节已由 [`2026-10-13 权限策略设计`](superpowers/specs/2026-10-13-permission-policy-design.md) 取代）
+- 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（其「与旧 hook 的关系」一节已由 [`2026-10-13 权限策略设计`](superpowers/specs/2026-10-13-permission-policy-design.md) 取代；「5.3 事件触发时机」的 `after_tool` 覆盖范围已由本文件 §3.3 / §8 取代）
 - 权限门与决定票：[`permissions.md`](permissions.md)
 - 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`、`protocol.py`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)

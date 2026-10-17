@@ -4,7 +4,7 @@
 内部消息不得再带 "Error:" 前缀（避免 "[Tool Error]: Error: ..." 双重前缀）。
 """
 
-from core.template import TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
+from core.template import TOOL_ABORTED_PROMPT, TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
 from core.tools import ToolResult, ToolPool
 from core.tools.base_tools import EditFile, Grep, ReadFile, WriteFile  # noqa: F401 注册工具
 from core.tools.tool_base import BaseTool
@@ -42,6 +42,11 @@ def test_grep_bad_pattern_single_prefix():
 def test_unknown_tool_prefix():
     assert _pool().execute_sync("no_such_tool", {}) == ToolResult(
         content=f"{UNKNOWN_TOOL_PREFIX} no_such_tool", is_error=True)
+
+
+def test_aborted_prompt_carries_error_prefix():
+    """未执行的 tool call 占位与执行失败同一前缀，TUI 回放按前缀识别 error 卡。"""
+    assert TOOL_ABORTED_PROMPT == "[Tool Error]: tool call aborted before execution"
 
 
 def test_missing_file_raises_not_returns():

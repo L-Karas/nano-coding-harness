@@ -241,6 +241,68 @@ def test_renderer_receives_tool_call_and_result(monkeypatch):
     assert ("result", "echo:x", False) in seen
 
 
+def test_blocked_call_runs_after_tool_and_renders_result(monkeypatch):
+    """准备阶段定型的占位结果与真实执行同路：after_tool → on_tool_result → 回填消息。"""
+    hooks, rendered = [], []
+    add_hook("before_tool", lambda ctx: ctx.block("no shell"), "test")
+    add_hook("after_tool",
+             lambda ctx: hooks.append((ctx.tool_name, ctx.args, ctx.result, ctx.is_error)), "test")
+    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+
+    outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=True), renderer=renderer)
+
+    assert hooks == [("echo", {"value": "x"}, "[Extension blocked] no shell", True)]
+    assert rendered == [("[Extension blocked] no shell", True)]
+    assert outcome.followup_messages[0]["content"] == "[Extension blocked] no shell"
+
+
+def test_unparsable_arguments_run_after_tool_and_render_result(monkeypatch):
+    hooks, rendered = [], []
+    add_hook("after_tool", lambda ctx: hooks.append((ctx.tool_name, ctx.result, ctx.is_error)), "test")
+    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+
+    outcome = _run(monkeypatch, [("", "", [_tool_call(args="{oops")], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=True), renderer=renderer)
+
+    content = outcome.followup_messages[0]["content"]
+    assert content.startswith("[Tool Error]: JSONDecodeError:")
+    assert hooks == [("echo", content, True)]
+    assert rendered == [(content, True)]
+
+
+def test_background_placeholder_runs_after_tool_and_renders_result(monkeypatch):
+    hooks, rendered = [], []
+    monkeypatch.setattr(step_mod, "start_background_task", lambda call, pool, tctx: "bg-1")
+    monkeypatch.setattr(step_mod, "should_run_background", lambda *_: True)
+    add_hook("after_tool", lambda ctx: hooks.append((ctx.result, ctx.is_error)), "test")
+    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+
+    outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=True, background=True), renderer=renderer)
+
+    content = outcome.followup_messages[0]["content"]
+    assert content.startswith("[Background task `bg-1` started]")
+    assert hooks == [(content, False)]
+    assert rendered == [(content, False)]
+
+
+def test_interrupted_call_runs_after_tool_and_renders_result(monkeypatch):
+    ctx = AgentRunContext()
+    ctx.cancelled.set()
+    hooks, rendered = [], []
+    add_hook("after_tool", lambda ctx: hooks.append((ctx.result, ctx.is_error)), "test")
+    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+
+    outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
+                   policy=StepPolicy(use_extensions=True),
+                   tctx=ToolContext(agent_run=ctx), renderer=renderer)
+
+    assert hooks == [("[User interrupted]", False)]
+    assert rendered == [("[User interrupted]", False)]
+    assert outcome.followup_messages[0]["content"] == "[User interrupted]"
+
+
 def _names(groups):
     return [[call["function"]["name"] for call in group] for group in groups]
 
@@ -403,6 +465,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
         return ("", "", calls, "tool_calls", None)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
+    rendered = []
 
     async def driver():
         task = asyncio.create_task(run_agent_step(
@@ -413,7 +476,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
             tctx=ToolContext(agent_run=ctx),
             max_tokens=1000,
             policy=StepPolicy(use_extensions=False),
-            renderer=StepRenderer(),
+            renderer=StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err))),
         ))
         await started.wait()
         ctx.cancel()
@@ -424,6 +487,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
     outcome = asyncio.run(driver())
     assert [m["content"] for m in outcome.followup_messages] == [
         "[User interrupted]", "[User interrupted]"]
+    assert rendered == [("[User interrupted]", False)] * 2, "中断占位同样要渲染结果"
 
 
 def test_parallel_group_renderer_order(monkeypatch):

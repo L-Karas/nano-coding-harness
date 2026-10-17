@@ -7,7 +7,7 @@
 """
 from dataclasses import dataclass
 
-from core.template import TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX
+from core.template import TOOL_ERROR_MESSAGE_TEMPLATE, UNKNOWN_TOOL_MESSAGE_TEMPLATE
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ class ToolResult:
 
     @classmethod
     def error(cls, detail: str) -> "ToolResult":
-        return cls(content=f"{TOOL_ERROR_PREFIX} {detail}", is_error=True)
+        return cls(content=TOOL_ERROR_MESSAGE_TEMPLATE.format(detail=detail), is_error=True)
 
     @classmethod
     def cancelled(cls, content: str) -> "ToolResult":
@@ -27,4 +27,4 @@ class ToolResult:
 
     @classmethod
     def unknown(cls, name: str) -> "ToolResult":
-        return cls(content=f"{UNKNOWN_TOOL_PREFIX} {name}", is_error=True)
+        return cls(content=UNKNOWN_TOOL_MESSAGE_TEMPLATE.format(name=name), is_error=True)
