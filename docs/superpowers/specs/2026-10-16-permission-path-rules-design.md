@@ -6,6 +6,11 @@
 - 关联代码：`core/extension/builtin/permission.py`、`tests/test_permission_rules.py`、`tests/test_permission_gate.py`
 - 关联文档：`docs/permissions.md`、`docs/configuration.md`、`docs/extensions.md`、`examples/permission_config_example.json`
 
+> 后续变更（2026-10-19）：`external_directory` 的票原因与拒绝文案已统一为「标题 + 触发数据」，
+> 越界清单最多展示 3 条；默认层新增 `approval_mode`（`Manual` / `Yolo`）。本文件 §4.3、§4.4、§5、
+> §7、§8、§10、§11 中与这些点冲突的描述，以 `docs/permissions.md` 与 `docs/configuration.md` 为准；
+> 其余设计仍有效。
+
 ## 1. 意图
 
 当前规则文件（`.harness/.permissions.json`）的能力有两个缺口：

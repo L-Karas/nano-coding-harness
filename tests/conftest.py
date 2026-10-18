@@ -4,15 +4,27 @@
 再加载内置扩展 / 技能 / 模型注册表，使测试环境与运行进程的默认状态一致。
 空规则注册内置扩展：测试不依赖工作目录下的 .permissions.json。
 """
+from types import SimpleNamespace
+
+import pytest
+
 from core.bootstrap import init_harness
 
 init_harness()
 
 from core.client.model import load_model_registry  # noqa: E402
-from core.extension.builtin import register_builtin_extensions  # noqa: E402
+from core.config import AgentConfig  # noqa: E402
+from core.extension.builtin import permission, register_builtin_extensions  # noqa: E402
 from core.extension.builtin.permission import Rules  # noqa: E402
 from core.skill.skills import scan_skills  # noqa: E402
 
 register_builtin_extensions(rules=Rules())
 scan_skills()
 load_model_registry()
+
+
+@pytest.fixture(autouse=True)
+def _manual_approval_mode(monkeypatch):
+    """权限门默认层固定为 Manual：测试不依赖本机 .settings.json 的 approval_mode。"""
+    monkeypatch.setattr(permission, "CONFIGMANAGER",
+                        SimpleNamespace(config=AgentConfig(approval_mode="Manual")))

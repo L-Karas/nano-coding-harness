@@ -3,10 +3,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from core import interaction
+from core.config import AgentConfig
 from core.extension.builtin import permission
 from core.extension.builtin.permission import Rules, build_gate
 from core.extension.context import BeforeToolContext, Decision
@@ -24,6 +26,18 @@ def _vote(action: str, reason: str = "", source: str = "nano_extension_x") -> De
 
 def _no_prompt(monkeypatch):
     monkeypatch.setattr(permission, "ask_permission", lambda q, details: pytest.fail("must not ask"))
+
+
+def _with_mode(monkeypatch, mode: str) -> None:
+    """固定审批模式：权限门每次裁决读全局单例，测试不能依赖本机 .settings.json。"""
+    monkeypatch.setattr(permission, "CONFIGMANAGER",
+                        SimpleNamespace(config=AgentConfig(approval_mode=mode)))
+
+
+@pytest.fixture(autouse=True)
+def _manual_mode(monkeypatch):
+    """既有默认层用例默认 Manual；需要 Yolo 的用例在测试内再调 _with_mode 覆盖。"""
+    _with_mode(monkeypatch, "Manual")
 
 
 def _link_dir(link: Path, target: Path) -> None:
@@ -292,7 +306,7 @@ def test_outside_paths_listing_truncates_in_detail(monkeypatch):
     run_gate("terminal", {"command": command})
     question, details = cards[0]
     assert question == "Access outside working directory:"
-    assert details == ["- ../a\n- ../b\n- ../c\n- ../d\n- ../e\n- ... and 1 more",
+    assert details == ["- ../a\n- ../b\n- ../c\n- ... and 3 more",
                        f"command: {command}"]
 
 
@@ -493,10 +507,12 @@ def test_external_directory_rule_uses_custom_cwd(monkeypatch, tmp_path):
 
 
 def test_external_directory_rule_applies_outside_custom_cwd(tmp_path):
+    outside = str(Path.cwd() / "a.txt")
     gate = build_gate(Rules(external_directory={"read_file": "deny"}))
-    ctx = BeforeToolContext(tool_name="read_file", args={"path": str(Path.cwd() / "a.txt")}, cwd=tmp_path)
+    ctx = BeforeToolContext(tool_name="read_file", args={"path": outside}, cwd=tmp_path)
     gate(ctx)
-    assert ctx.blocked and ctx.block_reason == "Permission denied by rule: read_file.external_directory"
+    assert ctx.blocked and ctx.block_reason == (
+        f"Permission denied by rule: Access outside working directory:\npath: {outside}")
 
 
 def test_extension_vote_allow_overrides_default_ask():
@@ -582,7 +598,7 @@ def test_rule_ask_rejected_denies_with_card(monkeypatch):
     gate(ctx)
     assert ctx.blocked and ctx.block_reason == "Permission denied by user"
     question, details = cards[0]
-    assert "read_file.external_directory" in question
+    assert question == "Access outside working directory:"
     assert details == [f"path: {outside}"]
 
 
@@ -642,7 +658,8 @@ def test_external_deny_beats_path_allow():
         external_directory={"read_file": "deny"}))
     ctx = BeforeToolContext(tool_name="read_file", args={"path": outside})
     gate(ctx)
-    assert ctx.block_reason == "Permission denied by rule: read_file.external_directory"
+    assert ctx.block_reason == (
+        f"Permission denied by rule: Access outside working directory:\npath: {outside}")
 
 
 def test_external_allow_loses_to_path_deny():
@@ -676,7 +693,18 @@ def test_terminal_external_directory_deny_blocks():
     gate = build_gate(Rules(external_directory={"terminal": "deny"}))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
     gate(ctx)
-    assert ctx.block_reason == "Permission denied by rule: terminal.external_directory"
+    assert ctx.block_reason == (
+        "Permission denied by rule: Access outside working directory:\n- ../secret.txt")
+
+
+def test_terminal_external_directory_message_lists_at_most_three_paths():
+    gate = build_gate(Rules(external_directory={"terminal": "deny"}))
+    ctx = BeforeToolContext(tool_name="terminal",
+                            args={"command": "cat ../a ../b ../c ../d ../e"})
+    gate(ctx)
+    assert ctx.block_reason == (
+        "Permission denied by rule: Access outside working directory:\n"
+        "- ../a\n- ../b\n- ../c\n- ... and 2 more")
 
 
 def test_terminal_external_directory_ask_prompts(monkeypatch):
@@ -685,7 +713,38 @@ def test_terminal_external_directory_ask_prompts(monkeypatch):
     gate = build_gate(Rules(external_directory={"terminal": "ask"}))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
     gate(ctx)
-    assert cards == [("terminal.external_directory", ["command: cat ../secret.txt"])]
+    assert cards == [("Access outside working directory:",
+                      ["- ../secret.txt", "command: cat ../secret.txt"])]
+
+
+def test_external_rule_ask_card_matches_default_layer(monkeypatch):
+    """统一格式：external_directory 规则票与默认层的确认卡完全一致。"""
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    command = "cat ../a ../b"
+    build_gate(Rules())(BeforeToolContext(tool_name="terminal", args={"command": command}))
+    build_gate(Rules(external_directory={"terminal": "ask"}))(
+        BeforeToolContext(tool_name="terminal", args={"command": command}))
+    expected = ("Access outside working directory:",
+                ["- ../a\n- ../b", f"command: {command}"])
+    assert cards == [expected, expected]
+
+
+def test_conflict_card_keeps_outside_listing_from_rule(monkeypatch):
+    """冲突卡同样带规则层的越界清单：用户当场裁决时能看到触发了哪些路径。"""
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "n")
+    gate = build_gate(Rules(external_directory={"terminal": "ask"}))
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"},
+                            decisions=[_vote("allow", "trusted")])
+    gate(ctx)
+    assert cards == [("Decision conflict:",
+                      ["- rule: ask (Access outside working directory:)\n"
+                       "- nano_extension_x: allow (trusted)",
+                       "- ../secret.txt",
+                       "command: cat ../secret.txt"])]
 
 
 def test_terminal_external_directory_ignores_inside_command(monkeypatch):
@@ -698,11 +757,13 @@ def test_terminal_external_directory_ignores_inside_command(monkeypatch):
 
 def test_command_ask_beats_external_allow(monkeypatch):
     cards = []
-    monkeypatch.setattr(permission, "ask_permission", lambda q, details: cards.append(q) or "y")
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append((q, details)) or "y")
     gate = build_gate(Rules(terminal=[(re.compile("^rm "), "ask")], external_directory={"terminal": "allow"}))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm ../old.txt"})
     gate(ctx)
-    assert cards == ["^rm "]
+    # 越界命中被更严的 command ask 压过：details 不带越界清单
+    assert cards == [("^rm ", ["command: rm ../old.txt"])]
     assert not ctx.blocked
 
 
@@ -711,7 +772,8 @@ def test_external_deny_beats_command_allow():
                             external_directory={"terminal": "deny"}))
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
     gate(ctx)
-    assert ctx.block_reason == "Permission denied by rule: terminal.external_directory"
+    assert ctx.block_reason == (
+        "Permission denied by rule: Access outside working directory:\n- ../secret.txt")
 
 
 def test_external_allow_loses_to_command_deny():
@@ -733,6 +795,100 @@ def test_path_rule_matches_resolved_symlink_target(tmp_path):
     ctx = BeforeToolContext(tool_name="read_file", args={"path": "link/secret.txt"}, cwd=workdir)
     gate(ctx)
     assert ctx.block_reason == r"Permission denied by rule: ^\.\./outside/"
+
+
+# --- approval_mode：Yolo 信任所有 terminal 命令、越界访问同样放行（默认层关闭），其余层不变 ---
+
+@pytest.mark.parametrize("tool_name,args", [
+    ("terminal", {"command": "rm old.txt"}),          # 危险命令
+    ("terminal", {"command": "cat ../secret.txt"}),   # 命令引用越界路径
+    ("terminal", {"command": "rm ../old.txt"}),       # 两者同时命中
+    ("read_file", {"path": str(Path.cwd().parent / "secret.txt")}),  # 文件工具越界
+])
+def test_yolo_allows_without_prompt(monkeypatch, tool_name, args):
+    """Yolo 信任所有 terminal 命令、越界访问同样放行：默认层不再询问。"""
+    _with_mode(monkeypatch, "Yolo")
+    _no_prompt(monkeypatch)
+    assert not run_gate(tool_name, args).blocked
+
+
+def test_yolo_still_denies_floor(monkeypatch):
+    _with_mode(monkeypatch, "Yolo")
+    _no_prompt(monkeypatch)
+    ctx = run_gate("terminal", {"command": "sudo ls"})
+    assert ctx.block_reason == "Permission denied: 'sudo' is on the deny list."
+
+
+def test_yolo_rule_deny_still_wins(monkeypatch):
+    """默认层优先级最低：Yolo 不绕过规则 / 扩展表态。"""
+    _with_mode(monkeypatch, "Yolo")
+    _no_prompt(monkeypatch)
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"})
+    build_gate(Rules(terminal=[(re.compile("^rm "), "deny")]))(ctx)
+    assert ctx.block_reason == "Permission denied by rule: ^rm "
+
+
+def test_yolo_rule_ask_still_prompts(monkeypatch):
+    _with_mode(monkeypatch, "Yolo")
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append(q) or "n")
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "echo hi"})
+    build_gate(Rules(terminal=[(re.compile("^echo "), "ask")]))(ctx)
+    assert cards == ["^echo "] and ctx.blocked
+
+
+def test_yolo_extension_deny_still_wins(monkeypatch):
+    """默认层优先级最低：Yolo 不绕过扩展 deny。"""
+    _with_mode(monkeypatch, "Yolo")
+    _no_prompt(monkeypatch)
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"},
+                            decisions=[_vote("deny", "policy")])
+    build_gate(Rules())(ctx)
+    assert ctx.blocked and ctx.block_reason == "[Extension blocked] policy"
+
+
+def test_yolo_extension_ask_still_prompts(monkeypatch):
+    """默认层优先级最低：Yolo 不绕过扩展 ask。"""
+    _with_mode(monkeypatch, "Yolo")
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append(q) or "n")
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"},
+                            decisions=[_vote("ask", "policy")])
+    build_gate(Rules())(ctx)
+    assert cards == ["policy"] and ctx.blocked
+
+
+def test_yolo_external_rule_deny_still_wins(monkeypatch):
+    """Yolo 只关默认层：显式 external_directory 规则仍然生效。"""
+    _with_mode(monkeypatch, "Yolo")
+    _no_prompt(monkeypatch)
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
+    build_gate(Rules(external_directory={"terminal": "deny"}))(ctx)
+    assert ctx.blocked and ctx.block_reason == (
+        "Permission denied by rule: Access outside working directory:\n- ../secret.txt")
+
+
+def test_approval_mode_is_read_live(monkeypatch):
+    """每次裁决实时读配置：设置窗落盘后无需重启即可切换。"""
+    manager = SimpleNamespace(config=AgentConfig(approval_mode="Manual"))
+    monkeypatch.setattr(permission, "CONFIGMANAGER", manager)
+    monkeypatch.setattr(permission, "ask_permission", lambda q, details: "n")
+    assert run_gate("terminal", {"command": "rm old.txt"}).blocked
+    manager.config = AgentConfig(approval_mode="Yolo")
+    _no_prompt(monkeypatch)
+    assert not run_gate("terminal", {"command": "rm old.txt"}).blocked
+
+
+@pytest.mark.parametrize("mode", ["LLM", "Decision Model"])
+def test_unimplemented_modes_fall_back_to_manual(monkeypatch, mode):
+    _with_mode(monkeypatch, mode)
+    cards = []
+    monkeypatch.setattr(permission, "ask_permission",
+                        lambda q, details: cards.append(q) or "n")
+    assert run_gate("terminal", {"command": "rm old.txt"}).blocked
+    assert cards == ["Destructive command detected"]
 
 
 if __name__ == "__main__":

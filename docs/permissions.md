@@ -20,20 +20,28 @@
    文件内靠后一条」收敛为最多一票）+ 代码扩展的决定票（每个回调最多一票）。动作全部相同 →
    采用该动作；动作不一致（规则 vs 扩展、扩展 vs 扩展）→ **弹确认卡由用户当场决定**，
    不静默选边。
-3. **默认层（defaults）**：没有任何用户表态时生效。`terminal` 命中危险命令模式（删除类、
-   系统目录重定向（含 `>/etc` 粘连写法）、递归 chmod/chown、世界可写 chmod、强杀进程、
-   `git reset --hard`/`git clean -fd`/强推、`crontab -r`、`curl | sh`/`| python3` 等管道
-   执行、`dd` 等）或命令中显式引用了工作目录之外的路径 → 询问；文件工具路径越界 → 询问；
-   否则允许。越界扫描是尽力而为的文本解析：变量拼接、`sh -c` 内层脚本与粘连 flag
-   （`-o/tmp/x`）不覆盖。
+3. **默认层（defaults）**：没有任何用户表态时生效。默认层受 `approval_mode` 控制：
+   - `Manual`（默认）：`terminal` 命中危险命令模式（删除类、系统目录重定向（含 `>/etc`
+     粘连写法）、递归 chmod/chown、世界可写 chmod、强杀进程、`git reset --hard` /
+     `git clean -fd` / 强推、`crontab -r`、`curl | sh` / `| python3` 等管道执行、`dd` 等）
+     或命令中显式引用了工作目录之外的路径 → 询问；文件工具路径越界 → 询问；否则允许。
+   - `Yolo`：信任所有 `terminal` 工具的 `command` 命令，越界访问（含文件工具）同样放行——
+     默认层不再询问。
+   - `LLM` / `Decision Model` 尚未实现，暂按 `Manual` 处理。
+   模式只改默认层：地板与用户表态（规则 / 扩展票）的优先级不变；`approval_mode` 每次裁决
+   实时读取，设置窗落盘后即生效。越界扫描是尽力而为的文本解析：变量拼接、`sh -c` 内层脚本
+   与粘连 flag（`-o/tmp/x`）不覆盖。
 
 越界判定的基准是**调用方工作目录**：即 `BeforeToolContext.cwd`（`ToolContext.cwd`），
 主代理为 `WORKDIR`，子代理为其 `working_directory`（缺省与主代理一致）。
 
 默认层与冲突裁决共用同一张确认卡：用户答 `y` / `yes` → 允许，其余（含无 UI 的 headless 场景）
-→ 拒绝。冲突卡会列出各方来源（规则 pattern / 扩展模块名及其 reason）与最终命令或路径。
-确认文本（原因 / 冲突标题）样式不变；触发数据（冲突来源清单、越界路径清单、
-`command: <命令原文>` / `path: <路径>`）按工具卡正文样式（dim）着色。
+→ 拒绝。冲突卡会列出各方来源（规则 pattern；`external_directory` 命中显示标题
+`Access outside working directory:` / 扩展模块名及其 reason）、规则层带来的越界路径清单
+与最终命令或路径。确认文本（原因 / 冲突标题）样式不变；触发数据（冲突来源清单、越界路径
+清单、`command: <命令原文>` / `path: <路径>`）按工具卡正文样式（dim）着色；越界路径清单
+最多展示三条，其余记为 `- ... and N more`。规则命中 `external_directory` 时与默认层同格式：
+确认文本只留标题，触发数据（terminal 为越界路径清单，文件工具为 `path: <路径>` 行）进 details。
 
 | 场景 | 结果 |
 | --- | --- |
@@ -43,7 +51,7 @@
 | 规则与扩展动作相同 | 采用该动作 |
 | 规则与扩展动作不同 / 扩展之间动作不同 | 弹确认卡 |
 | 有用户表态且动作一致，默认层持不同动作 | 采用用户表态（默认层不参与） |
-| 无任何用户表态 | 默认层：破坏性 / 越界 → 询问；否则允许 |
+| 无任何用户表态 | 默认层：`Manual` 下破坏性 / 越界 → 询问；`Yolo` 默认层全部放行（含文件工具越界；地板与用户表态仍优先） |
 
 ## 规则文件
 
@@ -92,13 +100,16 @@ action 取 `allow` / `ask` / `deny`（允许 / 询问 / 拒绝）。字段结构
   形式 `(?-i:...)` 局部关闭大小写不敏感，如 `(?-i:FOO)` 只匹配大写的 `FOO`）。按 JSON 键顺序
   收集全部命中。
 - `terminal.external_directory`：仅在命令（经默认层同一套越界扫描）引用了调用方工作目录之外的
-  路径时参与；未配置时行为不变（默认层询问）。
+  路径时参与；未配置时行为不变（默认层询问）。命中时规则票的确认文本是可读标题
+  `Access outside working directory:`，触发的路径清单进确认卡 details；`deny` 结果在标题后
+  跟同一份清单。
 - 文件工具 `path`：键为正则字符串，对**工作区相对路径**做 `re.search`（同样 `IGNORECASE`）：
   参数路径先 `resolve()`，再换算成相对调用方工作目录的 POSIX 路径（`./src/a.py` → `src/a.py`，
   工作区外的 `../secret.txt`；Windows 跨盘符没有相对形式时退化为绝对 POSIX 路径）。
   目录内与目录外的路径都会匹配；`path` 只对 `read_file` / `write_file` / `edit_file` 生效。
 - 文件工具 `external_directory`：仅在解析后的路径位于调用方工作目录之外时生效（见上文基准定义）；
-  目录内调用不受它影响（但仍受 `path` 规则影响）。
+  目录内调用不受它影响（但仍受 `path` 规则影响）。命中时规则票与默认层同格式：
+  确认文本为标题，details 为 `path: <路径>`，`deny` 结果为标题后接同一行。
 - 规则收敛：同一次调用的全部命中（`terminal.command` / 文件工具 `path`，加上越界时的
   `external_directory`）按 **deny > ask > allow** 取最严；同一 severity 多条命中时取 JSON 中
   靠后的一条；`external_directory` 命中视为追加在直接规则之后，因此规则层只产出至多一票。
@@ -164,7 +175,7 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 | 来源 | 工具结果 |
 | --- | --- |
 | 地板 | `Permission denied: '<pattern>' is on the deny list.` |
-| 规则裁定拒绝 | `Permission denied by rule: <pattern>`（command / path 规则为 JSON 中的正则原文；`external_directory` 为 `<tool>.external_directory`，`terminal` 同理） |
+| 规则裁定拒绝 | `Permission denied by rule: <pattern>`（command / path 规则为 JSON 中的正则原文；`external_directory` 为 `Access outside working directory:`，terminal 后接越界路径清单，文件工具后接 `path: <路径>` 行；清单最多三条，其余记为 `- ... and N more`） |
 | 扩展裁定拒绝 | `[Extension blocked] <reason>` |
 | 用户拒绝（询问或冲突卡被拒） | `Permission denied by user` |
 | 权限门自身异常 | `Permission check failed: <ExceptionName>` |
@@ -175,13 +186,13 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 **可以写入这两个位置**；修改在重启进程后生效。本期不设写保护（用户已确认），应由用户人工审阅
 规则与扩展的变更，只放入可信内容。
 
-> 根目录 `.hooks.json` 与 `examples/s08_hook_system.py` 是独立教学示例，不被运行时读取，
+> 根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被运行时读取，
 > 与上述机制无关。
 
 ## 参考
 
 - 设计契约：[`superpowers/specs/2026-10-13-permission-policy-design.md`](superpowers/specs/2026-10-13-permission-policy-design.md)
-- 规则扩展设计（terminal 外部目录 / 文件工具 path 正则）：[`superpowers/specs/2026-10-16-permission-path-rules-design.md`](superpowers/specs/2026-10-16-permission-path-rules-design.md)
+- 规则扩展设计（terminal 外部目录 / 文件工具 path 正则）：[`superpowers/specs/2026-10-16-permission-path-rules-design.md`](superpowers/specs/2026-10-16-permission-path-rules-design.md)（其中 `external_directory` 的票原因与拒绝文案已统一为「标题 + 触发数据」，以本文件为准）
 - 实现：[`core/extension/builtin/permission.py`](../core/extension/builtin/permission.py)、
   [`core/extension/builtin/permission_patterns.py`](../core/extension/builtin/permission_patterns.py)、
   [`core/extension/dispatcher.py`](../core/extension/dispatcher.py)

@@ -186,6 +186,12 @@ def test_resolve_matches_severity_and_last_of_same_action():
     assert resolve_matches([("ask", "k1"), ("ask", "k2")]) == ("ask", "k2")
 
 
+def test_resolve_matches_returns_the_list_element_itself():
+    """权限门用对象身份判断「越界命中胜出」，因此必须返回列表中的同一元素。"""
+    hit = ("ask", "Access outside working directory:")
+    assert resolve_matches([("allow", "a"), hit]) is hit
+
+
 def test_relative_path_inside_outside_and_dot(tmp_path):
     workdir = tmp_path / "proj"
     workdir.mkdir()

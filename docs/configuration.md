@@ -55,7 +55,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 
 | 窗口显示名 | 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| Approval mode | `approval_mode` | `Manual` | 工具审批策略：`LLM`（模型判断）/ `Decision Model`（决策模型判断）/ `Manual`（逐个询问用户）/ `Yolo`（全部放行）。预留字段：审批链路尚未读取该配置，改动暂不影响现有确认卡行为 |
+| Approval mode | `approval_mode` | `Manual` | 默认层对危险命令 / 越界路径的处置：`Manual` 逐个询问；`Yolo` 信任所有 `terminal` 工具的 `command` 命令，越界访问（含文件工具）同样放行，默认层不再询问（地板与规则 / 扩展表态仍优先）。`LLM` / `Decision Model` 尚未实现，暂按 `Manual` 处理。每次裁决实时读取，设置窗落盘后即生效 |
 
 ### 输出 token
 
