@@ -28,7 +28,7 @@ from tools import BASE_TOOL_HANDLERS
 
 load_dotenv(override=True)
 
-WORKDIR = Path.cwd().parent
+WORKDIR = Path(__file__).resolve().parents[2]
 client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"), base_url=os.getenv("DASHSCOPE_BASE_URL"))
 MODEL = os.getenv("MODEL")
 

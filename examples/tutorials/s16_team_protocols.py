@@ -29,13 +29,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from examples.config import client, MODEL
-from examples.s13_background_tasks import get_system_prompt, should_run_background, start_background_task, \
+from config import client, MODEL
+from s13_background_tasks import get_system_prompt, should_run_background, start_background_task, \
     collect_background_results
-from examples.s14_cron_scheduler import has_cron_queue, agent_lock, consume_cron_queue, update_context
-from examples.s15_agent_teams import MAILBOX_DIR
-from examples.tool_schema import BASE_TOOLS
-from examples.tools import BASE_TOOL_HANDLERS
+from s14_cron_scheduler import has_cron_queue, agent_lock, consume_cron_queue, update_context
+from s15_agent_teams import MAILBOX_DIR
+from tool_schema import BASE_TOOLS
+from tools import BASE_TOOL_HANDLERS
 
 
 # ── MessageBus (from s15) ──

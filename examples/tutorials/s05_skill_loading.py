@@ -21,7 +21,7 @@ from tool_schema import SKILLS_TOOLS
 
 load_dotenv(override=True)
 
-WORKDIR = Path.cwd().parent
+WORKDIR = Path(__file__).resolve().parents[2]
 SKILLS_DIR = WORKDIR / "skills"
 print(f"Current work dir: {WORKDIR}, skills dir: {SKILLS_DIR}", file=sys.stderr)
 client = OpenAI(

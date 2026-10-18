@@ -31,7 +31,8 @@
 | `core/tui/` | Textual 界面：App 装配、卡片/流式渲染、指令与弹窗、左栏分区与右栏面板（详见 [`tui.md`](tui.md)） |
 | `smoke/` | TUI 无头冒烟自检（`python -m core.tui.ui_textual --smoke`）与离线演示 agent；不随 `core/` 发布 |
 | `docs/` | 项目文档（见 [README 文档索引](../README.md#文档索引)） |
-| `examples/` | s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`） |
+| `examples/tutorials/` | s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`） |
+| `examples/` | 扩展示例（`extension_example`、`jev-for-web-search`、`jev-for-terminal`）与 `permission_config_example.json` |
 
 ## Agent 主循环
 
@@ -92,4 +93,4 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 
 - 同一轮内的多个工具调用按 `BaseTool.parallel_safe` 声明（分组函数 `group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）分组（ADR-0008）：组内 `asyncio.gather` 并发，写文件 / 终端等未声明工具作为屏障自成一组，组间串行；扩展钩子、权限确认与渲染仍在每组的准备 / 收尾段串行执行；
 - 工具结果仅取文本内容，图片/多模态读取未实现；
-- 权限策略由内置权限扩展在 `before_tool` 的 gate 阶段裁决（地板 / 规则 / 扩展决定票；规则文件 `.harness/.permissions.json`）；根目录 `.hooks.json` 与 `examples/s08_hook_system.py` 是独立教学示例，不被代码读取。
+- 权限策略由内置权限扩展在 `before_tool` 的 gate 阶段裁决（地板 / 规则 / 扩展决定票；规则文件 `.harness/.permissions.json`）；根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被代码读取。

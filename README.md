@@ -93,4 +93,4 @@ path 正则与越界策略）表达 allow / ask / deny；外部扩展也能用 `
 | [`docs/permissions.md`](docs/permissions.md) | 权限策略：三层判定、规则文件、扩展决定票与风险 |
 | [`docs/teams.md`](docs/teams.md) | 子代理：独立提示词、工具池与轮次上限 |
 | [`docs/extensions.md`](docs/extensions.md) | 外部扩展系统完整指南 |
-| [`examples/`](examples/) | s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`）与扩展示例（`extension_example`、`jev-for-web-search`） |
+| [`examples/`](examples/) | 配置示例 `permission_config_example.json`、扩展示例（`extension_example`、`jev-for-web-search`、`jev-for-terminal`）与 `tutorials/` 下的 s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`） |

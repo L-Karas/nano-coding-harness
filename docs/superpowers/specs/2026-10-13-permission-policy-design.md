@@ -140,7 +140,7 @@ return default_vote(tool, args)                   # 破坏性/越界 → ask；�
   - `__init__.py`：`register_builtin_extensions()`，用与外部扩展相同的 `ExtensionAPI` + `register(api)` 形态注册。
 - 由 `bootstrap()` 显式调用注册，不走 `.harness/extensions/` 扫描：该目录被 gitignore、受 `enabled` 控制，权限门必须无条件在场，不能是用户可关的开关。
 - 删除 `core/hook/` 整个包（`HOOKS`、`register_hook`、`trigger_hooks`、`DEFAULT_HOOKS`、`install_default_hooks`），以及两个从未触发的旧事件 `pre_llm_call`、`post_tool_call`。
-- `examples/s08_hook_system.py` 与根目录 `.hooks.json` 是独立的教学示例，不 import `core.hook`，保持原状。
+- `examples/tutorials/s08_hook_system.py` 与根目录 `.hooks.json` 是独立的教学示例，不 import `core.hook`，保持原状。
 
 ### 6.2 bootstrap 与主流程接线
 

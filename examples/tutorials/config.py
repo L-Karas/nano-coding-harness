@@ -11,7 +11,7 @@ from openai import OpenAI
 
 load_dotenv(override=True)
 
-WORKDIR = Path.cwd().parent
+WORKDIR = Path(__file__).resolve().parents[2]
 MEMORY_DIR = WORKDIR / ".memory"
 MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
 MEMORY_DIR.mkdir(exist_ok=True)
