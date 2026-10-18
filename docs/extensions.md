@@ -195,7 +195,7 @@ def register(api):
 - 同一回调多次 `decide` 以最后一次为准；票来源由派发器自动标注（外部扩展 `nano_extension_<名字>`，内置 `builtin:permission`）。
 - 回调结束时为票记录参数快照；后续回调改写了参数则票作废（记日志）并视为弃权，权限门按最终参数判定。
 - 回调按 `user → observer → gate` 三个阶段排序，同阶段内保持注册顺序：外部扩展只能注册 `user` 阶段；内置观察者在 `observer`；内置权限门固定在 `gate` 最后执行，看到所有参数改写与全部投票。
-- 权限门裁决顺序：地板（硬编码，永远拒绝）→ 用户表态（规则 + 扩展票；规则层内部先按 deny > ask > allow 收敛为至多一票，再与扩展票合并；动作一致采用，冲突弹确认卡）→ 默认层（破坏性命令 / 越界路径 → 询问，否则允许）。
+- 权限门裁决顺序：地板（硬编码，永远拒绝）→ 用户表态（规则 + 扩展票；规则层内部先按 deny > ask > allow 收敛为至多一票，再与扩展票合并；动作一致采用，冲突弹确认卡）→ 默认层（受 `approval_mode` 影响：`Manual` 下破坏性命令 / 越界路径 → 询问；`Yolo` 信任所有 `terminal` 工具的 `command` 命令、越界访问（含文件工具）同样放行，默认层整体关闭）。
 - `StepPolicy.use_extensions=False` 只跳过外部回调（所有事件一律跳过）；内置观察者与权限门照常，地板与规则仍然生效。
 - `api.on()` 不向外部扩展暴露阶段与 `fail_closed`；外部扩展没有任何公开注册点可以排到权限门之后。失败语义见 4.3。
 
@@ -408,7 +408,7 @@ def test_blocks_rm_commands():
 - **不在覆盖范围**：
   - 后台任务异步完成的结果不触发 `after_tool`（派发时的 `before_tool` 与占位结果的 `after_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
   - 上下文压缩、标题生成等辅助 LLM 调用不触发 `before_llm` / `after_llm`；
-  - 根目录 `.hooks.json` 与 `examples/s08_hook_system.py` 是独立教学示例，不参与扩展加载；工具节点顺序固定为「外部 `before_tool`（参数改写 + 决定票）→ 内置观察者 → 内置权限门（gate）→ 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
+  - 根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不参与扩展加载；工具节点顺序固定为「外部 `before_tool`（参数改写 + 决定票）→ 内置观察者 → 内置权限门（gate）→ 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
   - 被扩展 / 权限拦截、后台任务占位、中断占位、参数 JSON 解析失败等路径没有真实执行结果，但同样以占位结果触发 `after_tool` 与结果渲染（拦截与解析失败 `is_error=True`；中断的内部结果 `ToolResult.is_cancelled=True`、`is_error=False`；后台派发占位为 `is_error=False`，接管结果沿用扩展传入的 `is_error`）。
 
 ## 参考
@@ -418,5 +418,8 @@ def test_blocks_rm_commands():
 - 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`、`protocol.py`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)
 - 进阶示例（`after_tool` 读取并按需改写 `web_search` 结果）：[`examples/jev-for-web-search/`](../examples/jev-for-web-search/)
+- 进阶示例（`before_tool` 决定票：调用 Jev 评估 `terminal` 命令；默认禁用，复制后需把
+  `extension.json` 的 `enabled` 改为 `true` 并配置 `TYPESAFE_API_KEY`；命令原文会发送到
+  `api.typesafe.ai`）：[`examples/jev-for-terminal/`](../examples/jev-for-terminal/)
 - 主循环接线：[`core/agent_loop.py`](../core/agent_loop.py)
 - 子代理接线：[`core/sub_agent.py`](../core/sub_agent.py)
