@@ -29,7 +29,8 @@ async def run(app, pilot) -> None:
     footer = app.query_one("#footer", Static)
     bar_widget = app.query_one("#token-bar", Static)
     approval_widget = app.query_one("#approval-mode", Static)
-    empty_bar = "Context Usage: [" + "-" * 20 + "] -- / --"
+    empty_bar = f"{_mod.TOKEN_LABEL}: [" + "-" * _mod.TOKEN_BAR_CELLS + "] -- / --"
+    prefix = f"{_mod.TOKEN_LABEL}: ["
     _manager, _ctx_len = app._manager, _mod.current_context_length
     _wd, _gb = _mod.working_directory, _mod.current_git_branch
     _model_state = _mod.current_model_state
@@ -85,18 +86,18 @@ async def run(app, pilot) -> None:
         app._manager = _FakeSession(250_000)  # 25%：绿
         _mod.current_context_length = lambda: 1_000_000
         app._refresh_footer()
-        assert _rows()[1] == "Context Usage: [#####---------------] 25.0% / 1.0M", f"占用条 M 单位/比例不符: {_rows()[1]!r}"
+        assert _rows()[1] == f"{prefix}#####---------------] 25.0% / 1.0M", f"占用条 M 单位/比例不符: {_rows()[1]!r}"
         assert _has("#4ade80", "74,222,128"), f"<40% 应为绿: {_bar_styles()}"
 
         app._manager = _FakeSession(51_200)  # 40.0% 阈值：黄
         _mod.current_context_length = lambda: 128_000
         app._refresh_footer()
-        assert _rows()[1] == "Context Usage: [########------------] 40.0% / 128.0K", f"占用条渲染不符: {_rows()[1]!r}"
+        assert _rows()[1] == f"{prefix}########------------] 40.0% / 128.0K", f"占用条渲染不符: {_rows()[1]!r}"
         assert _has("#facc15", "250,204,21"), f"40%–80% 应为黄: {_bar_styles()}"
 
         app._manager = _FakeSession(102_400)  # 80.0% 阈值：红
         app._refresh_footer()
-        assert _rows()[1] == "Context Usage: [################----] 80.0% / 128.0K", f"占用条 80% 边界不符: {_rows()[1]!r}"
+        assert _rows()[1] == f"{prefix}################----] 80.0% / 128.0K", f"占用条 80% 边界不符: {_rows()[1]!r}"
         assert _has("#f87171", "248,113,113"), f">=80% 应为红: {_bar_styles()}"
 
         app._manager = _FakeSession(1_234)

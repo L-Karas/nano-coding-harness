@@ -31,6 +31,7 @@ PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
 
 # 工具审批策略；下拉选项的取值即这里的字面量（顺序即表单顺序）
 ApprovalMode = Literal["LLM", "Decision Model", "Manual", "Yolo"]
+DEFAULT_APPROVAL_MODE: ApprovalMode = "Manual"
 
 
 class AgentConfig(BaseModel):
@@ -46,7 +47,7 @@ class AgentConfig(BaseModel):
                                         description="Model used when the default model is unavailable. Supports 'provider:model' to use a model from another provider")
 
     approval_mode: ApprovalMode = Field(
-        default="Manual",
+        default=DEFAULT_APPROVAL_MODE,
         description="Tool approval mode. Manual asks on destructive commands / outside paths; "
                     "Yolo trusts all terminal commands and outside-path access (default layer skipped; "
                     "floor, rules, and extension votes still apply); LLM / Decision Model are not implemented "

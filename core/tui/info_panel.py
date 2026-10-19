@@ -17,7 +17,7 @@ from textual.widgets import Static
 
 from core.runtime_state import RUNTIME_STATE, RuntimeSnapshot, RuntimeState
 from core.tui.surface import _strip_keycaps
-from core.tui.theme import _SPINNER_FRAMES
+from core.tui.theme import SECONDARY_TEXT, _SPINNER_FRAMES
 
 _RUNNING_STATUSES = ("in_progress", "running")  # 需要轮播字形的状态
 
@@ -72,7 +72,7 @@ class _InfoRow(Horizontal):
             glyph, color, text_style = {
                 "in_progress": (frame, "#facc15", "#facc15"),
                 "completed": ("●", "#4ade80", "strike #4ade80"),
-            }.get(it["status"], ("○", "#94a3b8", "#e2e8f0"))
+            }.get(it["status"], ("○", SECONDARY_TEXT, "#e2e8f0"))
         elif self._kind == "bg":  # 仅 running / completed 两态
             running = it["status"] == "running"
             glyph, color = (frame, "#facc15") if running else ("●", "#4ade80")
@@ -84,7 +84,7 @@ class _InfoRow(Horizontal):
         lines = _strip_keycaps(it["text"]).splitlines() or [""]
         clip = self._CLIP[self._kind]
         row = Text()
-        row.append("▾ " if self._expanded else "▸ ", style="#94a3b8")
+        row.append("▾ " if self._expanded else "▸ ", style=SECONDARY_TEXT)
         row.append(f"{glyph} {it['id']} " if self._kind != "todos" else f"{glyph} ", style=color)
         row.append(lines[0] if self._expanded else lines[0][:clip], style=text_style)
         if self._expanded:
@@ -94,7 +94,7 @@ class _InfoRow(Horizontal):
             row.append("…", style=text_style)
         if self._kind in ("bg", "subagents") and self._expanded and it.get("expand_text"):
             for line in _strip_keycaps(it["expand_text"]).splitlines():  # 折叠时完全不占位
-                row.append(f"\n  {line}", style="#94a3b8")
+                row.append(f"\n  {line}", style=SECONDARY_TEXT)
         return row
 
 

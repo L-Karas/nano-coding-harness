@@ -11,6 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Select, Static, Switch
 from textual.widgets.option_list import Option
 
+from core.tui.theme import SECONDARY_TEXT
 from core.tui.screens.base import (
     _ArrowNav,
     _InlineConfirm,
@@ -51,7 +52,7 @@ class LoginScreen(_ListPickerScreen):
     LIST_ID = "login-list"
     PICKER_ID = "login-picker"
 
-    _NUM_STYLE = "#94a3b8"
+    _NUM_STYLE = SECONDARY_TEXT
     _REGISTER_STYLE = "#4ade80"
     _UNREGISTER_STYLE = "#f87171"
 

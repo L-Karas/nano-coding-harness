@@ -11,7 +11,7 @@ from textual.widgets.option_list import Option
 
 from core.tui.footer import _FooterBar
 from core.tui.surface import _StatusLine
-from core.tui.theme import _PLACEHOLDER
+from core.tui.theme import SECONDARY_TEXT, PLACEHOLDER
 from core.tui.widgets import _ClarifyList, _CommandInput
 
 
@@ -23,7 +23,7 @@ def _welcome_text(title: str, subtitle: str) -> Text:
         art = "\n".join(line.rstrip() for line in figlet_format(ascii_title).splitlines())
     text = Text(art, style="#4ade80", justify="center")
     if subtitle:
-        text.append(("\n" if art else "") + subtitle, style="#94a3b8")
+        text.append(("\n" if art else "") + subtitle, style=SECONDARY_TEXT)
     return text
 
 
@@ -58,5 +58,5 @@ class _ChatDock(Vertical):
         yield _ClarifyList(id="clarify-list")
         with Horizontal(id="inputbar"):  # 上下粗实线输入条：>> 前缀 + 输入框
             yield Static(">> ", id="prompt-mark")
-            yield _CommandInput(placeholder=_PLACEHOLDER, id="prompt")
+            yield _CommandInput(placeholder=PLACEHOLDER, id="prompt")
         yield _FooterBar(id="footer-bar")

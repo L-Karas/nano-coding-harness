@@ -12,6 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 from textual.widgets.option_list import Option
 
+from core.tui.theme import SECONDARY_TEXT
 from core.tui.screens.base import (
     _InlineConfirm,
     _ListPickerScreen,
@@ -42,7 +43,7 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
     )]
 
     _NAME_STYLE = "#f8fafc"
-    _UNCONFIGURED_STYLE = "#94a3b8"  # 灰：未配置
+    _UNCONFIGURED_STYLE = SECONDARY_TEXT  # 灰：未配置
     _CONFIGURED_STYLE = "#16a34a"  # 暗绿：已配置
 
     def __init__(self, rows: list[tuple[str, bool]]) -> None:

@@ -9,7 +9,7 @@ Textual 全屏界面。安装、启动与快捷键 / 内置指令见 [README](..
 
 左右分栏（约 4:1）：左侧标题栏 + 卡片式聊天记录 + 状态行 + 输入条 + 页脚（cwd / git 分支）
 + 底行（左：`Context Usage:` 标签 + 上下文占用条（当前会话 token 占上下文长度的进度条与百分比），右：当前模型）
-+ 其下方 `Approval Mode: <mode>` 行显示当前审批模式；
++ 其下方 `Approval Mode: <mode>` 行显示当前实际生效的审批模式（`LLM` / `Decision Model` 暂按 `Manual`）；
 右侧 Information 面板实时展示 Todos（`in_progress` 转圈）、后台任务（`running` 转圈）与
 运行中的子代理，分区与条目均可点击折叠/展开；运行中且可停的后台任务 / 子代理条目行尾
 有 `■`，点击指名停止（句柄存于 `RuntimeState`，回合结束后仍可停，见 [ADR-0009](adr/0009-background-cancel.md)）。

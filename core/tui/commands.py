@@ -29,7 +29,7 @@ from core.tui.screens import (
     SettingsScreen,
     SkillsScreen,
 )
-from core.tui.theme import _PLACEHOLDER
+from core.tui.theme import PLACEHOLDER
 
 
 class _CommandFlow:
@@ -256,7 +256,7 @@ class _CommandFlow:
         self._progress_sync()  # 后台任务 / 子代理仍在跑则保持动态条，否则清除
         self._set_status_text("")
         prompt = self._prompt()
-        prompt.placeholder = _PLACEHOLDER
+        prompt.placeholder = PLACEHOLDER
         prompt.disabled = False
         prompt.focus()
 

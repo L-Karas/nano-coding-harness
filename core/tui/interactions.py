@@ -12,7 +12,7 @@ from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
 from core.tui.render import _dim_body
-from core.tui.theme import _PLACEHOLDER
+from core.tui.theme import PLACEHOLDER
 from core.tui.widgets import ClarifyConfirmed, _ClarifyList
 
 
@@ -189,7 +189,7 @@ class _DockInteractions:
         """输入条回到默认占位禁用态（_set_idle 在回合结束时再启用）。"""
         prompt = self._prompt()
         prompt.text = ""
-        prompt.placeholder = _PLACEHOLDER
+        prompt.placeholder = PLACEHOLDER
         prompt.disabled = True
 
     def _answer_clarify(self, value: str) -> None:

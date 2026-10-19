@@ -30,7 +30,7 @@ from core.tui.info_panel import _InfoPanel
 from core.tui.interactions import _DockInteractions
 from core.tui.panels import _ChatBoard, _ChatDock, _Welcome
 from core.tui.surface import _RenderSurface
-from core.tui.theme import DEFAULT_SUBTITLE, DEFAULT_TITLE, TERMINAL_TITLE
+from core.tui.theme import DEFAULT_SUBTITLE, DEFAULT_TITLE, SECONDARY_TEXT, TERMINAL_TITLE
 from core.tui.widgets import _CommandInput
 
 
@@ -90,6 +90,10 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
     CSS_PATH = "app.css"
     TITLE = "Nano Harness"
     SUB_TITLE = "Textual UI"
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        """注册 app.css 使用的自定义变量：$secondary-text（次级文字色）。"""
+        return {**super().get_theme_variable_defaults(), "secondary-text": SECONDARY_TEXT}
 
     # ctrl+c 空操作覆盖 Textual 默认的 help_quit（退出用 /exit 或 ctrl+q；复制由更内层绑定处理）
     BINDINGS = [("escape", "deny_permission", "Deny/Interrupt"),  # 权限/clarify 优先，其次中断回合

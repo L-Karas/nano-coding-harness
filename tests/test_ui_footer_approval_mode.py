@@ -6,6 +6,7 @@ from textual.widgets import Static
 
 import core.config
 import core.tui.utils as utils
+from core.tui.footer import TOKEN_LABEL, token_bar_text
 from core.tui.ui_textual import ChatApp
 
 
@@ -34,3 +35,14 @@ def test_footer_shows_approval_mode_and_refreshes(monkeypatch):
             assert str(row.render()) == "Approval Mode: Yolo"
 
     asyncio.run(main())
+
+
+def test_current_approval_mode_maps_unimplemented_to_manual(monkeypatch):
+    monkeypatch.setattr(core.config, "CONFIGMANAGER",
+                        SimpleNamespace(config=SimpleNamespace(approval_mode="LLM")))
+    assert utils.current_approval_mode() == "Manual"
+
+
+def testtoken_bar_text_has_context_usage_label():
+    assert token_bar_text(0, 200_000).plain.startswith(f"{TOKEN_LABEL}: [")
+    assert token_bar_text(0, 0).plain.startswith(f"{TOKEN_LABEL}: [")

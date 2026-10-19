@@ -3,6 +3,8 @@
 import os
 import subprocess
 
+from core.config import DEFAULT_APPROVAL_MODE
+
 # / 指令元数据（顺序即候选列表顺序，增删指令只改这一处）：(规范值, 匹配别名, 简短说明)
 _SLASH_COMMAND_META: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("/new", (), "Start a fresh session"),
@@ -99,13 +101,17 @@ def current_context_length() -> int:
         return 0
 
 
+_IMPLEMENTED_APPROVAL_MODES = ("Manual", "Yolo")
+
+
 def current_approval_mode() -> str:
-    """当前工具审批模式（AgentConfig.approval_mode）；配置不可用时回退 'Manual'。"""
+    """当前实际生效的审批模式；LLM / Decision Model 未实现，按 Manual 显示。"""
     try:
         from core.config import CONFIGMANAGER
-        return str(CONFIGMANAGER.config.approval_mode)
+        mode = str(CONFIGMANAGER.config.approval_mode)
     except Exception:
-        return "Manual"
+        return DEFAULT_APPROVAL_MODE
+    return mode if mode in _IMPLEMENTED_APPROVAL_MODES else DEFAULT_APPROVAL_MODE
 
 
 def format_context_length(value: int) -> str:

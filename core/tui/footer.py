@@ -7,6 +7,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from core.tui.theme import SECONDARY_TEXT
 from core.tui.utils import (
     current_approval_mode,
     current_context_length,
@@ -16,9 +17,9 @@ from core.tui.utils import (
     working_directory,
 )
 
-_TOKEN_BAR_CELLS = 20  # 占用条固定格数
-_TOKEN_LABEL = "Context Usage"  # 占用条前置标签
-_TEXT_STYLE = "#94a3b8"  # 次级灰（cwd 行 / 模型段 / 标签 / 百分比段）
+TOKEN_BAR_CELLS = 20  # 占用条固定格数
+TOKEN_LABEL = "Context Usage"  # 占用条前置标签
+_TEXT_STYLE = SECONDARY_TEXT  # 次级灰（cwd 行 / 模型段 / 标签 / 百分比段）
 
 
 def _model_label() -> str:
@@ -29,17 +30,17 @@ def _model_label() -> str:
     return f"({provider}) {model}" + (f" * {level}" if level else "")
 
 
-def _token_bar_text(tokens: int, context_length: int) -> Text:
+def token_bar_text(tokens: int, context_length: int) -> Text:
     """占用条：'Context Usage: [####----------------] 40.0% / 200.0K'；40% / 80% 阈值绿→黄→红；
     上下文长度未知时灰条 'Context Usage: [...] -- / --'；占比 >100% 条填满、百分比照实显示。"""
-    text = Text(f"{_TOKEN_LABEL}: ", no_wrap=True, style=_TEXT_STYLE)
+    text = Text(f"{TOKEN_LABEL}: ", no_wrap=True, style=_TEXT_STYLE)
     if context_length <= 0:
-        text.append("[" + "-" * _TOKEN_BAR_CELLS + "] -- / --", style=_TEXT_STYLE)
+        text.append("[" + "-" * TOKEN_BAR_CELLS + "] -- / --", style=_TEXT_STYLE)
         return text
     percent = tokens / context_length * 100
-    filled = min(_TOKEN_BAR_CELLS, int(percent * _TOKEN_BAR_CELLS / 100))
+    filled = min(TOKEN_BAR_CELLS, int(percent * TOKEN_BAR_CELLS / 100))
     color = "#4ade80" if percent < 40 else "#facc15" if percent < 80 else "#f87171"
-    text.append("[" + "#" * filled + "-" * (_TOKEN_BAR_CELLS - filled) + "]", style=color)
+    text.append("[" + "#" * filled + "-" * (TOKEN_BAR_CELLS - filled) + "]", style=color)
     text.append(f" {percent:.1f}% / {format_context_length(context_length)}", style=_TEXT_STYLE)
     return text
 
@@ -68,7 +69,7 @@ class _FooterBar(Vertical):
 
         bar = self.query_one("#token-bar", Static)
         text = Text(no_wrap=True)
-        text.append_text(_token_bar_text(self._session_tokens(), current_context_length()))
+        text.append_text(token_bar_text(self._session_tokens(), current_context_length()))
         model_label = _model_label()
         if model_label:
             model = Text(model_label, no_wrap=True, style=_TEXT_STYLE)

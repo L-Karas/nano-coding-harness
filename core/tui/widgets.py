@@ -11,6 +11,7 @@ from textual.message import Message
 from textual.widgets import Input, OptionList, TextArea
 from textual.widgets.option_list import Option
 
+from core.tui.theme import SECONDARY_TEXT
 from core.tui.utils import (
     SLASH_COMMAND_ALIASES,
     SLASH_COMMANDS,
@@ -20,7 +21,7 @@ from core.tui.utils import (
 
 # / 指令候选行：指令名列定宽（utils.slash_command_rows）+ 简短说明
 _CMD_ROWS: dict[str, tuple[str, str]] = dict(zip(SLASH_COMMANDS, slash_command_rows()))
-_CMD_DESC_STYLE = "#94a3b8"
+_CMD_DESC_STYLE = SECONDARY_TEXT
 
 
 def _cmd_candidates(value: str) -> list[str]:
