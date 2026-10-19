@@ -55,7 +55,9 @@ async def spawn_subagent(description: str, ctx=None, goal: str = "",
                                   enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
         system_prompt = build_system_prompt("sub-agent", tools=pool.schemas(), work_directory=work_dir)
         history = [{"role": "user", "content": description}]
-        tctx = ToolContext(agent_run=ctx, cwd=work_dir, agent_name="sub-agent")
+        client = shared_sub_model_client()
+        tctx = ToolContext(agent_run=ctx, cwd=work_dir, agent_name="sub-agent",
+                           vision=bool(getattr(client, "supports_vision", lambda: True)()))
         policy = StepPolicy(use_extensions=True)
         renderer = StepRenderer(on_tool_call=lambda tool_name, _args: _set_phase(agent_id, "tool", tool_name))
 
@@ -68,7 +70,7 @@ async def spawn_subagent(description: str, ctx=None, goal: str = "",
             outcome = await run_agent_step(
                 history,
                 system_prompt,
-                client=shared_sub_model_client(),
+                client=client,
                 pool=pool,
                 tctx=tctx,
                 max_tokens=CONFIGMANAGER.config.default_max_tokens,

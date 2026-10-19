@@ -37,7 +37,7 @@ harness，由模型直接看到图后再讨论怎么改。
 | 7 | TUI | 注入消息统一使用 `INJECTION_MESSAGES_TEMPLATE`；TUI 回放跳过，不渲染图片，不参与会话标题 / fork 列表 |
 | 8 | 压缩 | 图片作为普通消息一起参与压缩；token 估算文本正常计，每个 `image_url` part 暂按固定 **1000 token** 计 |
 | 9 | 本地图片限制 | 支持 `png` / `jpg` / `jpeg` / `gif` / `webp`，单图上限 5 MB |
-| 10 | 新读图片的模型能力 | 当前模型 `vision=false` 时不附加图片，只注入文本说明原因 |
+| 10 | 新读图片的模型能力 | 当前模型 `vision=false` 时 `read_file` 不编码图片、不返回附件，工具结果说明原因；step 层对自定义工具返回的图片兜底不附加 |
 | 11 | 旧会话图片 + 非视觉模型 | 请求时把含图片的整条注入消息替换为纯文本 user 占位消息，会话文件保持原样；切回视觉模型后原图仍可用 |
 
 ## 3. 消息与请求视图
@@ -96,6 +96,9 @@ dict 列表，不能只改 Message 分支。压缩的切分与触发会把这些
 | 本地图片路径（后缀命中图片表） | 检查大小 → 读原始字节 → base64 → data URL；返回 `ToolResult`（文本 + `images`） |
 | `http(s)://` 图片 URL（路径部分后缀命中图片表） | **不下载、不校验**，直接作为 `image_url.url` 透传；返回 `ToolResult`（文本 + `images`） |
 | 其他二进制 / 未知后缀 | 维持现状（按文本读，解码失败即工具错误） |
+
+`ToolContext.vision=false` 时，本地图片与图片 URL 两条分支都不读取 / 编码，只返回文本结果
+（含来源、MIME、大小与「当前模型不支持视觉输入，未附加」说明）。
 
 图片表与上限（`core/tools/base_tools/read.py` 模块常量）：
 
@@ -168,8 +171,9 @@ def supports_vision(self) -> bool:
 泄漏进工具层）。
 
 - `vision=true`：注入带图片 part 的 user 消息。
-- `vision=false`：不附加图片，只注入一条文本注入消息，说明这些图片已读取但当前模型不支持
-  视觉输入，并列出路径。这样模型仍知道发生过什么，接口也不会因 image part 报错。
+- `vision=false`：`read_file` 已在工具侧跳过编码并返回文本说明，因此新读图片不会产生附件；
+  若自定义工具仍返回了图片，step 层兜底不附加，只注入一条文本消息说明当前模型不支持视觉输入
+  并列出路径。这样模型仍知道发生过什么，接口也不会因 image part 报错。
 
 ### 5.3 注入消息形态
 
@@ -196,8 +200,8 @@ def supports_vision(self) -> bool:
 - 整条消息只出现一次，位于**所有 tool 消息之后**（满足 OpenAI「tool 结果紧跟 assistant
   tool_calls」的约束）。
 - 使用统一注入模板，因此 `is_injected_content()` 为真，TUI 回放 / 标题 / fork 都会跳过。
-- `vision=false` 时注入的是纯文本 user 消息（`content` 为 `str`），没有 image part；
-  说明文字放在注入模板内部，消息仍以 `</injection_messages>` 结尾，TUI 回放照常跳过。
+- `vision=false` 时（自定义工具兜底路径）注入的是纯文本 user 消息（`content` 为 `str`），
+  没有 image part；说明文字放在注入模板内部，消息仍以 `</injection_messages>` 结尾，TUI 回放照常跳过。
 
 ### 5.4 与其他注入的关系
 
@@ -300,7 +304,7 @@ def supports_vision(self) -> bool:
 - `agent_step`：
   - 同一轮多个 `read_file` → 所有 tool 消息之后只有一条注入消息，路径与图片顺序一致；
   - 失败 / 取消的读取不注入；
-  - `vision=false` → 无 image part，仅有文本注入；
+  - `vision=false` → `read_file` 不编码、无附件；自定义工具返回图片时无 image part，仅有文本注入；
   - 无图片时不产生额外消息。
 - 消息层：`content_text()`、`is_injected_content()`、`is_synthetic_content()`、
   `to_llm_messages()` 数组透传、`estimate_size()` 数组按 1000 token / 图计。

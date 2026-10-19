@@ -17,7 +17,7 @@ _Avoid_: handler、run_* 函数
 _Avoid_: tools/handlers 平行表、工具注册表
 
 **ToolContext**:
-一次工具执行的运行上下文：取消信号、工作目录与发起 agent 的身份，由调用方持有并传入。
+一次工具执行的运行上下文：取消信号、工作目录、发起 agent 的身份与当前模型是否支持视觉，由调用方持有并传入。
 _Avoid_: 全局变量、handler 包装
 
 **Agent step**:

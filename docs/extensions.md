@@ -126,7 +126,7 @@ def register(api):
 
 | 事件 | 上下文对象（构造参数） | 可写字段 | 控制方法 |
 | --- | --- | --- | --- |
-| `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history)`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
+| `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history, vision=client.supports_vision())`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
 | `after_llm` | `AfterLLMContext(content, tool_calls, finish_reason="", usage=None)` | **`content`**、**`tool_calls`**、**`inject_messages`** | 无 |
 | `before_tool` | `BeforeToolContext(tool_name, args, cwd=None)` | **`args`** | `ctx.decide(action, reason)` / `ctx.block(reason)` |
 | `tool_execute` | `ToolExecuteContext(tool_name, args, tctx=None)` | **`result`**、**`is_error`** | `ctx.handle(result, is_error=False)` |

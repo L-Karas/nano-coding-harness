@@ -93,5 +93,5 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 ## 已知边界
 
 - 同一轮内的多个工具调用按 `BaseTool.parallel_safe` 声明（分组函数 `group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）分组（ADR-0008）：组内 `asyncio.gather` 并发，写文件 / 终端等未声明工具作为屏障自成一组，组间串行；扩展钩子、权限确认与渲染仍在每组的准备 / 收尾段串行执行；
-- 工具结果仅取文本内容，图片/多模态读取未实现；
+- 工具结果仅取文本内容；图片由 `read_file` 通过 `ToolResult.images` 带回，再由 step 汇总为 user 注入消息（见 `tools.md`）；
 - 权限策略由内置权限扩展在 `before_tool` 的 gate 阶段裁决（地板 / 规则 / 扩展决定票；规则文件 `.harness/.permissions.json`）；根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被代码读取。

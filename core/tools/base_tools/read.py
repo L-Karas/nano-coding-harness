@@ -36,7 +36,7 @@ DESCRIPTION = (
 
 class ReadFile(BaseTool):
     __doc__ = DESCRIPTION
-    path: str = Field(description="Path to the file to read. Relative paths resolve against the working directory; "
+    path: str = Field(description="Path to the file to read, or an http(s) image URL. Relative paths resolve against the working directory; "
                                   "absolute paths are used as-is.")
     limit: int = Field(default=MAX_OUTPUT_LINES,
                        description=f"Maximum number of lines to return (default: {MAX_OUTPUT_LINES}).")
@@ -48,13 +48,15 @@ class ReadFile(BaseTool):
 
     def run(self, tctx: ToolContext | None = None) -> str | ToolResult:
         if _is_http_url(self.path):
-            return _http_image_result(self.path)
+            return _http_image_result(self.path, _supports_vision(tctx))
 
         base = tctx.cwd if tctx and tctx.cwd else WORKDIR
         fp = (base / self.path).resolve()
         mime = _image_mime(self.path)
         if mime is not None:
             size = fp.stat().st_size
+            if not _supports_vision(tctx):
+                return _text_only_image_result(str(fp), mime, f"{size} bytes")
             if size > MAX_IMAGE_BYTES:
                 return _too_large(str(fp), size)
             return _image_result(str(fp), mime, f"{size} bytes", _data_url(mime, fp.read_bytes()))
@@ -64,13 +66,15 @@ class ReadFile(BaseTool):
 
     async def arun(self, tctx: ToolContext | None = None) -> str | ToolResult:
         if _is_http_url(self.path):
-            return _http_image_result(self.path)
+            return _http_image_result(self.path, _supports_vision(tctx))
 
         base = tctx.cwd if tctx and tctx.cwd else WORKDIR
         fp = (base / self.path).resolve()
         mime = _image_mime(self.path)
         if mime is not None:
             size = fp.stat().st_size
+            if not _supports_vision(tctx):
+                return _text_only_image_result(str(fp), mime, f"{size} bytes")
             if size > MAX_IMAGE_BYTES:
                 return _too_large(str(fp), size)
             async with aiofiles.open(fp, "rb") as f:
@@ -85,12 +89,19 @@ class ReadFile(BaseTool):
         return _slice_content(content.splitlines(), self.limit, self.offset) or "(Empty file)"
 
 
+def _supports_vision(tctx: ToolContext | None) -> bool:
+    """无上下文（直接调用 / 测试）时按支持视觉处理。"""
+    return tctx.vision if tctx is not None else True
+
+
 def _is_http_url(path: str) -> bool:
     return urlsplit(path).scheme.lower() in ("http", "https")
 
 
 def _image_mime(path: str) -> str | None:
-    return IMAGE_MIME_TYPES.get(Path(urlsplit(path).path).suffix.lower())
+    # URL 只看 path 部分（去掉 query / fragment）；本地路径原样取后缀，避免 # / ? 截断
+    candidate = urlsplit(path).path if _is_http_url(path) else path
+    return IMAGE_MIME_TYPES.get(Path(candidate).suffix.lower())
 
 
 def _data_url(mime: str, data: bytes) -> str:
@@ -109,10 +120,20 @@ def _too_large(source: str, size: int) -> ToolResult:
         f"Image too large: {source} is {size} bytes (limit {MAX_IMAGE_BYTES} bytes).")
 
 
-def _http_image_result(path: str) -> ToolResult:
+VISION_UNSUPPORTED_MESSAGE = "Current model does not support vision input; image not attached."
+
+
+def _text_only_image_result(source: str, mime: str, size: str) -> ToolResult:
+    return ToolResult(
+        content=f"Image read: {source} ({mime}, {size}). {VISION_UNSUPPORTED_MESSAGE}")
+
+
+def _http_image_result(path: str, vision: bool) -> ToolResult:
     mime = _image_mime(path)
     if mime is None:
         raise ValueError(f"Unsupported image URL: {path}")
+    if not vision:
+        return _text_only_image_result(path, mime, "remote URL")
     return _image_result(path, mime, "remote URL", path)
 
 

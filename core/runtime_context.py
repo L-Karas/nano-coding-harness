@@ -44,10 +44,11 @@ class AgentRunContext:
 
 @dataclass
 class ToolContext:
-    """一次工具执行的运行上下文：取消信号、工作目录与发起 agent 的身份，由调用方持有并传入。"""
+    """一次工具执行的运行上下文：取消信号、工作目录、发起 agent 的身份与当前模型视觉能力。"""
     agent_run: AgentRunContext | None = None
     cwd: Path | None = None
     agent_name: str = "lead"
+    vision: bool = True
 
     def raise_if_cancelled(self) -> None:
         if self.agent_run is not None:

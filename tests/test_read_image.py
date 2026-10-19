@@ -1,22 +1,24 @@
 """read_file 图片分支：本地 png/jpg/jpeg/gif/webp → data URL；URL 透传；5 MB 上限。"""
 import asyncio
 import base64
+import os
 
 import pytest
 
 import core.tools.base_tools.read as read_mod
+from core.runtime_context import ToolContext
 from core.tools import ImageAttachment, ToolResult
 from core.tools.base_tools.read import ReadFile
 
 PNG = b"\x89PNG\r\n\x1a\n"
 
 
-def _read(path):
-    return ReadFile(path=str(path)).run()
+def _read(path, tctx=None):
+    return ReadFile(path=str(path)).run(tctx)
 
 
-def _read_async(path):
-    return asyncio.run(ReadFile(path=str(path)).arun())
+def _read_async(path, tctx=None):
+    return asyncio.run(ReadFile(path=str(path)).arun(tctx))
 
 
 def test_max_image_bytes_is_5mb():
@@ -76,3 +78,44 @@ def test_http_image_url_passes_through_without_fetch():
 def test_unsupported_http_url_is_error():
     with pytest.raises(ValueError, match="Unsupported image URL"):
         ReadFile(path="https://example.com/page.html").run()
+
+
+def test_local_filename_with_hash_keeps_image_suffix(tmp_path):
+    path = tmp_path / "shot#1.png"
+    path.write_bytes(PNG)
+    result = _read(path)
+    assert isinstance(result, ToolResult)
+    assert result.images[0].mime == "image/png"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="? is not a valid Windows filename")
+def test_local_filename_with_question_mark_keeps_image_suffix(tmp_path):
+    path = tmp_path / "shot?1.png"
+    path.write_bytes(PNG)
+    result = _read(path)
+    assert isinstance(result, ToolResult)
+    assert result.images[0].mime == "image/png"
+
+
+def test_read_image_without_vision_skips_attachment_and_encoding(tmp_path, monkeypatch):
+    monkeypatch.setattr(read_mod, "_data_url", lambda *args: pytest.fail("must not encode"))
+    path = tmp_path / "shot.png"
+    path.write_bytes(PNG)
+    result = _read(path, ToolContext(vision=False))
+    assert result.images == ()
+    assert "does not support vision" in result.content
+
+
+def test_read_url_without_vision_skips_attachment():
+    result = _read("https://example.com/shot.png", ToolContext(vision=False))
+    assert result.images == ()
+    assert "does not support vision" in result.content
+
+
+def test_async_read_image_without_vision_skips_attachment(tmp_path, monkeypatch):
+    monkeypatch.setattr(read_mod, "_data_url", lambda *args: pytest.fail("must not encode"))
+    path = tmp_path / "shot.png"
+    path.write_bytes(PNG)
+    result = _read_async(path, ToolContext(vision=False))
+    assert result.images == ()
+    assert "does not support vision" in result.content

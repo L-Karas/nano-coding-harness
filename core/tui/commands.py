@@ -65,7 +65,7 @@ class _CommandFlow:
                          callback=self._on_session_picked)
 
     def _open_fork(self) -> None:
-        """/fork：列出全部用户消息，选中后从该消息前分叉新会话，原文填回输入栏。"""
+        """/fork：列出非合成用户消息，选中后从该消息前分叉新会话，原文填回输入栏。"""
         if self._manager is None:
             render_background_notification("SessionManager not connected — /fork unavailable",
                                            title="⚠️ Fork")

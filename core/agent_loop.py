@@ -112,13 +112,14 @@ class AgentRuntime:
                 SESSION_MANAGER.update_messages(messages)
                 pool = assemble_tool_pool("main",
                                           enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
-                tctx = ToolContext(agent_run=ctx)
+                client = shared_model_client()
+                tctx = ToolContext(agent_run=ctx, vision=bool(getattr(client, "supports_vision", lambda: True)()))
 
                 try:
                     outcome = await run_agent_step(
                         messages,
                         build_system_prompt("main", pool.schemas()),
-                        client=shared_model_client(),
+                        client=client,
                         pool=pool,
                         tctx=tctx,
                         max_tokens=max_tokens,
