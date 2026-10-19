@@ -93,6 +93,8 @@ prepare_messages(messages, ctx, sub_model=?)
 
 - tiktoken `encoding_for_model("gpt-5")`（编码器缓存）；
 - 每条消息计入 `content` + `reasoning_content` + `tool_calls`（函数名 + arguments）；
+- `content` 为数组时，`text` part 正常计，每个 `image_url` part 固定计 `IMAGE_TOKEN_ESTIMATE = 1000` token；
+  不按尺寸 / 分辨率精确计算，估算偏差可能导致压缩触发过早或过晚。
 - 已知缺口：不含 system prompt 与 tools schema，估算只代表历史大小，不是请求的完整大小。
 
 ### 4.3 自动压缩的切分规则（`auto_compact=True`）
@@ -116,8 +118,9 @@ prepare_messages(messages, ctx, sub_model=?)
 ### 4.4 全量摘要（`auto_compact=False`，`/compact` 走这条）
 
 - 不再切分：整段历史交给模型摘要，结果只有一条 `<compacted_messages>` 消息，不留尾部消息；
-- 请求 = `to_llm_messages(messages) + SUMMARY_PROMPT_TEMPLATE`（结构化 checkpoint 摘要模板，
-  明确要求不总结 system prompt），流式生成，`max_tokens = clamp(summary_max_tokens)`；
+- 请求 = `to_llm_messages(messages, vision=client.supports_vision()) + SUMMARY_PROMPT_TEMPLATE`（结构化 checkpoint 摘要模板，
+  明确要求不总结 system prompt），流式生成，`max_tokens = clamp(summary_max_tokens)`；非视觉模型下，
+  含图片的消息整条替换为 `IMAGE_OMITTED_MESSAGE` 文本占位；
 - 手动 `/compact` 带 `ctx`：流式过程中检查取消（Esc），中断则不落盘；回合内自动压缩同样可被 Esc 中断。
 
 ## 5. 入口与调用方

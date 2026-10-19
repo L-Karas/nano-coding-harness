@@ -16,7 +16,7 @@
 | `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹、后台通知包裹） |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
 | `core/context/session/session.py` | `SessionManager`：消息状态的唯一 owner；`Message` 货币、JSON 只在文件边界、只读 `current_session` + `reset()`（ADR-0006） |
-| `core/context/message.py` | `Message` 会话消息类型与 `to_llm_messages` 模型请求视图（兼容 `Message` / dict） |
+| `core/context/message.py` | `Message` 会话消息类型（`content` 可为 `str` 或 OpenAI content 数组）与 `to_llm_messages` 请求视图（`vision=False` 时整条图片消息替换为文本占位） |
 | `core/tools/` | 工具基类（schema 字段 + `run`/`arun`）、注册表与 `ToolPool`（`tool_pool.py`）；`base_tools/`（基础工具）、`extra_tools/`（扩展工具）、`web_search/`（含 `ToolResult` / `ToolContext`） |
 | `core/context/compact/context_compact.py` | 两层上下文压缩（工具结果截断 / 历史摘要）与 token 估算 |
 | `core/context/truncate.py` | 工具输出截断（2000 行 / 50KB 双上限），read 工具与上下文压缩共用 |
@@ -44,7 +44,8 @@
 4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
    → 扩展 `after_llm` → 按 `parallel_safe` 声明分组派发工具（组内 `asyncio.gather` 并发，未声明工具作为屏障自成一组；
    每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool`（所有结局，含中断 / 拦截 / 后台占位）→ 渲染 diff/结果）；
-   结果写回会话后进入下一轮。工具结局统一为 `ToolResult`（内容 +
+   结果写回会话后进入下一轮。工具回报的图片由 step 汇总为一条 user 注入消息（路径列表 + `image_url` parts），
+   位于所有 tool 消息之后；非视觉模型不附加图片。工具结局统一为 `ToolResult`（内容 +
    失败 / 取消标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；
 5. 模型不再请求工具即结束回合。
 

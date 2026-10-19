@@ -37,8 +37,12 @@ _Avoid_: AGENT_LOCK、submit 阻塞、直接操作 loop
 _Avoid_: 全局渲染函数、直接 import TUI
 
 **Message**:
-一条会话记录：角色、内容、推理、工具调用 / 结果与 diff payload；贯穿 SessionManager 的 interface，JSON 只在文件边界出现。
+一条会话记录：角色、内容、推理、工具调用 / 结果与 diff payload；`content` 为 `str` 或 OpenAI content 数组（文本 + image_url），贯穿 SessionManager 的 interface，JSON 只在文件边界出现。
 _Avoid_: 消息 dict、asdict 往返
+
+**ImageAttachment**:
+一次工具读取带回的图片：来源路径 / URL、MIME 与可直接放进 `image_url` 的 URL（data URL 或 http(s)）。
+_Avoid_: 图片对象、base64 字符串
 
 **Session**:
 一串 Message 及其标题 / 时间戳；SessionManager 持有当前会话并负责 map / 指针 / 文件三者一致。

@@ -21,7 +21,7 @@
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
 | `terminal` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），输出截断 5 万字符；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
-| `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示 |
+| `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示；图片路径（png/jpg/jpeg/gif/webp，单图 ≤ 5 MB）与 `http(s)` 图片 URL 作为图片附件返回，供视觉模型使用；`limit` / `offset` 仅对文本有效 |
 | `write_file` | `path`, `content` | 写文件，执行前渲染 diff 预览 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
 | `glob` | `pattern` | 按 glob 模式查找文件（异步路径优先 ripgrep 并尊重 .gitignore，缺失时回退 Python glob） |
@@ -31,6 +31,11 @@
 | `web_extract` | `url` | 抓取网页正文：先 `npx defuddle` 解析，再按同一提供方顺序回退，最终 ddgs；结果截断 15000 字符 |
 
 工具经 `ToolContext` 拿到取消信号、工作目录与发起者身份（`run` / `arun` 的 `tctx` 参数）。
+
+`read_file` 读取本地图片（`png` / `jpg` / `jpeg` / `gif` / `webp`，单图 ≤ 5 MB）或 `http(s)` 图片 URL 时，
+返回文本结果并把图片附件交给 agent step；本轮所有工具结束后统一注入一条 user 消息（按调用顺序
+列出路径，随后是同序的 `image_url` part）。URL 图片不下载、不校验；超过大小上限返回工具错误，
+不注入图片；非视觉模型不附加图片，只注入说明。
 
 ## 扩展工具
 
