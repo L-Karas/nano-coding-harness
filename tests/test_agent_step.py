@@ -56,6 +56,20 @@ class BrokenImageEcho(BaseTool):
         return ToolResult.error("read failed")
 
 
+class CancelledImageEcho(BaseTool):
+    """Cancelled image tool."""
+    def run(self, tctx=None):
+        return ToolResult(
+            content="stop",
+            is_cancelled=True,
+            images=(ImageAttachment(
+                source="/tmp/cancelled.png",
+                mime="image/png",
+                url="data:image/png;base64,AAA",
+            ),),
+        )
+
+
 class ParallelProbe(BaseTool):
     """声明 parallel_safe 的可并发测试工具：子类覆写 arun 定义行为。"""
     value: str = ""
@@ -593,3 +607,11 @@ def test_request_view_uses_placeholder_without_vision(monkeypatch):
     _run(monkeypatch, [("ok", "", [], "stop", None)], client=client, history=history)
 
     assert client.kwargs["messages"][1]["content"] == IMAGE_OMITTED_MESSAGE
+
+
+def test_cancelled_image_tool_adds_no_image_followup(monkeypatch):
+    outcome = _run(monkeypatch, [("", "", [
+        _tool_call("cancelled_image", "{}", "t1"),
+    ], "tool_calls", None)], pool=ToolPool({"cancelled_image": CancelledImageEcho}))
+
+    assert [m["role"] for m in outcome.followup_messages] == ["tool"]

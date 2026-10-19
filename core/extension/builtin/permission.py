@@ -14,6 +14,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
+from urllib.parse import urlsplit
 
 from core.config import CONFIGMANAGER, WORKDIR
 from core.extension.api import ExtensionAPI
@@ -227,6 +228,11 @@ def _resolve_path(raw: str, workdir: Path) -> Path:
     return (workdir / raw).resolve()
 
 
+def _is_http_url(path: str) -> bool:
+    """图片 URL 不是本地文件系统访问：跳过越界判定。"""
+    return urlsplit(path).scheme.lower() in ("http", "https")
+
+
 def _is_outside_workdir(path: str, workdir: Path) -> bool:
     """路径是否落在调用方工作目录之外。"""
     return not _resolve_path(path, workdir).is_relative_to(workdir)
@@ -308,13 +314,18 @@ def _rule_vote(rules: Rules, ctx: BeforeToolContext) -> RuleVote:
                 outside_match = (action, _OUTSIDE_TITLE)
                 outside_details = [_outside_listing(paths)]
     elif tool_name in _FILE_TOOLS:
-        workdir = _workdir(ctx)
-        resolved = _resolve_path(args.get("path", ""), workdir)
-        matches = match_path(rules, tool_name, _relative_path(resolved, workdir))
-        action = external_directory_action(rules, tool_name)
-        if action is not None and not resolved.is_relative_to(workdir):
-            outside_match = (action, _OUTSIDE_TITLE)
-            outside_details = [_call_summary(tool_name, args)]
+        raw_path = args.get("path", "")
+        if _is_http_url(raw_path):
+            # 图片 URL 不触碰本地文件系统：不做越界判定，规则按原始 URL 匹配
+            matches = match_path(rules, tool_name, raw_path)
+        else:
+            workdir = _workdir(ctx)
+            resolved = _resolve_path(raw_path, workdir)
+            matches = match_path(rules, tool_name, _relative_path(resolved, workdir))
+            action = external_directory_action(rules, tool_name)
+            if action is not None and not resolved.is_relative_to(workdir):
+                outside_match = (action, _OUTSIDE_TITLE)
+                outside_details = [_call_summary(tool_name, args)]
     else:
         return RuleVote()
 
@@ -401,7 +412,9 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
             _block_by_user(ctx)
         return
 
-    if tool_name in _FILE_TOOLS and _is_outside_workdir(args.get("path", ""), _workdir(ctx)):
+    if (tool_name in _FILE_TOOLS
+            and not _is_http_url(args.get("path", ""))
+            and _is_outside_workdir(args.get("path", ""), _workdir(ctx))):
         if not _confirm(_OUTSIDE_TITLE, [_call_summary(tool_name, args)]):
             _block_by_user(ctx)
 

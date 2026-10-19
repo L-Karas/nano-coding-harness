@@ -893,3 +893,16 @@ def test_unimplemented_modes_fall_back_to_manual(monkeypatch, mode):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_read_file_url_does_not_prompt(monkeypatch):
+    _no_prompt(monkeypatch)
+    assert not run_gate("read_file", {"path": "https://example.com/shot.png"}).blocked
+
+
+def test_read_file_url_matches_path_rule_against_raw_url():
+    gate = build_gate(Rules(paths={"read_file": [(re.compile(r"^https://"), "deny")]}))
+    ctx = BeforeToolContext(tool_name="read_file",
+                            args={"path": "https://example.com/shot.png"})
+    gate(ctx)
+    assert ctx.blocked and ctx.block_reason.startswith("Permission denied by rule:")

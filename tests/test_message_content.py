@@ -69,3 +69,30 @@ def test_estimate_size_handles_message_objects_with_images():
     text = INJECTION_MESSAGES_TEMPLATE.format(content="a")
     message = Message(role="user", content=_image_content("a"))
     assert estimate_size([message]) == estimate_token(text) + IMAGE_TOKEN_ESTIMATE
+
+
+def test_llm_view_copies_array_content():
+    message = Message(role="user", content=_image_content())
+    view = to_llm_messages([message])
+    view[0]["content"][0]["text"] = "mutated"
+    assert message.content[0]["text"] == INJECTION_MESSAGES_TEMPLATE.format(content="images")
+
+
+def test_llm_view_without_vision_does_not_mutate_and_recovers():
+    message = Message(role="user", content=_image_content())
+    to_llm_messages([message], vision=False)
+    assert message.content == _image_content()
+    assert to_llm_messages([message], vision=True)[0]["content"][1]["type"] == "image_url"
+
+
+def test_split_keeps_image_message_in_suffix():
+    from core.context.compact.context_compact import find_index_to_split
+
+    messages = [
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "a"},
+        Message(role="user", content=_image_content()),
+    ]
+    reserve = estimate_size([messages[2]])
+    assert find_index_to_split(messages, reserve) == 2
+    assert messages[2].content == _image_content()

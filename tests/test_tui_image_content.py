@@ -45,3 +45,22 @@ def test_replay_skips_injected_image_message(monkeypatch):
 
 def test_preview_flattens_array_content():
     assert _preview([{"type": "text", "text": "a\nb   c"}]) == "a b c"
+
+
+def test_non_vision_image_message_is_recognized_and_skipped(monkeypatch):
+    from core.agent_step import _image_followup_message
+    from core.context.message import is_injected_content
+    from core.tools import ImageAttachment
+
+    message = _image_followup_message(
+        [ImageAttachment(source="/tmp/a.png", mime="image/png",
+                         url="data:image/png;base64,AAA")],
+        vision=False,
+    )
+    assert is_injected_content(message["content"])
+
+    events = []
+    monkeypatch.setattr(render, "render_user_input",
+                        lambda text: events.append(("user", text)))
+    render.render_session_history(Session(messages=[Message(**message)]))
+    assert events == []

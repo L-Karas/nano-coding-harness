@@ -1,4 +1,5 @@
 """会话消息类型与模型请求视图。"""
+import copy
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -97,6 +98,9 @@ def to_llm_messages(messages: list, *, vision: bool = True) -> list[dict]:
         content = message_get(message, "content", "")
         if not vision and _has_image_part(content):
             content = IMAGE_OMITTED_MESSAGE
+        elif isinstance(content, list):
+            # 请求视图不得与 Message.content 共享可变数组：before_llm 扩展的改写只留在本次请求
+            content = copy.deepcopy(content)
         item = {"role": role, "content": content}
         if role == "assistant":
             item["reasoning_content"] = message_get(message, "reasoning_content", "")
