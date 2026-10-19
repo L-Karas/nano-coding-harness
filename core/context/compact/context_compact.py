@@ -155,11 +155,12 @@ async def summarize_history(messages: list, ctx=None, sub_model: bool = False) -
     默认用主 client（主流程 / 手动 /compact）。
     """
     summary_text = ""
-    request_messages = to_llm_messages(messages) + [{
+    client = shared_sub_model_client() if sub_model else shared_model_client()
+    vision = bool(getattr(client, "supports_vision", lambda: True)())
+    request_messages = to_llm_messages(messages, vision=vision) + [{
         "role": "user",
         "content": SUMMARY_PROMPT_TEMPLATE,
     }]
-    client = shared_sub_model_client() if sub_model else shared_model_client()
     stream = await client.get_model_client()(
         messages=request_messages,
         max_tokens=client.clamp_max_tokens(CONFIGMANAGER.config.summary_max_tokens),
