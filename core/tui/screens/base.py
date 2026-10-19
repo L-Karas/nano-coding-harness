@@ -18,10 +18,10 @@ from textual.widgets import Input, OptionList, Select, Static, Tabs, TextArea
 from textual.widgets.option_list import Option
 
 _MODEL_NAME_STYLE = "#f8fafc"
-_MODEL_PROVIDER_STYLE = "#64748b"
+_MODEL_PROVIDER_STYLE = "#94a3b8"
 _MODEL_CURRENT_STYLE = "#34d399"  # 同 _SessionRow 的 current 标记色
 _ENTRY_NAME_STYLE = "bold #4ade80"  # 「● 名称」段（/skills、/mcp 工具列表共用）
-_ENTRY_DESC_STYLE = "#64748b"
+_ENTRY_DESC_STYLE = "#94a3b8"
 _ENTRY_TAG_STYLE = "#a5adce"  # [tag] 段（/skills 的来源标记 global/user/project）
 
 
@@ -39,7 +39,7 @@ def _entry_row(name: str, desc: str = "", tag: str = "") -> Text:
 
 
 def _model_row_text(model: str, provider: str, current: bool = False) -> Text:
-    """模型行 = 模型名（亮色）+ [Provider]（暗灰）+ 可选 (current model) 标记（暗绿）。"""
+    """模型行 = 模型名（亮色）+ [Provider]（次级灰）+ 可选 (current model) 标记（暗绿）。"""
     row = Text.assemble((model, _MODEL_NAME_STYLE),
                         (f" [{provider}]", _MODEL_PROVIDER_STYLE))
     if current:

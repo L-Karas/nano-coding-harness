@@ -71,7 +71,7 @@ async def run(app, pilot) -> None:
     assert tool_rows == ["● echo\nEchoes input", "● add\nAdds numbers"], tool_rows
     tool_spans = tool_lst.get_option_at_index(0).prompt.spans
     assert "#4ade80" in str(tool_spans[0].style), f"工具名色错误: {tool_spans[0].style}"
-    assert "#64748b" in str(tool_spans[1].style), f"描述色错误: {tool_spans[1].style}"
+    assert "#94a3b8" in str(tool_spans[1].style), f"描述色错误: {tool_spans[1].style}"
     # 工具子窗同款搜索栏：按工具名子串过滤（忽略大小写），清空恢复
     t_search = app.screen_stack[-1].query_one("#search-input", Input)
     assert t_search.placeholder == "Search tools…" and t_search.has_focus, t_search.placeholder

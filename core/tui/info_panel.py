@@ -84,7 +84,7 @@ class _InfoRow(Horizontal):
         lines = _strip_keycaps(it["text"]).splitlines() or [""]
         clip = self._CLIP[self._kind]
         row = Text()
-        row.append("▾ " if self._expanded else "▸ ", style="#64748b")
+        row.append("▾ " if self._expanded else "▸ ", style="#94a3b8")
         row.append(f"{glyph} {it['id']} " if self._kind != "todos" else f"{glyph} ", style=color)
         row.append(lines[0] if self._expanded else lines[0][:clip], style=text_style)
         if self._expanded:

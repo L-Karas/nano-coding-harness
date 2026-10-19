@@ -1,4 +1,4 @@
-"""页脚两行：cwd (git 分支) + 上下文占用条 / 模型状态（右下角）。"""
+"""页脚三行：cwd (git 分支) + 上下文占用条 / 模型状态（右下角）+ 审批模式。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from core.tui.utils import (
+    current_approval_mode,
     current_context_length,
     current_git_branch,
     current_model_state,
@@ -16,7 +17,8 @@ from core.tui.utils import (
 )
 
 _TOKEN_BAR_CELLS = 20  # 占用条固定格数
-_TEXT_STYLE = "#64748b"  # 暗灰（cwd 行 / 模型段 / 百分比段）
+_TOKEN_LABEL = "Context Usage"  # 占用条前置标签
+_TEXT_STYLE = "#94a3b8"  # 次级灰（cwd 行 / 模型段 / 标签 / 百分比段）
 
 
 def _model_label() -> str:
@@ -28,27 +30,30 @@ def _model_label() -> str:
 
 
 def _token_bar_text(tokens: int, context_length: int) -> Text:
-    """占用条：'[####----------------] 40.0% / 200.0K'；40% / 80% 阈值绿→黄→红；
-    上下文长度未知时灰条 '[...] -- / --'；占比 >100% 条填满、百分比照实显示。"""
+    """占用条：'Context Usage: [####----------------] 40.0% / 200.0K'；40% / 80% 阈值绿→黄→红；
+    上下文长度未知时灰条 'Context Usage: [...] -- / --'；占比 >100% 条填满、百分比照实显示。"""
+    text = Text(f"{_TOKEN_LABEL}: ", no_wrap=True, style=_TEXT_STYLE)
     if context_length <= 0:
-        return Text("[" + "-" * _TOKEN_BAR_CELLS + "] -- / --", no_wrap=True, style=_TEXT_STYLE)
+        text.append("[" + "-" * _TOKEN_BAR_CELLS + "] -- / --", style=_TEXT_STYLE)
+        return text
     percent = tokens / context_length * 100
     filled = min(_TOKEN_BAR_CELLS, int(percent * _TOKEN_BAR_CELLS / 100))
     color = "#4ade80" if percent < 40 else "#facc15" if percent < 80 else "#f87171"
-    text = Text("[" + "#" * filled + "-" * (_TOKEN_BAR_CELLS - filled) + "]",
-                no_wrap=True, style=color)
+    text.append("[" + "#" * filled + "-" * (_TOKEN_BAR_CELLS - filled) + "]", style=color)
     text.append(f" {percent:.1f}% / {format_context_length(context_length)}", style=_TEXT_STYLE)
     return text
 
 
 class _FooterBar(Vertical):
-    """#footer（cwd 行）+ #token-bar（占用条 + 右下角模型状态，按实际行宽填隙对齐）。
+    """#footer（cwd 行）+ #token-bar（占用条 + 右下角模型状态，按实际行宽填隙对齐）
+    + #approval-mode（当前审批模式）。
 
-    2s 自轮询（cwd / git 分支 / token 可能被其它进程或回合改变）；宽度变化由 App 触发重算。"""
+    2s 自轮询（cwd / git 分支 / token / 审批模式可能被其它进程或回合改变）；宽度变化由 App 触发重算。"""
 
     def compose(self) -> ComposeResult:
         yield Static("", id="footer", markup=False)
         yield Static("", id="token-bar", markup=False)
+        yield Static("", id="approval-mode", markup=False)
 
     def on_mount(self) -> None:
         self.refresh_data()
@@ -72,6 +77,8 @@ class _FooterBar(Vertical):
                 text.append(" " * gap)
                 text.append_text(model)
         bar.update(text)
+        self.query_one("#approval-mode", Static).update(
+            Text(f"Approval Mode: {current_approval_mode()}", no_wrap=True, style=_TEXT_STYLE))
 
     def _session_tokens(self) -> int:
         """当前会话 token 估算数；未接 SessionManager / 取值失败按 0。"""

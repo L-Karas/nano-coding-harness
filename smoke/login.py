@@ -34,8 +34,8 @@ async def run(app, pilot) -> None:
         "2. Register custom model",
         "3. Unregister custom provider",
         "4. Unregister custom model"], "登录菜单四项文案错误"
-    # 行内两段 span：序号暗灰 #64748b；注册绿 #4ade80 / 注销红 #f87171
-    assert "#64748b" in str(lg.get_option_at_index(0).prompt.spans[0].style)
+    # 行内两段 span：序号次级灰 #94a3b8；注册绿 #4ade80 / 注销红 #f87171
+    assert "#94a3b8" in str(lg.get_option_at_index(0).prompt.spans[0].style)
     assert "#4ade80" in str(lg.get_option_at_index(0).prompt.spans[-1].style)
     assert "#f87171" in str(lg.get_option_at_index(3).prompt.spans[-1].style)
     await pilot.press("enter")  # 高亮首项 → 注册自定义提供方表单

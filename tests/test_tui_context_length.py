@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import core.client
 import core.tui.utils as utils
+from core.tui.footer import _token_bar_text
 
 
 def test_current_context_length_uses_registry_value(monkeypatch):
@@ -17,3 +18,8 @@ def test_current_context_length_returns_zero_on_failure(monkeypatch):
 
     monkeypatch.setattr(core.client, "shared_model_client", boom)
     assert utils.current_context_length() == 0
+
+
+def test_token_bar_text_has_context_usage_label():
+    assert _token_bar_text(0, 200_000).plain.startswith("Context Usage: [")
+    assert _token_bar_text(0, 0).plain.startswith("Context Usage: [")

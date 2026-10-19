@@ -44,14 +44,14 @@ def _positive_int(text: str) -> Optional[int]:
 
 class LoginScreen(_ListPickerScreen):
     """注册（注销）菜单弹窗：1 注册提供方 / 2 注册模型 / 3 注销提供方 / 4 注销模型；
-    行 = 序号（暗灰）+ 动作文本（注册绿 / 注销红）；关闭子窗后回到本菜单，Esc 逐层关闭。"""
+    行 = 序号（次级灰）+ 动作文本（注册绿 / 注销红）；关闭子窗后回到本菜单，Esc 逐层关闭。"""
 
     TITLE = "Custom providers & models"
     HINT = "  ↑/↓ browse    Enter/click select    Esc close"
     LIST_ID = "login-list"
     PICKER_ID = "login-picker"
 
-    _NUM_STYLE = "#64748b"
+    _NUM_STYLE = "#94a3b8"
     _REGISTER_STYLE = "#4ade80"
     _UNREGISTER_STYLE = "#f87171"
 

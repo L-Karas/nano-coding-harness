@@ -1,4 +1,4 @@
-from core.log import get_logger
+from logger import get_logger
 from core.runtime_state import RUNTIME_STATE, TodoEntry
 from core.template import TODO_ITEM_MESSAGE_TEMPLATE, TODOS_MESSAGE_TEMPLATE
 

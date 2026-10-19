@@ -55,7 +55,7 @@ Toast, Toast:ansi { background: #1e293b; }
     border-title-align: left; /* 标题嵌在上边框左端：╭─ ▼ Todos · 2 ────╮ */
     border-title-style: bold;
 }
-#todos-section.-collapsed, #bg-section.-collapsed, #subagents-section.-collapsed { height: auto; border-title-color: #64748b; }
+#todos-section.-collapsed, #bg-section.-collapsed, #subagents-section.-collapsed { height: auto; border-title-color: #94a3b8; }
 #todos-section.-collapsed > #todos-list,
 #bg-section.-collapsed > #bg-list,
 #subagents-section.-collapsed > #subagents-list { display: none; }
@@ -68,7 +68,7 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* 条目行（_InfoPanel._sync_rows 按数据源重建）：一行一个 Horizontal，点行在 ▸ 摘要 ↔ ▾ 全文间
    切换；运行中且可停的行尾 ■ 指名停止（ADR-0009） */
-.info-row { height: auto; }
+.info-row { height: auto; color: #94a3b8; }
 .info-row.-expandable { pointer: pointer; }
 .info-row > .-info-text { width: 1fr; height: auto; pointer: pointer; }
 .info-row > .-stop { width: 2; color: #f87171; text-align: right; pointer: pointer; }
@@ -78,7 +78,7 @@ Toast, Toast:ansi { background: #1e293b; }
     dock: bottom;
     height: 1;
     padding: 0 1;
-    color: #64748b;
+    color: #94a3b8;
 }
 
 /* ── 滚动条：所有滚动区共用（含 /settings 表单主体与其 Select 下拉浮层、
@@ -139,12 +139,15 @@ Toast, Toast:ansi { background: #1e293b; }
     text-style: underline;
 }
 
-/* 页脚（footer._FooterBar，两行）：cwd 行 + 占用条行 */
+/* 页脚（footer._FooterBar，三行）：cwd 行 + 占用条行 + 审批模式行 */
 #footer-bar { width: 1fr; height: auto; }
-#footer { height: 1; color: #64748b; padding: 0 2; }
+#footer { height: 1; color: #94a3b8; padding: 0 2; }
 
-/* 占用条行：左 [####----] 40.0% / 200.0K，右模型状态（右下角）；阈值 40%/80% 绿→黄→红 */
+/* 占用条行：左 Context Usage: [####----] 40.0% / 200.0K，右模型状态（右下角）；阈值 40%/80% 绿→黄→红 */
 #token-bar { height: 1; padding: 0 2; }
+
+/* 审批模式行：Approval Mode: Manual / Yolo / ... */
+#approval-mode { height: 1; padding: 0 2; }
 
 /* ── 补全与权限列表 ── */
 /* / 指令与 @ 文件候选：默认隐藏，键入时由 _CommandInput 显示（同刻至多一组） */
@@ -290,10 +293,10 @@ ModalScreen {
 /* ── /mcp server 列表：内容少，高度随内容收缩（同 /login 弹窗思路），上限定 60% ── */
 #mcp-picker { width: 56; height: auto; max-height: 60%; }
 
-.picker-hint  { color: #64748b; padding-top: 1; }
+.picker-hint  { color: #94a3b8; padding-top: 1; }
 
 /* 弹窗搜索栏与表单字段行（/provider API Key、/login 注册表单、自定义模型下拉）共用
-   同一套「❯ + 输入」行：整行仅保留下边框（聚焦 :focus-within 换亮蓝），标记暗灰，
+   同一套「❯ + 输入」行：整行仅保留下边框（聚焦 :focus-within 换亮蓝），标记次级灰，
    内容行 1 + 下边框 1 = 高 2 */
 #search-row, .field-row {
     height: 2;
@@ -302,7 +305,7 @@ ModalScreen {
     padding: 0 1;
 }
 #search-row:focus-within, .field-row:focus-within { border-bottom: solid #7287fd; }
-#search-prompt, .field-mark { width: auto; height: 1; padding-right: 1; color: #64748b; }
+#search-prompt, .field-mark { width: auto; height: 1; padding-right: 1; color: #94a3b8; }
 
 /* 行内输入控件去掉 Input 默认外观（tall 边框 + $surface 底 + height 3）。id 选择器
    压过 Textual 的 ansi 聚焦分支；下拉字段的可见部分（边框/底色）画在子部件 SelectCurrent 上。 */
@@ -416,8 +419,8 @@ ModalScreen {
     background-tint: transparent;
 }
 /* 锁定 / 编辑态区分：锁定值暗且光标不可见（聚焦只靠标签变色）；Enter 后整行高亮 + 亮字 + 光标 */
-#settings-picker Input { color: #64748b; }
-#settings-picker .input--cursor { background: transparent; color: #64748b; text-style: none; }
+#settings-picker Input { color: #94a3b8; }
+#settings-picker .input--cursor { background: transparent; color: #94a3b8; text-style: none; }
 #settings-picker .input--selection { background: #475569; color: #f8fafc; }
 #settings-picker Input.-editing,
 #settings-picker Input.-editing:focus {

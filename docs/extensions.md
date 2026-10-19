@@ -104,7 +104,7 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 
 `.harness/extensions/` 相对于**启动进程时的工作目录**（`WORKDIR`）。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
 
-> **包内导入规则**：扩展目录**不在 `sys.path` 上**（加载器刻意如此，避免与标准库/项目包重名），因此扩展包内部的多文件组织**必须使用相对导入**（如 `from .helpers import x`、`from .subpkg import y`）；裸绝对导入（`import helpers`）不会命中扩展目录，会导致 `ModuleNotFoundError` 或误命中同名模块。harness 内部模块（`core.*`）与第三方包不受此限制，照常绝对导入。
+> **包内导入规则**：扩展目录**不在 `sys.path` 上**（加载器刻意如此，避免与标准库/项目包重名），因此扩展包内部的多文件组织**必须使用相对导入**（如 `from .helpers import x`、`from .subpkg import y`）；裸绝对导入（`import helpers`）不会命中扩展目录，会导致 `ModuleNotFoundError` 或误命中同名模块。harness 内部模块（`core.*` / `logger`）与第三方包不受此限制，照常绝对导入。
 
 ## 3. API 参考
 

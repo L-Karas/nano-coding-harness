@@ -1,4 +1,4 @@
-"""冒烟自检 · 页脚：cwd 行 + 占用条行（左占用条，右模型状态在右下角），占用条按 40%/80% 变色。"""
+"""冒烟自检 · 页脚：cwd 行 + 占用条行（左占用条，右模型状态在右下角）+ 审批模式行，占用条按 40%/80% 变色。"""
 from __future__ import annotations
 
 from textual.widgets import Static
@@ -28,10 +28,12 @@ async def run(app, pilot) -> None:
 
     footer = app.query_one("#footer", Static)
     bar_widget = app.query_one("#token-bar", Static)
-    empty_bar = "[" + "-" * 20 + "] -- / --"
+    approval_widget = app.query_one("#approval-mode", Static)
+    empty_bar = "Context Usage: [" + "-" * 20 + "] -- / --"
     _manager, _ctx_len = app._manager, _mod.current_context_length
     _wd, _gb = _mod.working_directory, _mod.current_git_branch
     _model_state = _mod.current_model_state
+    _approval_mode = _mod.current_approval_mode
     _has_client = True
     try:
         import core.client as _cm3
@@ -62,8 +64,8 @@ async def run(app, pilot) -> None:
             expected = empty_bar + " " * (bar_widget.content_region.width - len(empty_bar) - len(seg)) + seg
             assert bar_row == expected, f"模型状态未右对齐到占用条行右下角: {bar_row!r}"
             tail = bar_widget.render().spans[-1]
-            assert "#64748b" in str(tail.style) or "100,116,139" in str(tail.style), \
-                f"模型段应为暗灰: {tail.style}"
+            assert "#94a3b8" in str(tail.style) or "148,163,184" in str(tail.style), \
+                f"模型段应为次级灰: {tail.style}"
             _cm3.shared_model_client = lambda: _FakeModelState("p", "m", "")
             app._refresh_footer()
             _, bar_row = _rows()
@@ -71,35 +73,43 @@ async def run(app, pilot) -> None:
             assert bar_row.rstrip().endswith("(p) m"), bar_row
             print("[smoke] footer row OK: cwd line + token bar line, '(provider) model * level' bottom-right")
 
+        # 审批模式：占用条下方单独一行，随配置实时刷新
+        _mod.current_approval_mode = lambda: "Yolo"
+        app._refresh_footer()
+        assert str(approval_widget.render()) == "Approval Mode: Yolo", \
+            f"审批模式行不符: {approval_widget.render()!r}"
+        print("[smoke] approval mode row OK: 'Approval Mode: <mode>' below token bar")
+
         # 占用条：ASCII 条 + 占用百分比 / 上下文长度（K/M 一位小数）；阈值 40% / 80% 转绿→黄→红
         _mod.current_model_state = lambda: ("", "", "")  # 去掉模型段，行内容 = 纯占用条
         app._manager = _FakeSession(250_000)  # 25%：绿
         _mod.current_context_length = lambda: 1_000_000
         app._refresh_footer()
-        assert _rows()[1] == "[#####---------------] 25.0% / 1.0M", f"占用条 M 单位/比例不符: {_rows()[1]!r}"
+        assert _rows()[1] == "Context Usage: [#####---------------] 25.0% / 1.0M", f"占用条 M 单位/比例不符: {_rows()[1]!r}"
         assert _has("#4ade80", "74,222,128"), f"<40% 应为绿: {_bar_styles()}"
 
         app._manager = _FakeSession(51_200)  # 40.0% 阈值：黄
         _mod.current_context_length = lambda: 128_000
         app._refresh_footer()
-        assert _rows()[1] == "[########------------] 40.0% / 128.0K", f"占用条渲染不符: {_rows()[1]!r}"
+        assert _rows()[1] == "Context Usage: [########------------] 40.0% / 128.0K", f"占用条渲染不符: {_rows()[1]!r}"
         assert _has("#facc15", "250,204,21"), f"40%–80% 应为黄: {_bar_styles()}"
 
         app._manager = _FakeSession(102_400)  # 80.0% 阈值：红
         app._refresh_footer()
-        assert _rows()[1] == "[################----] 80.0% / 128.0K", f"占用条 80% 边界不符: {_rows()[1]!r}"
+        assert _rows()[1] == "Context Usage: [################----] 80.0% / 128.0K", f"占用条 80% 边界不符: {_rows()[1]!r}"
         assert _has("#f87171", "248,113,113"), f">=80% 应为红: {_bar_styles()}"
 
         app._manager = _FakeSession(1_234)
         _mod.current_context_length = lambda: 0
         app._refresh_footer()
         assert _rows()[1] == empty_bar, f"未配置模型时应显示灰条 -- / --: {_rows()[1]!r}"
-        assert _has("#64748b", "100,116,139"), f"未配置模型条应为灰: {_bar_styles()}"
+        assert _has("#94a3b8", "148,163,184"), f"未配置模型条应为灰: {_bar_styles()}"
         print("[smoke] token context bar OK: ASCII bar + percent / context length, colors at 40%/80%")
     finally:
         _mod.working_directory, _mod.current_git_branch = _wd, _gb
         _mod.current_model_state = _model_state
         _mod.current_context_length = _ctx_len
+        _mod.current_approval_mode = _approval_mode
         if _has_client:
             _cm3.shared_model_client = _shared
         app._manager = _manager

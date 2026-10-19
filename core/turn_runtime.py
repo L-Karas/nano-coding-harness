@@ -8,7 +8,7 @@ import concurrent.futures
 import threading
 from typing import Awaitable, Callable
 
-from core.log.log import get_logger
+from logger import get_logger
 from core.runtime_context import AgentInterrupted, AgentRunContext
 
 _LOGGER = get_logger(__name__)

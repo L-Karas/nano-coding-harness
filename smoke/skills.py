@@ -50,12 +50,12 @@ async def run(app, pilot) -> None:
     # 行布局：首行为「● 技能名」，描述自第二行起（strip 后整段插入）
     a_row = next(r for r in rows if r.startswith("● smoke-skill-a"))
     assert a_row.splitlines() == ["● smoke-skill-a [user]", "writes smoke checks"], a_row
-    # 行内两段 span：技能名绿色加粗（#4ade80，同 /mcp 弹窗 server 名）、描述暗灰（#64748b）
+    # 行内两段 span：技能名绿色加粗（#4ade80，同 /mcp 弹窗 server 名）、描述次级灰（#94a3b8）
     sk_opt_a = next(sk_lst.get_option_at_index(i) for i in range(sk_lst.option_count)
                     if sk_lst.get_option_at_index(i).prompt.plain.startswith("● smoke-skill-a"))
     spans = sk_opt_a.prompt.spans
     assert "#4ade80" in str(spans[0].style), f"技能名色错误: {spans[0].style}"
-    assert "#64748b" in str(spans[-1].style), f"描述色错误: {spans[-1].style}"
+    assert "#94a3b8" in str(spans[-1].style), f"描述色错误: {spans[-1].style}"
     # ↑/↓ 首尾循环：首行 ↑ 跳末行、末行 ↓ 回首行（OptionList 原生循环，同其它弹窗）
     assert sk_lst.highlighted == 0
     await pilot.press("up")

@@ -11,7 +11,7 @@ from pathlib import Path
 import core.extension.dispatcher as dispatcher
 from core.config import EXTENSION_DIR
 from core.extension.api import ExtensionAPI
-from core.log.log import get_logger
+from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

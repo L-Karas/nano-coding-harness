@@ -173,7 +173,7 @@ async def run(app, pilot) -> None:
         await pilot.press("ctrl+right")
     await pilot.pause(0.1)
     assert app._panel_pct == 20, app._panel_pct
-    # 底部组合键提示：一行暗灰，随右栏折叠一起隐藏（在 #info-panel 内）
+    # 底部组合键提示：一行次级灰，随右栏折叠一起隐藏（在 #info-panel 内）
     hint = app.query_one("#info-hint", Static)
     assert "resize panel" in str(hint.render()), hint.render()
     assert hint.region.y + 1 == app.query_one("#right", Vertical).region.bottom, "提示应钉在右栏底部"

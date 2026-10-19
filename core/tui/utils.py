@@ -1,4 +1,4 @@
-"""TUI 实用工具（与渲染无关）：环境信息（cwd / git 分支 / 模型状态）与 / 指令元数据。"""
+"""TUI 实用工具（与渲染无关）：环境信息（cwd / git 分支 / 模型状态 / 审批模式）与 / 指令元数据。"""
 
 import os
 import subprocess
@@ -97,6 +97,15 @@ def current_context_length() -> int:
         return int(shared_model_client().load_context_length())
     except Exception:
         return 0
+
+
+def current_approval_mode() -> str:
+    """当前工具审批模式（AgentConfig.approval_mode）；配置不可用时回退 'Manual'。"""
+    try:
+        from core.config import CONFIGMANAGER
+        return str(CONFIGMANAGER.config.approval_mode)
+    except Exception:
+        return "Manual"
 
 
 def format_context_length(value: int) -> str:

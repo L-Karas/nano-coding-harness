@@ -15,7 +15,7 @@ from core.client import shared_sub_model_client
 from core.config import CONFIGMANAGER, WORKDIR
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
-from core.log.log import get_logger
+from logger import get_logger
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
 

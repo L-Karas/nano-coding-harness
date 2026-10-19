@@ -142,7 +142,7 @@ UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），ru
 
 ## 7. 日志与排错
 
-`log_compact_step` 给每个压缩步骤打 `Running … / Finished …` 日志，异常带堆栈（`core/log`）。
+`log_compact_step` 给每个压缩步骤打 `Running … / Finished …` 日志，异常带堆栈（`logger.py`）。
 
 | 现象                         | 可能原因 / 处理                                                                            |
 |----------------------------|--------------------------------------------------------------------------------------|

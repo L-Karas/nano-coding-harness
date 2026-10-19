@@ -7,7 +7,7 @@ import json
 
 from core.extension.api import ExtensionAPI
 from core.extension.context import BeforeToolContext
-from core.log.log import get_logger
+from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

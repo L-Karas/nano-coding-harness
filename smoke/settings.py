@@ -155,7 +155,7 @@ async def run(app, pilot) -> None:
             await settle(pilot)
             assert token_input.value == "16000", f"浏览态输入框应锁定: {token_input.value}"
             # 视觉区分：锁定态值暗、无 -editing、无全选高亮、光标不可见
-            assert token_input.styles.color.hex.lower() == "#64748b", token_input.styles.color
+            assert token_input.styles.color.hex.lower() == "#94a3b8", token_input.styles.color
             assert not token_input.has_class("-editing") and token_input.selection.is_empty
             cursor = token_input.get_component_styles("input--cursor")
             assert cursor.background.a == 0, "锁定态光标应不可见"

@@ -21,11 +21,11 @@ async def run(app, pilot) -> None:
     ml = app.screen_stack[-1].query_one("#model-list", OptionList)
     ml_rows = [ml.get_option_at_index(i).prompt.plain for i in range(ml.option_count)]
     assert ml_rows == ["deepseek-chat [deepseek]", "qwen-max [qwen]"], ml_rows
-    # 行内两段 span：模型名亮色 #f8fafc、[Provider] 段暗灰 #64748b（原始 hex）
+    # 行内两段 span：模型名亮色 #f8fafc、[Provider] 段次级灰 #94a3b8（原始 hex）
     for i in range(ml.option_count):
         spans = ml.get_option_at_index(i).prompt.spans
         assert "#f8fafc" in str(spans[0].style), f"模型名色错误: {spans[0].style}"
-        assert "#64748b" in str(spans[-1].style), f"提供商暗灰色错误: {spans[-1].style}"
+        assert "#94a3b8" in str(spans[-1].style), f"提供商次级灰色错误: {spans[-1].style}"
     # ↑/↓ 首尾循环：首行 ↑ 跳末行、末行 ↓ 回首行（OptionList 原生循环，同 provider 弹窗）
     assert ml.highlighted == 0
     await pilot.press("up")
