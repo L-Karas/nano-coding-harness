@@ -104,6 +104,8 @@ class ToolPool:
                 content = await entry.model_validate(args).arun(tctx)
             else:
                 content = await entry.execute_async(args, tctx)
+            if isinstance(content, ToolResult):
+                return content
             return ToolResult(content=str(content))
         except Exception as e:  # AgentInterrupted 是 CancelledError（BaseException），不会被这里吃掉
             return ToolResult.error(str(e))
@@ -122,6 +124,8 @@ class ToolPool:
                 content = entry.model_validate(args).run(tctx)
             else:
                 content = entry.execute_sync(args, tctx)
+            if isinstance(content, ToolResult):
+                return content
             return ToolResult(content=str(content))
         except Exception as e:
             return ToolResult.error(str(e))
