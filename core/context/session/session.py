@@ -13,9 +13,10 @@ import json
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from typing import Any
 
 from core.config import SESSION_DIR, SESSION_INDEX_FILE
-from core.context.message import Message, as_message
+from core.context.message import Message, as_message, content_text, is_synthetic_content
 from core.context.token import estimate_size
 from core.log.log import get_logger
 
@@ -37,9 +38,9 @@ def _title_truncate(text: str) -> str:
     return text[:_TITLE_CHARS] + ("…" if len(text) > _TITLE_CHARS else "")
 
 
-def _fork_title(content: str) -> str:
-    """fork 新会话标题："[Fork] " + 选中消息内容（压平空白后截断）。"""
-    return "[Fork] " + _title_truncate(" ".join(content.split()))
+def _fork_title(content: Any) -> str:
+    """fork 新会话标题："[Fork] " + 选中消息内容（content 数组取文本，压平空白后截断）。"""
+    return "[Fork] " + _title_truncate(" ".join(content_text(content).split()))
 
 
 @dataclass
@@ -77,12 +78,13 @@ class SessionManager:
         """加载当前会话消息 token 总数。"""
         return estimate_size(self.load_messages()) if self._current_session else 0
 
-    def _update_session_title(self, user_query: str) -> None:
+    def _update_session_title(self, content: Any) -> None:
         if not self._current_session:
             return
-        if user_query.startswith(("<", "[")):
+        text = content_text(content)
+        if is_synthetic_content(text):
             return
-        self.session_map[self._current_session].title = _title_truncate(user_query)
+        self.session_map[self._current_session].title = _title_truncate(text)
 
     def add_message(self, message: Message | dict) -> bool:
         """新增并保存消息（dict 会在入口归一为 Message），若当前会话不存在，则创建新会话。"""
@@ -108,15 +110,16 @@ class SessionManager:
 
     def load_user_messages(self) -> list[Message] | None:
         """
-        仅加载用户消息，为 fork 新会话提供节点
+        仅加载用户消息，为 fork 新会话提供节点；cron / 后台通知 / 图片注入 / 压缩摘要等
+        合成消息不参与 fork。
         Returns:
-            当前会话的所有用户消息
+            当前会话的非合成用户消息
         """
         if not self._current_session or not self.session_map[self._current_session].messages:
             return None
 
         return [message for message in self.session_map[self._current_session].messages
-                if message.role == "user"]
+                if message.role == "user" and not is_synthetic_content(message.content)]
 
     def update_messages(self, messages: list[Message] | list[dict]) -> bool:
         """回写消息列表（dict 入参在入口归一）；这是替换整个列表的唯一入口。"""
