@@ -11,7 +11,8 @@ from core.extension.builtin import register_builtin_extensions
 from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
-from core.tools import ToolPool
+from core.template import IMAGE_OMITTED_MESSAGE
+from core.tools import ImageAttachment, ToolResult, ToolPool
 from core.tools.base_tools.edit import EditFile
 from core.tools.base_tools.glob import Glob
 from core.tools.base_tools.grep import Grep
@@ -34,6 +35,27 @@ class Echo(BaseTool):
         return f"echo:{self.value}"
 
 
+class ImageEcho(BaseTool):
+    """Image-producing tool."""
+    source: str = "/tmp/a.png"
+
+    def run(self, tctx=None):
+        return ToolResult(
+            content="image ok",
+            images=(ImageAttachment(
+                source=self.source,
+                mime="image/png",
+                url=f"data:image/png;base64,{self.source}",
+            ),),
+        )
+
+
+class BrokenImageEcho(BaseTool):
+    """Failed image tool."""
+    def run(self, tctx=None):
+        return ToolResult.error("read failed")
+
+
 class ParallelProbe(BaseTool):
     """声明 parallel_safe 的可并发测试工具：子类覆写 arun 定义行为。"""
     value: str = ""
@@ -43,9 +65,13 @@ class ParallelProbe(BaseTool):
 class _Client:
     current_provider = "test"
 
-    def __init__(self):
+    def __init__(self, vision=True):
+        self.vision = vision
         self.kwargs = None
         self.requested = None
+
+    def supports_vision(self):
+        return self.vision
 
     def clamp_max_tokens(self, requested):
         self.requested = requested
@@ -506,3 +532,64 @@ def test_parallel_group_renderer_order(monkeypatch):
          renderer=renderer)
     assert seen == [("call", "read_file"), ("call", "grep"),
                     ("result", "done:a"), ("result", "done:b")]
+
+
+def test_image_followup_comes_after_all_tool_results(monkeypatch):
+    outcome = _run(monkeypatch, [("", "", [
+        _tool_call("image_echo", '{"source": "/tmp/a.png"}', "t1"),
+        _tool_call("echo", '{"value": "b"}', "t2"),
+    ], "tool_calls", None)], pool=ToolPool({"image_echo": ImageEcho, "echo": Echo}))
+
+    assert [m["role"] for m in outcome.followup_messages] == ["tool", "tool", "user"]
+    assert outcome.followup_messages[0]["tool_call_id"] == "t1"
+    content = outcome.followup_messages[2]["content"]
+    assert content[0]["type"] == "text"
+    assert "1. /tmp/a.png" in content[0]["text"]
+    assert content[1] == {"type": "image_url",
+                          "image_url": {"url": "data:image/png;base64,/tmp/a.png"}}
+
+
+def test_image_followup_preserves_call_order(monkeypatch):
+    outcome = _run(monkeypatch, [("", "", [
+        _tool_call("image_echo", '{"source": "/tmp/a.png"}', "t1"),
+        _tool_call("image_echo", '{"source": "/tmp/b.png"}', "t2"),
+    ], "tool_calls", None)], pool=ToolPool({"image_echo": ImageEcho}))
+
+    content = outcome.followup_messages[-1]["content"]
+    assert "1. /tmp/a.png" in content[0]["text"]
+    assert "2. /tmp/b.png" in content[0]["text"]
+    assert [part["image_url"]["url"] for part in content[1:]] == [
+        "data:image/png;base64,/tmp/a.png",
+        "data:image/png;base64,/tmp/b.png",
+    ]
+
+
+def test_images_not_attached_without_vision(monkeypatch):
+    outcome = _run(monkeypatch, [("", "", [
+        _tool_call("image_echo", '{"source": "/tmp/a.png"}', "t1"),
+    ], "tool_calls", None)],
+        client=_Client(vision=False), pool=ToolPool({"image_echo": ImageEcho}))
+
+    content = outcome.followup_messages[-1]["content"]
+    assert isinstance(content, str)
+    assert "/tmp/a.png" in content
+    assert "vision" in content.lower()
+
+
+def test_failed_image_tool_adds_no_image_followup(monkeypatch):
+    outcome = _run(monkeypatch, [("", "", [
+        _tool_call("broken_image", "{}", "t1"),
+    ], "tool_calls", None)], pool=ToolPool({"broken_image": BrokenImageEcho}))
+
+    assert [m["role"] for m in outcome.followup_messages] == ["tool"]
+
+
+def test_request_view_uses_placeholder_without_vision(monkeypatch):
+    client = _Client(vision=False)
+    history = [{"role": "user", "content": [
+        {"type": "text", "text": "see image"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}},
+    ]}]
+    _run(monkeypatch, [("ok", "", [], "stop", None)], client=client, history=history)
+
+    assert client.kwargs["messages"][1]["content"] == IMAGE_OMITTED_MESSAGE

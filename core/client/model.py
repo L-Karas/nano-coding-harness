@@ -318,6 +318,12 @@ class ModelClient:
             return None
         return self._model_config().get("max_output") or None
 
+    def supports_vision(self) -> bool:
+        """当前模型是否声明支持图像输入；未选择模型时为 False。"""
+        if not (self.current_provider and self.current_model):
+            return False
+        return bool(self._model_config().get("vision", False))
+
     def compact_trigger_tokens(self) -> int:
         """当前模型的上下文压缩触发阈值（绝对 token 预算，按模型窗口封顶）。"""
         return CONFIGMANAGER.config.resolve_compact_trigger_tokens(

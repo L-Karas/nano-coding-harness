@@ -27,8 +27,13 @@ from core.log.log import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.runtime_context import ToolContext
 from core.streaming import streaming_message
-from core.template import BACKGROUND_STARTED_PROMPT, TOOL_ABORTED_PROMPT, USER_INTERRUPT_PROMPT
-from core.tools import ToolPool, ToolResult
+from core.template import (
+    BACKGROUND_STARTED_PROMPT,
+    INJECTION_MESSAGES_TEMPLATE,
+    TOOL_ABORTED_PROMPT,
+    USER_INTERRUPT_PROMPT,
+)
+from core.tools import ImageAttachment, ToolPool, ToolResult
 
 _LOGGER = get_logger(__name__)
 
@@ -101,7 +106,8 @@ async def run_agent_step(
 ) -> StepOutcome:
     """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展（含权限门）→ 执行 → 扩展）。"""
     tools = pool.schemas()
-    messages = [{"role": "system", "content": system_prompt}] + to_llm_messages(history)
+    vision = bool(getattr(client, "supports_vision", lambda: True)())
+    messages = [{"role": "system", "content": system_prompt}] + to_llm_messages(history, vision=vision)
 
     llm_ctx = BeforeLLMContext(messages=messages, tools=tools, max_tokens=max_tokens)
     await dispatch("before_llm", llm_ctx, include_external=policy.use_extensions)
@@ -174,6 +180,7 @@ async def run_agent_step(
         tctx,
         policy,
         renderer,
+        vision,
     )
     return StepOutcome(
         assistant_message=assistant_message,
@@ -267,12 +274,28 @@ def _preview_diff(item: _PreparedCall) -> list[tuple[str, int, str]] | str:
         return ""
 
 
+def _image_followup_message(attachments: list[ImageAttachment], vision: bool) -> dict:
+    """把本轮读取的图片汇总成一条 user 注入消息：路径列表与 image part 同序。"""
+    lines = ["read_file loaded the following images for visual inspection (in order):"]
+    lines += [f"{index}. {attachment.source}" for index, attachment in enumerate(attachments, 1)]
+    if not vision:
+        lines.append("[Images not attached: the current model does not support vision input.]")
+    text = INJECTION_MESSAGES_TEMPLATE.format(content="\n".join(lines))
+    if not vision:
+        return {"role": "user", "content": text}  # 纯文本，仍带注入前后缀
+    parts = [{"type": "text", "text": text}]
+    parts += [{"type": "image_url", "image_url": {"url": attachment.url}}
+              for attachment in attachments]
+    return {"role": "user", "content": parts}
+
+
 async def _run_tools(
         tool_calls: list[dict],
         pool: ToolPool,
         tctx: ToolContext,
         policy: StepPolicy,
         renderer: StepRenderer,
+        vision: bool,
 ) -> tuple[list[dict], list[dict]]:
     """按组派发工具：parallel_safe 声明组内用 asyncio.gather，不可并发工具自成一组形成屏障。
 
@@ -281,6 +304,7 @@ async def _run_tools(
     """
     results: list[dict] = []
     injected: list[dict] = []
+    attachments: list[ImageAttachment] = []
     executed_ids: set[str] = set()
     try:
         for group in group_parallel_tool_calls(tool_calls, pool):
@@ -332,6 +356,8 @@ async def _run_tools(
                 outcome = item.outcome
                 output = outcome.content
                 is_error = outcome.is_error
+                if not is_error and not outcome.is_cancelled:
+                    attachments.extend(outcome.images)
                 # 失败 / 取消的结果没有落盘：预览 diff 既不渲染也不落 payload
                 show_diff = bool(item.diff) and not is_error and not outcome.is_cancelled
                 if show_diff:
@@ -353,6 +379,9 @@ async def _run_tools(
                     message["payload"] = item.diff
                 results.append(message)
                 executed_ids.add(item.tool_call_id)
+
+        if attachments:
+            injected.append(_image_followup_message(attachments, vision))
 
     finally:
         # 未执行的 tool call 补占位：消息历史必须给每个 tool_call_id 一个结果
