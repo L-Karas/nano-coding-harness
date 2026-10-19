@@ -14,9 +14,8 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from rich.text import Text
 
 from core.interaction import register_interaction, register_render
+from core.context.message import content_text, is_injected_content
 from core.template import (
-    INJECTION_MESSAGES_PREFIX,
-    INJECTION_MESSAGES_SUFFIX,
     TOOL_ERROR_PREFIX,
     UNKNOWN_TOOL_PREFIX,
 )
@@ -75,9 +74,9 @@ def _add_capped_card(
     ))
 
 
-def render_user_input(user_text: str) -> None:
-    """用户输入卡片（加粗亮白）"""
-    _exec(lambda app: app._add_card("user", Text(_strip_keycaps(user_text), style="bold #f9fafb")))
+def render_user_input(user_text: Any) -> None:
+    """用户输入卡片（加粗亮白）；content 数组只取文本 part。"""
+    _exec(lambda app: app._add_card("user", Text(_strip_keycaps(content_text(user_text)), style="bold #f9fafb")))
 
 
 def _format_arg_value(value: Any) -> str:
@@ -151,9 +150,7 @@ def render_sessions() -> None:
 
 def _is_injected_message(content: Any) -> bool:
     """是否为内部注入消息（按 <injection_messages> 前后缀识别）：只喂模型，回放时跳过。"""
-    return (isinstance(content, str)
-            and content.startswith(INJECTION_MESSAGES_PREFIX)
-            and content.endswith(INJECTION_MESSAGES_SUFFIX))
+    return is_injected_content(content)
 
 
 def _render_tool_message(message: Any) -> None:

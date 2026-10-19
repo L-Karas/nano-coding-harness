@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Optional
 
+from core.context.message import content_text
 from core.runtime_context import AgentInterrupted
 from core.skill import skills as _skills
 from core.tui.render import (
@@ -92,7 +93,7 @@ class _CommandFlow:
             self._reload_history()
         else:
             self._clear_cards()  # 分叉到起点：新会话尚无历史
-        content = next((m.content for m in messages if m.id == message_id), "")
+        content = content_text(next((m.content for m in messages if m.id == message_id), ""))
         prompt = self._prompt()
         prompt.text = content
         prompt.cursor_location = prompt.document.end  # text setter 把光标归位开头，置于末尾

@@ -7,14 +7,15 @@ from typing import Any
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
+from core.context.message import content_text
 from core.tui.screens.base import _ListPickerScreen, _SessionRow, _rebuild_options
 
 _FORK_PREVIEW_CHARS = 30  # fork 列表预览宽度（存储侧的标题截断长度由 session 自持）
 
 
-def _preview(content: str) -> str:
-    """压平空白后的前 _FORK_PREVIEW_CHARS 个字符（超长加 …）。"""
-    text = " ".join(content.split())
+def _preview(content: Any) -> str:
+    """压平空白后的前 _FORK_PREVIEW_CHARS 个字符（content 数组只取文本 part；超长加 …）。"""
+    text = " ".join(content_text(content).split())
     return text[:_FORK_PREVIEW_CHARS] + ("…" if len(text) > _FORK_PREVIEW_CHARS else "")
 
 

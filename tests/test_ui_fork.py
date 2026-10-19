@@ -173,3 +173,19 @@ def test_fork_pick_failure_notifies(monkeypatch):
     app._on_fork_picked("m1", [])
     assert events[-1][1] == "⚠️ Fork" and "not found" in events[-1][2]
     assert prompt.text == "old" and prompt.cursor_location is None and events[0][0] != "clear"
+
+
+def test_fork_pick_flattens_array_content_into_prompt(monkeypatch):
+    events = []
+    app, prompt, pushed = _app(monkeypatch, events)
+    session = SimpleNamespace(messages=["m1", "a1"])
+    messages = [
+        _Message("m1", [{"type": "text", "text": "first"}]),
+        _Message("m2", [{"type": "text", "text": "second"}]),
+    ]
+    app._manager = _FakeManager(messages, forked_session=session)
+
+    app._open_fork()
+    pushed[0][1]("m2")
+
+    assert prompt.text == "second"
