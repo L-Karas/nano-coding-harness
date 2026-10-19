@@ -20,6 +20,8 @@ INJECTION_MESSAGES_PREFIX = "<injection_messages>\n"
 INJECTION_MESSAGES_SUFFIX = "\n</injection_messages>"
 INJECTION_MESSAGES_TEMPLATE = INJECTION_MESSAGES_PREFIX + "{content}" + INJECTION_MESSAGES_SUFFIX
 
+IMAGE_OMITTED_MESSAGE = "[Image message omitted: the current model does not support vision input.]"
+
 PERSIST_TOOL_MESSAGE_PREFIX = "<persisted-output>\n"
 PERSIST_TOOL_MESSAGE_SUFFIX = "\n</persisted-output>"
 PERSIST_TOOL_MESSAGE_TEMPLATE = (

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
+from core.template import IMAGE_OMITTED_MESSAGE, INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
+
 
 def _get_message_id() -> str:
     return f"message-{uuid.uuid4().hex}"
@@ -21,7 +23,7 @@ class Message:
     """
     role: Literal["user", "assistant", "tool"]
     id: str = field(default_factory=_get_message_id)
-    content: str = ""
+    content: str | list[dict] = ""
     reasoning_content: str = ""
     tool_call_id: str = ""
     tool_calls: list[dict] = field(default_factory=list)
@@ -52,12 +54,50 @@ def message_set(message: "Message | dict", key: str, value: Any) -> None:
         message[key] = value
 
 
-def to_llm_messages(messages: list) -> list[dict]:
-    """会话消息（Message 或含 id / usage / payload 的 dict）→ 模型请求视图：只保留 API 字段。"""
+def content_text(content: Any) -> str:
+    """把消息 content（str 或 OpenAI content 数组）压平为文本：数组只保留 text part。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            part.get("text") or ""
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return ""
+
+
+def is_injected_content(content: Any) -> bool:
+    """是否为内部注入消息（按 <injection_messages> 前后缀识别）；支持 content 数组。"""
+    text = content_text(content).strip()
+    return (text.startswith(INJECTION_MESSAGES_PREFIX.strip())
+            and text.endswith(INJECTION_MESSAGES_SUFFIX.strip()))
+
+
+def is_synthetic_content(content: Any) -> bool:
+    """是否为 harness 生成的合成用户消息（标题 / fork 列表都跳过）：以 < 或 [ 开头。"""
+    return content_text(content).lstrip().startswith(("<", "["))
+
+
+def _has_image_part(content: Any) -> bool:
+    return isinstance(content, list) and any(
+        isinstance(part, dict) and part.get("type") == "image_url" for part in content
+    )
+
+
+def to_llm_messages(messages: list, *, vision: bool = True) -> list[dict]:
+    """会话消息（Message 或含 id / usage / payload 的 dict）→ 模型请求视图：只保留 API 字段。
+
+    vision=False 时，含 image_url part 的消息整条替换为 IMAGE_OMITTED_MESSAGE；
+    会话里保存的消息不被修改。
+    """
     view = []
     for message in messages:
         role = message_get(message, "role", "")
-        item = {"role": role, "content": message_get(message, "content", "")}
+        content = message_get(message, "content", "")
+        if not vision and _has_image_part(content):
+            content = IMAGE_OMITTED_MESSAGE
+        item = {"role": role, "content": content}
         if role == "assistant":
             item["reasoning_content"] = message_get(message, "reasoning_content", "")
         tool_calls = message_get(message, "tool_calls")
