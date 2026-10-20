@@ -415,6 +415,14 @@ class ModelClient:
                        model=self.current_model, **request_args)
 
 
+def model_supports_vision(client) -> bool:
+    """client 的当前模型能否接收图片；未声明该能力的测试替身按支持处理。"""
+    supports = getattr(client, "supports_vision", None)
+    if callable(supports):
+        return bool(supports())
+    return bool(supports) if supports is not None else True
+
+
 # ---------- 进程内共享 ModelClient ----------
 # 使用方：main agent / 上下文压缩 → shared_model_client；sub-agent → shared_sub_model_client。
 # 配置来源：.harness/.settings.json 的 default_model / default_sub_model 及对应 thinking level。

@@ -34,8 +34,12 @@
 
 `read_file` 读取本地图片（`png` / `jpg` / `jpeg` / `gif` / `webp`，单图 ≤ 5 MB）或 `http(s)` 图片 URL 时，
 返回文本结果并把图片附件交给 agent step；本轮所有工具结束后统一注入一条 user 消息（按调用顺序
-列出路径，随后是同序的 `image_url` part）。URL 图片不下载、不校验；超过大小上限返回工具错误，
+列出来源，随后是同序的 `image_url` part）。URL 图片不下载、不校验；超过大小上限返回工具错误，
 不注入图片；非视觉模型（`ToolContext.vision=false`）不读取 / 编码图片，只返回文本结果说明未附加。
+
+图片判定与附件构造集中在 `core/tools/vision.py`：其他工具想随结果带回图片时，调
+`local_image_result()` / `alocal_image_result()` / `url_image_result()`（`vision=` 传
+`ToolContext.vision`），不必复制 MIME 表、上限与文案。
 
 ## 扩展工具
 
@@ -49,6 +53,12 @@
 | `list_crons` / `cancel_cron` | `job_id` | main | 查看 / 取消任务 |
 
 MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main / sub-agent）。
+MCP 结果中的 `ImageContent` 与 `read_file` 的图片走同一条注入链路：文本块拼成工具结果正文，
+每个图片块单独成为一个 `ImageAttachment`（data URL）。图片先校自报 MIME（只收 `png` / `jpeg` /
+`gif` / `webp`，大小写与 `; charset=` 之类参数会归一化），再受单图 5 MB 上限约束；任一图片不
+合格即整个调用返回工具错误、不附图片。`is_error` 的结果转成工具错误。
+调用失败（未连接 / 超时 / 服务端报错）不在 MCP 层转文本：格式化成 `McpToolError`（带工具名
+与原因，原始异常留在 `__cause__`）后抛出，由 `ToolPool` 统一编码成工具错误（ADR-0001）。
 
 ## 后台任务
 

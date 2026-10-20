@@ -54,7 +54,7 @@ def test_non_vision_image_message_is_recognized_and_skipped(monkeypatch):
 
     message = _image_followup_message(
         [ImageAttachment(source="/tmp/a.png", mime="image/png",
-                         url="data:image/png;base64,AAA")],
+                         image_url="data:image/png;base64,AAA")],
         vision=False,
     )
     assert is_injected_content(message["content"])

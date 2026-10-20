@@ -1,7 +1,7 @@
 """注册期校验：至少覆写 run / arun 之一；装配按 agent_type 过滤并支持 exclude。"""
 import pytest
 
-import core.tools.tool_pool as tool_pool
+import core.mcp as mcp
 from core.tools import assemble_tool_pool
 from core.tools.tool_base import BaseTool
 from core.tools.tool_pool import _validate_tool_class
@@ -26,7 +26,7 @@ def test_tool_with_one_implementation_passes():
 
 
 def test_assemble_filters_agent_type_and_exclude(monkeypatch):
-    monkeypatch.setattr(tool_pool, "get_client_manager", lambda: None)
+    monkeypatch.setattr(mcp, "get_client_manager", lambda: None)  # 装配体内延迟导入，patch 定义处
     pool = assemble_tool_pool("sub-agent", exclude=frozenset({"terminal"}))
     names = [s["function"]["name"] for s in pool.schemas()]
     assert "read_file" in names

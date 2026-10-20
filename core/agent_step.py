@@ -13,6 +13,7 @@ from typing import Callable, ContextManager
 from openai.types.chat import ChatCompletionMessageToolCall
 
 from core.background_task import should_run_background, start_background_task
+from core.client import model_supports_vision
 from core.context import to_llm_messages
 from core.diff import DIFF_TOOLS, preview_edit, preview_write
 from core.extension import (
@@ -23,7 +24,6 @@ from core.extension import (
     ToolExecuteContext,
     dispatch,
 )
-from logger import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.runtime_context import ToolContext
 from core.streaming import streaming_message
@@ -34,6 +34,7 @@ from core.template import (
     USER_INTERRUPT_PROMPT,
 )
 from core.tools import ImageAttachment, ToolPool, ToolResult
+from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 
@@ -106,7 +107,7 @@ async def run_agent_step(
 ) -> StepOutcome:
     """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展（含权限门）→ 执行 → 扩展）。"""
     tools = pool.schemas()
-    vision = bool(getattr(client, "supports_vision", lambda: True)())
+    vision = model_supports_vision(client)
     messages = [{"role": "system", "content": system_prompt}] + to_llm_messages(history, vision=vision)
 
     llm_ctx = BeforeLLMContext(messages=messages, tools=tools, max_tokens=max_tokens)
@@ -275,8 +276,8 @@ def _preview_diff(item: _PreparedCall) -> list[tuple[str, int, str]] | str:
 
 
 def _image_followup_message(attachments: list[ImageAttachment], vision: bool) -> dict:
-    """把本轮读取的图片汇总成一条 user 注入消息：路径列表与 image part 同序。"""
-    lines = ["read_file loaded the following images for visual inspection (in order):"]
+    """把本轮读取的图片汇总成一条 user 注入消息：来源列表与 image part 同序。"""
+    lines = ["The following images were returned by tools for visual inspection (in order):"]
     lines += [f"{index}. {attachment.source}" for index, attachment in enumerate(attachments, 1)]
     if not vision:
         lines.append("[Images not attached: the current model does not support vision input.]")
@@ -284,7 +285,7 @@ def _image_followup_message(attachments: list[ImageAttachment], vision: bool) ->
     if not vision:
         return {"role": "user", "content": text}  # 纯文本，仍带注入前后缀
     parts = [{"type": "text", "text": text}]
-    parts += [{"type": "image_url", "image_url": {"url": attachment.url}}
+    parts += [{"type": "image_url", "image_url": {"url": attachment.image_url}}
               for attachment in attachments]
     return {"role": "user", "content": parts}
 

@@ -45,7 +45,7 @@ class ImageEcho(BaseTool):
             images=(ImageAttachment(
                 source=self.source,
                 mime="image/png",
-                url=f"data:image/png;base64,{self.source}",
+                image_url=f"data:image/png;base64,{self.source}",
             ),),
         )
 
@@ -65,7 +65,7 @@ class CancelledImageEcho(BaseTool):
             images=(ImageAttachment(
                 source="/tmp/cancelled.png",
                 mime="image/png",
-                url="data:image/png;base64,AAA",
+                image_url="data:image/png;base64,AAA",
             ),),
         )
 

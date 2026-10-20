@@ -10,13 +10,12 @@ from core import interaction
 from core.agent_step import StepPolicy, StepRenderer, run_agent_step
 from core.background_task import collect_background_results
 from core.bootstrap import bootstrap
-from core.client import shared_model_client
+from core.client import shared_model_client, model_supports_vision
 from core.config import CONFIGMANAGER
 from core.context.compact import compact_history, prepare_messages
 from core.context.prompt import build_system_prompt
 from core.context.session import SESSION_MANAGER
 from core.cron_scheduler import consume_cron_queue
-from logger import get_logger
 from core.recovery.error_recovery import RecoveryState
 from core.runtime_context import AgentRunContext, AgentInterrupted, ToolContext
 from core.template import (
@@ -27,6 +26,7 @@ from core.template import (
 )
 from core.tools import assemble_tool_pool
 from core.turn_runtime import TurnRunner
+from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 
@@ -113,7 +113,7 @@ class AgentRuntime:
                 pool = assemble_tool_pool("main",
                                           enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
                 client = shared_model_client()
-                tctx = ToolContext(agent_run=ctx, vision=bool(getattr(client, "supports_vision", lambda: True)()))
+                tctx = ToolContext(agent_run=ctx, vision=model_supports_vision(client))
 
                 try:
                     outcome = await run_agent_step(
@@ -157,7 +157,8 @@ class AgentRuntime:
                         })
                         state.recovery_count += 1
                         continue
-                    interaction.render_background_notification("Agent exceeded maximum retry limits", title="⚠️ Agent Error")
+                    interaction.render_background_notification("Agent exceeded maximum retry limits",
+                                                               title="⚠️ Agent Error")
                     return
 
                 max_tokens = CONFIGMANAGER.config.default_max_tokens

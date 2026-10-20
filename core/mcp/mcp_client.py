@@ -5,6 +5,7 @@ MCP is modeled as late-bound tools: connect first, then discovered server
 tools are merged into the normal tool pool with mcp__server__tool names.
 """
 import asyncio
+import base64
 import json
 import re
 import threading
@@ -14,9 +15,11 @@ from contextlib import AsyncExitStack
 
 from mcp import StdioServerParameters, ClientSessionGroup, ClientSession
 from mcp.client.session_group import SseServerParameters, StreamableHttpParameters
-from mcp_types import TextContent
+from mcp_types import ImageContent, TextContent
 
 from core.config import MCP_CONFIG_FILE
+from core.tools import vision
+from core.tools.tool_result import ImageAttachment, ToolResult
 from logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -41,6 +44,19 @@ _ready_manager = None
 _STOP = object()
 
 
+class McpToolError(RuntimeError):
+    """MCP 工具调用失败：已带上工具名与原因的可读信息，原始异常保留在 __cause__。"""
+
+
+def _mcp_error(tool_name: str, exc: Exception) -> McpToolError:
+    """把调用失败格式化成一条能直接进 [Tool Error] 的信息。"""
+    if isinstance(exc, TimeoutError):
+        detail = f"timed out after {_TOOL_CALL_TIMEOUT:g}s"
+    else:
+        detail = f"failed: {exc}" if str(exc) else f"failed: {type(exc).__name__}"
+    return McpToolError(f"MCP tool '{tool_name}' {detail}")
+
+
 def _sanitize(name: str) -> str:
     return _DISALLOWED_CHARS.sub("_", name)
 
@@ -55,9 +71,39 @@ def _component_name(tool_name: str, server) -> str:
     return _tool_prefix(server.name) + _sanitize(tool_name)
 
 
-def _tool_text(tool_result) -> str:
-    """MCP tools currently return TextContent blocks only."""
-    return "\n".join(block.text for block in tool_result.content if isinstance(block, TextContent))
+def _tool_result(result, tool_name: str, tool_args: dict | None) -> ToolResult:
+    """MCP 结果 → ToolResult：TextContent 拼正文，每个 ImageContent 单独成一条图片附件。
+
+    图文可以共存（服务端常见形态）；未知块类型忽略。失败按 `is_error` 转成错误结果，
+    与内置工具同一个口径。图片先校类型（不在支持列表即报错），再校单图 `MAX_IMAGE_BYTES`
+    上限（与 read_file 同一条规则），任何一张不合格则整个调用报错、不返回附件。
+    """
+    blocks = getattr(result, "content", None) or []
+    text = "\n".join(block.text for block in blocks if isinstance(block, TextContent))
+    if getattr(result, "is_error", False):
+        return ToolResult.error(text or f"{tool_name} failed")
+
+    source = _source(tool_name, tool_args)
+    images: list[ImageAttachment] = []
+    for index, block in enumerate((b for b in blocks if isinstance(b, ImageContent)), 1):
+        mime = vision.declared_image_mime(block.mime_type)
+        if mime is None:
+            return vision.unsupported_type_result(f"{source} (image {index})", block.mime_type)
+        data = base64.b64decode(block.data)
+        if vision.image_too_large(len(data)):
+            return vision.too_large_result(f"{source} (image {index})", len(data))
+        images.append(
+            ImageAttachment(source=source, mime=mime, image_url=vision.data_url(mime, data)))
+
+    if images and not text:
+        count = f"{len(images)} image" + ("s" if len(images) > 1 else "")
+        text = f"Image returned by {tool_name} ({count})."
+    return ToolResult(content=text, images=tuple(images))
+
+
+def _source(tool_name: str, tool_args: dict | None) -> str:
+    """图片注入消息里列出的来源：工具名，有参数时带参数。"""
+    return f"{tool_name}({tool_args})" if tool_args else tool_name
 
 
 class ClientManager:
@@ -90,33 +136,41 @@ class ClientManager:
         return asyncio.run_coroutine_threadsafe(
             self.session_group.call_tool(tool_name, tool_args), _get_loop())
 
-    def tool_call(self, tool_name: str, tool_args: dict | None = None) -> str:
+    def tool_call(self, tool_name: str, tool_args: dict | None = None) -> ToolResult:
+        """同步入口：调用失败抛异常，工具自报 is_error 转成错误结果；两者最终都由 ToolPool 编码。"""
         if tool_name not in self.tool_handlers:
-            return f"Tool '{tool_name}' not found"
+            raise ValueError(f"Tool '{tool_name}' not found")
+        future = self._submit(tool_name, tool_args)
         try:
-            return _tool_text(self._submit(tool_name, tool_args).result(_TOOL_CALL_TIMEOUT))
+            return _tool_result(future.result(_TOOL_CALL_TIMEOUT), tool_name, tool_args)
+        except TimeoutError as e:
+            future.cancel()  # 超时后底层调用仍在 MCP loop 上运行，取消掉再抛
+            raise _mcp_error(tool_name, e) from e
         except Exception as e:
-            return str(e)
+            raise _mcp_error(tool_name, e) from e
 
     async def tool_call_async(
         self,
         tool_name: str,
         ctx=None,
         tool_args: dict | None = None,
-    ) -> str:
+    ) -> ToolResult:
+        """异步入口：同 `tool_call`；超时 / 取消 / 服务端异常都向上抛，不在这一层转成文本。"""
         if tool_name not in self.tool_handlers:
-            return f"Tool '{tool_name}' not found"
+            raise ValueError(f"Tool '{tool_name}' not found")
 
         if ctx:
             ctx.raise_if_cancelled()
 
+        call = asyncio.wrap_future(self._submit(tool_name, tool_args))
         try:
-            call = asyncio.wrap_future(self._submit(tool_name, tool_args))
-            text = _tool_text(await asyncio.wait_for(call, _TOOL_CALL_TIMEOUT))
-            _LOGGER.info(f"[MCP] {tool_name} -> {text[:50]}")
-            return text
-        except Exception as e:  # CancelledError 是 BaseException，不会被这里吞掉
-            return str(e)
+            result = _tool_result(await asyncio.wait_for(call, _TOOL_CALL_TIMEOUT),
+                                  tool_name, tool_args)
+        except Exception as e:  # CancelledError / AgentInterrupted 是 BaseException，照旧向上抛
+            raise _mcp_error(tool_name, e) from e
+        _LOGGER.info(f"[MCP] {tool_name} -> {result.content[:50]} "
+                     f"({len(result.images)} image(s))")
+        return result
 
     def list_tools(self) -> list[dict]:
         """MCP tools in the OpenAI function schema：当前连接的工具快照（只读）。"""

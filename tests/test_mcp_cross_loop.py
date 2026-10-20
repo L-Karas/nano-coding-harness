@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import mcp_types
 
 import core.mcp.mcp_client as mcp_client
+from core.tools.tool_result import ToolResult
 
 
 def test_async_tool_call_runs_on_mcp_loop():
@@ -22,7 +23,7 @@ def test_async_tool_call_runs_on_mcp_loop():
     # 独立 loop 里调用 = 模拟 agent 轮次的 loop（AgentRuntime.loop）
     result = asyncio.run(manager.tool_call_async("t", None, {"a": 1}))
 
-    assert result == "t:{'a': 1}", "文本内容应被提取"
+    assert result == ToolResult(content="t:{'a': 1}"), "文本内容应被提取"
     assert calls == [("t", {"a": 1}, mcp_client._get_loop())], "call_tool 必须调度到 MCP loop 上执行"
 
 

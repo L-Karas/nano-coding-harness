@@ -41,7 +41,7 @@ _Avoid_: 全局渲染函数、直接 import TUI
 _Avoid_: 消息 dict、asdict 往返
 
 **ImageAttachment**:
-一次工具读取带回的图片：来源路径 / URL、MIME 与可直接放进 `image_url` 的 URL（data URL 或 http(s)）。
+一次工具读取带回的图片：`source`（来源路径 / URL）、`mime` 与 `image_url`（data URL 或 http(s) URL，可直接放进请求）。
 _Avoid_: 图片对象、base64 字符串
 
 **Session**:

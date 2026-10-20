@@ -13,9 +13,9 @@ from core.template import TOOL_ERROR_MESSAGE_TEMPLATE, UNKNOWN_TOOL_MESSAGE_TEMP
 @dataclass(frozen=True)
 class ImageAttachment:
     """一次工具读取带回的图片：来源、MIME 与直接可用的 image_url。"""
-    source: str      # 本地绝对路径或原始 URL
+    source: str  # 本地绝对路径或原始 URL
     mime: str
-    url: str         # data URL 或 http(s) URL
+    image_url: str  # data URL 或 http(s) URL
 
 
 @dataclass(frozen=True)

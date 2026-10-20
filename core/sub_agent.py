@@ -11,13 +11,13 @@ Sub Agent
 import asyncio
 from pathlib import Path
 
-from core.client import shared_sub_model_client
+from core.client import shared_sub_model_client, model_supports_vision
 from core.config import CONFIGMANAGER, WORKDIR
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
-from logger import get_logger
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
+from logger import get_logger
 
 MAX_SUB_AGENT_ROUNDS = 30
 _LOGGER = get_logger(__name__)
@@ -57,7 +57,7 @@ async def spawn_subagent(description: str, ctx=None, goal: str = "",
         history = [{"role": "user", "content": description}]
         client = shared_sub_model_client()
         tctx = ToolContext(agent_run=ctx, cwd=work_dir, agent_name="sub-agent",
-                           vision=bool(getattr(client, "supports_vision", lambda: True)()))
+                           vision=model_supports_vision(client))
         policy = StepPolicy(use_extensions=True)
         renderer = StepRenderer(on_tool_call=lambda tool_name, _args: _set_phase(agent_id, "tool", tool_name))
 

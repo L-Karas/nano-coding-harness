@@ -1,7 +1,5 @@
 from typing import Any, Literal, Mapping
 
-from logger import get_logger
-from core.mcp import get_client_manager
 from core.runtime_context import ToolContext
 from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类
 from core.tools.extra_tools import *  # noqa: F401  # 导入扩展工具类以注册 BaseTool 子类
@@ -9,6 +7,7 @@ from core.tools.tool_base import BaseTool
 from core.tools.tool_result import ToolResult
 from core.tools.utils import _camel_to_snake
 from core.tools.web_search import *  # noqa: F401  # 导入 web 工具类以注册 BaseTool 子类
+from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}
@@ -48,11 +47,11 @@ class _McpEntry:
         self._sync_handler = sync_handler
         self._async_handler = async_handler
 
-    def execute_sync(self, args: dict, tctx: ToolContext | None) -> str:
-        return str(self._sync_handler(**args))
+    def execute_sync(self, args: dict, tctx: ToolContext | None) -> str | ToolResult:
+        return self._sync_handler(**args)
 
-    async def execute_async(self, args: dict, tctx: ToolContext | None) -> str:
-        return str(await self._async_handler(ctx=tctx.agent_run if tctx else None, **args))
+    async def execute_async(self, args: dict, tctx: ToolContext | None) -> str | ToolResult:
+        return await self._async_handler(ctx=tctx.agent_run if tctx else None, **args)
 
 
 class ToolPool:
@@ -145,6 +144,9 @@ def assemble_tool_pool(
     }
 
     try:
+        # 延迟导入：core.mcp 在模块级依赖 core.tools（vision / ToolResult），
+        # 与 tool_pool 的模块级导入成环。
+        from core.mcp import get_client_manager
         mcp_client_manager = get_client_manager()
     except Exception as e:
         _LOGGER.exception(f"[MCP error] Init failed, falling back to builtin tools: {e}")

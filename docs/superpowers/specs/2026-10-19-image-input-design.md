@@ -137,7 +137,7 @@ Image read: <source> (<mime>, <bytes> bytes).
 class ImageAttachment:
     source: str      # 本地绝对路径或原始 URL（注入消息里按此顺序列出）
     mime: str
-    url: str         # data URL 或 http(s) URL，直接填进 image_url.url
+    image_url: str   # data URL 或 http(s) URL，直接填进 image_url.url
 ```
 
 `ToolResult` 增加 `images: tuple[ImageAttachment, ...] = ()`。`error()` / `cancelled()` /
@@ -186,7 +186,7 @@ def supports_vision(self) -> bool:
         {
             "type": "text",
             "text": INJECTION_MESSAGES_TEMPLATE.format(content=(
-                "read_file loaded the following images for visual inspection "
+                "The following images were returned by tools for visual inspection "
                 "(in order):\n1. /abs/a.png\n2. https://example.com/b.jpg"
             )),
         },
@@ -196,7 +196,7 @@ def supports_vision(self) -> bool:
 }
 ```
 
-- 文本在数组首位，路径编号顺序与后续 image part 严格一致。
+- 文本在数组首位，来源编号顺序与后续 image part 严格一致。
 - 整条消息只出现一次，位于**所有 tool 消息之后**（满足 OpenAI「tool 结果紧跟 assistant
   tool_calls」的约束）。
 - 使用统一注入模板，因此 `is_injected_content()` 为真，TUI 回放 / 标题 / fork 都会跳过。

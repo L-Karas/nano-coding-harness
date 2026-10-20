@@ -8,7 +8,7 @@ from core.tools.tool_result import ToolResult
 ATTACHMENT = ImageAttachment(
     source="/tmp/a.png",
     mime="image/png",
-    url="data:image/png;base64,AAA",
+    image_url="data:image/png;base64,AAA",
 )
 
 
