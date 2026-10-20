@@ -47,7 +47,7 @@ Agent 执行流程的关键节点（LLM 调用前/后、工具调用前/后）�
 
 - `.harness/` 已被 `.gitignore` 忽略，扩展代码不进入版本控制。
 - 扫描直接子文件夹，跳过 `_` 开头文件夹。
-- 清单 `extension.json` 只含 `enabled` 布尔字段：
+- 加载器只消费清单 `extension.json` 中的 `enabled` 布尔字段；扩展可以追加自定义配置字段并自行读取（当前说明见 `docs/extensions.md` §5.8）：
   - `false` → 跳过（DEBUG 日志）；
   - 字段缺失、清单缺失、JSON 非法 → 一律按**不启用**处理（INFO/ERROR 日志）。没有明确 `true` 就不执行代码。
 - 入口固定为 `__init__.py`，以包方式加载，允许扩展内部多文件组织（`from .helpers import x`）：

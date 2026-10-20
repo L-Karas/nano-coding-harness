@@ -8,6 +8,8 @@
 
 扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
 
+扩展所需的自定义配置可以直接写在扩展目录的 `extension.json` 中；加载器只解析 `enabled`，其余字段由扩展在 `register(api)` 里自行读取（见 5.8）。
+
 > 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py` / `protocol.py`）
 > 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（`after_tool` 覆盖范围已由本文件 §3.3 / §8 取代）
 
@@ -29,7 +31,7 @@
 ```
 .harness/extensions/
   my_ext/
-    extension.json     # 启用开关：{"enabled": true}
+    extension.json     # 启用开关 + 扩展自定义配置（见 5.8）
     __init__.py        # 入口：必须定义 register(api)
     helpers.py         # 可选：同包模块，包内导入必须用相对导入
   disabled_ext/
@@ -46,6 +48,8 @@
     "enabled": true
 }
 ```
+
+`enabled` 是加载器唯一的门槛字段；需要给扩展传配置时，直接在同一文件里追加自定义字段（如 `"tag": "[my_ext]"`）。加载器不会解析或校验这些字段，由扩展自行读取（见 5.8）。
 
 `__init__.py`：
 
@@ -94,13 +98,14 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 | 跳过前缀 | 名称以 `_` 开头的文件夹跳过（如 `_draft/`） |
 | 启用门槛 | `extension.json` 中 `enabled` **严格为布尔 `true`**（Python 的 `is True`）才加载 |
 | 不启用的情况 | `enabled` 为 `false`、缺失、`"true"`、`1`、`null`、清单缺失、JSON 非法 → 一律按不启用处理并记日志 |
+| 自定义配置 | `enabled` 以外的字段由扩展自行读取（`Path(__file__).parent / "extension.json"`）；加载器不解析、不校验、不注入 |
 | 入口 | 固定为 `__init__.py`，以包方式加载（模块名 `nano_extension_<文件夹名>`）；扩展目录不在 `sys.path` 上，包内多文件**必须用相对导入**（`from .helpers import x`） |
 | 注册入口 | 必须定义可调用的 `register(api)`；缺失或不认识 `api.on` 的非法参数 → 该扩展整体作废 |
 | 原子性 | `api.on()` 只缓冲注册；`register(api)` **正常返回后**才一次性提交全部注册。中途抛错 → 该扩展零注册 |
 | 失败隔离 | 单个扩展导入失败 / 注册失败只影响自己并记日志，不阻断启动，也不影响其它扩展 |
 | 加载顺序 | 文件夹名字典序；同一扩展内按 `api.on()` 调用顺序 |
 | 幂等 | 进程内 `load_extensions()` 只生效一次 |
-| 生效时机 | 启动时读取一次；修改 `enabled` 或扩展代码后**必须重启进程** |
+| 生效时机 | 启动时读取一次；修改 `enabled`、自定义配置或扩展代码后**必须重启进程** |
 
 `.harness/extensions/` 相对于**启动进程时的工作目录**（`WORKDIR`）。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
 
@@ -119,6 +124,7 @@ def register(api):
 - `callback` 非 callable 抛 `TypeError`。
 - `register` 内抛出的任何异常（包括上面两种）都会让**整个扩展作废**，因此建议只做注册、把逻辑放在独立函数里。
 - 回调签名固定为一个上下文对象：`def hook(ctx)` 或 `async def hook(ctx)`；返回值会被忽略，只通过修改 `ctx` 生效。
+- `api` 没有配置读取接口；扩展所需配置直接写在同一个 `extension.json` 中，由扩展自行读取（见 5.8）。
 
 ### 3.2 上下文对象
 
@@ -342,6 +348,53 @@ async def local_web_search(ctx):
 - 跳过后台路由与 diff 预览：接管 `spawn_subagent` / 慢 `terminal` 等不会后台化；接管 `write_file` / `edit_file` 不会生成 diff 预览与 payload。
 - 想失败闭合就自行兜底：`except Exception as e: ctx.handle(f"[my_ext error] {e}", is_error=True)`；否则异常会被 fail-open 视为未接管并回退内置执行。
 
+### 5.8 读取扩展配置（`extension.json`）
+
+加载器只读取 `enabled`，不会把清单内容注入 `api`；扩展需要配置时，在同一个 `extension.json` 里追加自定义字段，并在 `register(api)` 中按包路径自行读取。
+
+`extension.json`：
+
+```json
+{
+    "enabled": true,
+    "tag": "[my_ext]"
+}
+```
+
+`__init__.py`：
+
+```python
+import json
+from pathlib import Path
+
+_DEFAULTS = {"tag": "[my_ext]"}
+
+
+def register(api):
+    config = {**_DEFAULTS, **_read_manifest()}
+    tag = config["tag"]
+    if not isinstance(tag, str) or not tag:
+        raise ValueError("tag 必须是非空字符串")  # register 抛错 → 整个扩展作废
+    api.on("after_tool", lambda ctx: _mark(ctx, tag))
+
+
+def _read_manifest():
+    """读取本扩展清单；enabled 属于加载器，其余字段交给扩展。"""
+    path = Path(__file__).parent / "extension.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {key: value for key, value in data.items() if key != "enabled"}
+
+
+def _mark(ctx, tag):
+    ctx.result = f"{ctx.result}\n{tag} 已处理"
+```
+
+- 用 `Path(__file__).parent` 定位清单，不要依赖进程工作目录；扩展目录不在 `sys.path` 上，包内导入仍需使用相对导入。
+- 清单在加载前已通过 JSON 解析与 `enabled` 门槛，能进入 `register` 就说明文件可解析；读取时仍建议用默认值兜底，或让异常冒泡使整个扩展作废。
+- 加载器不校验自定义字段：类型、必填项与取值范围由扩展自己校验。
+- 配置在 `register` 时读取一次，修改后**需要重启进程**；`enabled` 与自定义配置都不支持热切换。
+- 敏感信息优先用环境变量（现有 `jev-for-*` 示例使用 `TYPESAFE_API_KEY`）；`.harness/extensions/` 已被 `.gitignore` 忽略，但仍不要把密钥写进准备分享或提交的扩展目录。
+
 ## 6. 排错
 
 ### 6.1 日志位置
@@ -353,7 +406,7 @@ async def local_web_search(ctx):
 
 ### 6.2 常见「扩展没生效」原因
 
-1. **忘了重启进程**：`enabled` 与代码只在启动时读取一次。
+1. **忘了重启进程**：`enabled`、自定义配置与代码只在启动时读取一次。
 2. **`enabled` 不是严格布尔 `true`**：`"true"`、`1`、`"yes"` 都不加载。
 3. **文件夹以 `_` 开头**：会被跳过。
 4. **缺少 `__init__.py` 或 `register`**：该扩展被跳过，检查 `loader.log`。
@@ -362,6 +415,7 @@ async def local_web_search(ctx):
 7. **回调异常被 fail-open 吞掉**：外部回调异常只记 `dispatcher.log` 并视为弃权（内置权限门是 fail-closed，异常会导致拒绝）；`inject_messages` / `decisions` 写成非 list 也会被丢弃并记 ERROR。
 8. **包内模块用了裸绝对导入**：`import helpers` / `from helpers import x` 不会命中扩展目录（扩展目录不在 `sys.path`），必须写成 `from .helpers import x`；此时扩展整体加载失败，见 `loader.log`。
 9. **`tool_execute` 接管没生效**：只写了 `ctx.result` 没调 `ctx.handle()`；或回调抛异常被 fail-open 吞掉（`dispatcher.log`）后回退执行了内置实现——注意这可能触发内置的真实副作用。
+10. **自定义配置没生效**：加载器不会把 `extension.json` 注入 `api`，扩展必须自己读取（见 5.8）；字段名、默认值与类型校验都由扩展约定。
 
 ## 7. 测试扩展
 
@@ -403,7 +457,7 @@ def test_blocks_rm_commands():
 - **信任模型**：扩展在 agent 进程内以**完整进程权限**运行，可以 import harness 内部模块、读写任意文件。只放可信代码。
 - **无超时**：hook 同步阻塞会阻塞 agent；长耗时的网络 / 磁盘 / 计算请自行异步化或降级为快速操作。
 - **不阻断启动**：单个扩展加载失败只记日志并跳过。
-- **修改需重启**：`enabled` 与扩展代码不支持运行时热切换。
+- **修改需重启**：`enabled`、自定义配置与扩展代码不支持运行时热切换。
 - **覆盖范围**：主 agent 循环与子代理循环都会触发五个事件；`tool_execute` 接管时跳过后台路由与 diff 预览，内置 `pool.execute` 不执行；`StepPolicy.use_extensions=False` 时外部回调在所有事件上被跳过，内置观察者与权限门照常。
 - **不在覆盖范围**：
   - 后台任务异步完成的结果不触发 `after_tool`（派发时的 `before_tool` 与占位结果的 `after_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
