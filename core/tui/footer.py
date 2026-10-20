@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from core.tui.theme import SECONDARY_TEXT
+from core.tui.theme import APPROVAL_MODE_COLORS, SECONDARY_TEXT
 from core.tui.utils import (
     current_approval_mode,
     current_context_length,
@@ -19,7 +19,15 @@ from core.tui.utils import (
 
 TOKEN_BAR_CELLS = 20  # 占用条固定格数
 TOKEN_LABEL = "Context Usage"  # 占用条前置标签
+APPROVAL_LABEL = "Approval Mode"  # 审批模式行前置标签
 _TEXT_STYLE = SECONDARY_TEXT  # 次级灰（cwd 行 / 模型段 / 标签 / 百分比段）
+
+
+def approval_mode_text(mode: str) -> Text:
+    """'Approval Mode: <mode>'：标签次级灰，仅模式值按模式染色（表外模式也走次级灰）。"""
+    text = Text(f"{APPROVAL_LABEL}: ", no_wrap=True, style=_TEXT_STYLE)
+    text.append(mode, style=APPROVAL_MODE_COLORS.get(mode, _TEXT_STYLE))
+    return text
 
 
 def _model_label() -> str:
@@ -78,8 +86,7 @@ class _FooterBar(Vertical):
                 text.append(" " * gap)
                 text.append_text(model)
         bar.update(text)
-        self.query_one("#approval-mode", Static).update(
-            Text(f"Approval Mode: {current_approval_mode()}", no_wrap=True, style=_TEXT_STYLE))
+        self.query_one("#approval-mode", Static).update(approval_mode_text(current_approval_mode()))
 
     def _session_tokens(self) -> int:
         """当前会话 token 估算数；未接 SessionManager / 取值失败按 0。"""

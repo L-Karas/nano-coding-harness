@@ -8,5 +8,13 @@ TERMINAL_TITLE = "nano-harness"  # 运行期终端窗口标题（OSC 2），退�
 SECONDARY_TEXT = "#94a3b8"  # 次级文字色：说明 / 未配置 / 占位提示等
 PLACEHOLDER = "Type a message… Enter to send · Ctrl+J for newline"
 
+# 页脚审批模式值配色（按危险度分档）：Manual 黄 / Decision Model·LLM 绿 / Yolo 红；表外模式回落次级灰
+APPROVAL_MODE_COLORS = {
+    "Manual": "#e5c890",
+    "Decision Model": "#a6d189",
+    "LLM": "#a6d189",
+    "Yolo": "#e78284",
+}
+
 # Braille spinner 帧；状态行 spin=True 与右栏进行中项轮播共用
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
