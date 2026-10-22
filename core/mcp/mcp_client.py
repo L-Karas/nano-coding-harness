@@ -246,6 +246,8 @@ class ClientManager:
         ponytail: connect 不设超时 —— 挂死的 server 会停在 connecting，init（及 warmup 线程、
         /mcp 状态）会一直等它；调用方 get_client_manager 有 _MANAGER_WAIT_TIMEOUT 兜底。
         """
+        task = asyncio.current_task()  # 记下自己：finally 可能在 loop 外（解释器收尾）执行
+        task._log_destroy_pending = False  # 进程级常驻 task：随进程回收，不要「destroyed but pending」告警
         try:
             while True:
                 self.status[server_name] = "connecting"
@@ -264,7 +266,7 @@ class ClientManager:
                     return
         finally:
             ready.set()  # 首个连接结果落地前就退出，也不能让 init 一直等
-            if self._server_tasks.get(server_name) is asyncio.current_task():
+            if self._server_tasks.get(server_name) is task:
                 self._server_tasks.pop(server_name, None)  # 已被新 task 顶替时不删掉它的槽位
 
     def _start_server_task(self, server_name: str, config: dict) -> asyncio.Event:
