@@ -14,9 +14,9 @@ from core.tools.tool_result import ToolResult
 DESCRIPTION = (
     "Read the contents of a file. "
     f"Text files are read as-is; document formats {', '.join(get_args(anydoc.Format))} are converted to Markdown. "
-    f"Image files ({', '.join(sorted(vision.IMAGE_MIME_TYPES))}) up to "
-    f"{vision.MAX_IMAGE_BYTES // (1024 * 1024)} MB are read "
-    "and attached for vision models; http(s) image URLs are passed through without downloading. "
+    f"Image files ({', '.join(sorted(vision.IMAGE_MIME_TYPES))}) are attached for vision models "
+    f"(over {vision.MAX_IMAGE_BYTES // (1024 * 1024)} MB they are downscaled to fit); "
+    "http(s) image URLs are passed through without downloading. "
     "Use this instead of `terminal` (cat/head/sed) to inspect files. "
     f"Text output is capped at {MAX_OUTPUT_LINES} lines by default and at {MAX_OUTPUT_BYTES // 1024} KB, whichever comes first; when truncated, the "
     f"final line reports the omitted amount and the `offset` to continue from. A line over the byte cap is cut — use "

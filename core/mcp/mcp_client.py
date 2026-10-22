@@ -76,7 +76,8 @@ def _tool_result(result, tool_name: str, tool_args: dict | None) -> ToolResult:
 
     图文可以共存（服务端常见形态）；未知块类型忽略。失败按 `is_error` 转成错误结果，
     与内置工具同一个口径。图片先校类型（不在支持列表即报错），再校单图 `MAX_IMAGE_BYTES`
-    上限（与 read_file 同一条规则），任何一张不合格则整个调用报错、不返回附件。
+    上限（与 read_file 同一条规则）：超限的等比缩小，缩不下来（解不开 / 动图）则整个调用报错、
+    不返回附件；缩小过的图片在正文里单独一行说明。
     """
     blocks = getattr(result, "content", None) or []
     text = "\n".join(block.text for block in blocks if isinstance(block, TextContent))
@@ -85,19 +86,26 @@ def _tool_result(result, tool_name: str, tool_args: dict | None) -> ToolResult:
 
     source = _source(tool_name, tool_args)
     images: list[ImageAttachment] = []
+    downscaled = 0
     for index, block in enumerate((b for b in blocks if isinstance(b, ImageContent)), 1):
         mime = vision.declared_image_mime(block.mime_type)
         if mime is None:
             return vision.unsupported_type_result(f"{source} (image {index})", block.mime_type)
         data = base64.b64decode(block.data)
-        if vision.image_too_large(len(data)):
+        fitted = vision.fit_image(mime, data)
+        if fitted is None:
             return vision.too_large_result(f"{source} (image {index})", len(data))
+        mime, data, original_size = fitted
+        if original_size is not None:
+            downscaled += 1
         images.append(
             ImageAttachment(source=source, mime=mime, image_url=vision.data_url(mime, data)))
 
     if images and not text:
         count = f"{len(images)} image" + ("s" if len(images) > 1 else "")
         text = f"Image returned by {tool_name} ({count})."
+    if downscaled:
+        text = "\n".join(part for part in (text, vision.downscaled_note(downscaled)) if part)
     return ToolResult(content=text, images=tuple(images))
 
 
@@ -164,8 +172,9 @@ class ClientManager:
 
         call = asyncio.wrap_future(self._submit(tool_name, tool_args))
         try:
-            result = _tool_result(await asyncio.wait_for(call, _TOOL_CALL_TIMEOUT),
-                                  tool_name, tool_args)
+            raw = await asyncio.wait_for(call, _TOOL_CALL_TIMEOUT)
+            # 图片解码 / 重编码是 CPU 活，别占住事件循环
+            result = await asyncio.to_thread(_tool_result, raw, tool_name, tool_args)
         except Exception as e:  # CancelledError / AgentInterrupted 是 BaseException，照旧向上抛
             raise _mcp_error(tool_name, e) from e
         _LOGGER.info(f"[MCP] {tool_name} -> {result.content[:50]} "

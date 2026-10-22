@@ -21,7 +21,7 @@
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
 | `terminal` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），输出截断 5 万字符；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
-| `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示；图片路径（png/jpg/jpeg/gif/webp，单图 ≤ 5 MB）与 `http(s)` 图片 URL 作为图片附件返回，供视觉模型使用；`limit` / `offset` 仅对文本有效 |
+| `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示；图片路径（png/jpg/jpeg/gif/webp，单图 ≤ 5 MB，超出时等比缩小）与 `http(s)` 图片 URL 作为图片附件返回，供视觉模型使用；`limit` / `offset` 仅对文本有效 |
 | `write_file` | `path`, `content` | 写文件，执行前渲染 diff 预览 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
 | `glob` | `pattern` | 按 glob 模式查找文件（异步路径优先 ripgrep 并尊重 .gitignore，缺失时回退 Python glob） |
@@ -34,12 +34,16 @@
 
 `read_file` 读取本地图片（`png` / `jpg` / `jpeg` / `gif` / `webp`，单图 ≤ 5 MB）或 `http(s)` 图片 URL 时，
 返回文本结果并把图片附件交给 agent step；本轮所有工具结束后统一注入一条 user 消息（按调用顺序
-列出来源，随后是同序的 `image_url` part）。URL 图片不下载、不校验；超过大小上限返回工具错误，
-不注入图片；非视觉模型（`ToolContext.vision=false`）不读取 / 编码图片，只返回文本结果说明未附加。
+列出来源，随后是同序的 `image_url` part）。URL 图片不下载、不校验；超过大小上限的本地图片按
+需要等比缩小（保留原格式，正文注明 `downscaled from <size>`），只有缩不下来（解不开 / 多帧动图 /
+1x1 仍超限）才返回工具错误、不注入图片；非视觉模型（`ToolContext.vision=false`）不读取 /
+编码图片，只返回文本结果说明未附加。
 
-图片判定与附件构造集中在 `core/tools/vision.py`：其他工具想随结果带回图片时，调
+图片判定、附件构造与超限缩小集中在 `core/tools/vision.py`：其他工具想随结果带回图片时，调
 `local_image_result()` / `alocal_image_result()` / `url_image_result()`（`vision=` 传
-`ToolContext.vision`），不必复制 MIME 表、上限与文案。
+`ToolContext.vision`），不必复制 MIME 表、上限与文案；字节已经在手上的来源用 `fit_image()`
+拿到「缩小后的 mime + 字节」，再用 `data_url()` 拼附件。超限时缩小还是报错的取舍见
+[ADR-0010](adr/0010-image-over-limit-is-downscaled.md)。
 
 ## 扩展工具
 
@@ -55,8 +59,9 @@
 MCP 工具以 `mcp__<server>__<tool>` 命名合并进同一工具池（仅 main / sub-agent）。
 MCP 结果中的 `ImageContent` 与 `read_file` 的图片走同一条注入链路：文本块拼成工具结果正文，
 每个图片块单独成为一个 `ImageAttachment`（data URL）。图片先校自报 MIME（只收 `png` / `jpeg` /
-`gif` / `webp`，大小写与 `; charset=` 之类参数会归一化），再受单图 5 MB 上限约束；任一图片不
-合格即整个调用返回工具错误、不附图片。`is_error` 的结果转成工具错误。
+`gif` / `webp`，大小写与 `; charset=` 之类参数会归一化），再受单图 5 MB 上限约束：超限的与
+本地图片同样等比缩小（正文追加一行缩小说明）；缩不下来的图片即整个调用返回工具错误、不附
+图片。`is_error` 的结果转成工具错误。
 调用失败（未连接 / 超时 / 服务端报错）不在 MCP 层转文本：格式化成 `McpToolError`（带工具名
 与原因，原始异常留在 `__cause__`）后抛出，由 `ToolPool` 统一编码成工具错误（ADR-0001）。
 

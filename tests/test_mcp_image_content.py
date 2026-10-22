@@ -126,6 +126,25 @@ def test_failed_result_skips_the_size_check(monkeypatch):
     assert result.images == ()
 
 
+def test_oversized_image_is_downscaled_instead_of_rejected(monkeypatch, noise_png):
+    data = noise_png()
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    result = _call(_manager([_text("done"), _image(base64.b64encode(data).decode())]))
+    assert result.is_error is False
+    (attachment,) = result.images
+    assert attachment.mime == "image/png"
+    assert len(base64.b64decode(attachment.image_url.split(",", 1)[1])) <= 50_000
+    assert result.content == "done\n1 image was downscaled to fit the size limit."
+
+
+def test_generated_text_counts_the_downscaled_images(monkeypatch, noise_png):
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    encoded = _image(base64.b64encode(noise_png()).decode())
+    result = _call(_manager([encoded, encoded]))
+    assert result.content == ("Image returned by shot (2 images).\n"
+                              "2 images were downscaled to fit the size limit.")
+
+
 def test_oversized_image_is_rejected_without_attachment(monkeypatch):
     monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", len(PNG) - 1)
     result = _call(_manager([_text("done"), _image(PNG_B64)]))

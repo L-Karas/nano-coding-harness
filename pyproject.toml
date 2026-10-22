@@ -12,6 +12,7 @@ dependencies = [
     "firecrawl-anydoc>=0.2.4",
     "mcp>=2.0.0",
     "openai>=2.32.0",
+    "pillow>=13.0.0",
     "prompt-toolkit>=3.0.53",
     "pydantic>=2.13.3",
     "pyfiglet>=1.0.4",

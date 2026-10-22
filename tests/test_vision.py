@@ -1,14 +1,24 @@
-"""core.tools.vision：MIME 判定、data URL 编码、视觉 / 大小门控与图片附件结果。"""
+"""core.tools.vision：MIME 判定、data URL 编码、视觉 / 大小门控、超限缩小与图片附件结果。"""
 import asyncio
 import base64
+import io
+import os
 
 import pytest
+from PIL import Image
 
 import core.tools.vision as vision
 from core.runtime_context import ToolContext
 from core.tools import ImageAttachment, ToolResult
 
 PNG = b"\x89PNG\r\n\x1a\n"
+
+
+def _noise_jpeg(width: int = 400, height: int = 400) -> bytes:
+    buf = io.BytesIO()
+    Image.frombytes("RGB", (width, height), os.urandom(width * height * 3)).save(
+        buf, format="JPEG", quality=95)
+    return buf.getvalue()
 
 
 def test_max_image_bytes_is_5mb():
@@ -114,6 +124,84 @@ def test_local_image_over_limit_is_error_without_encoding(tmp_path, monkeypatch)
     assert result.is_error is True
     assert result.images == ()
     assert f"limit {len(PNG) - 1} bytes" in result.content
+
+
+def test_shrink_image_fits_oversized_png_under_the_limit(monkeypatch, noise_png):
+    data = noise_png()
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    assert len(data) > 50_000
+    mime, shrunk = vision.shrink_image(data)
+    assert mime == "image/png"
+    assert len(shrunk) <= 50_000
+    with Image.open(io.BytesIO(shrunk)) as img:
+        assert img.size[0] < 400 and img.size[1] < 400
+
+
+def test_shrink_image_keeps_the_original_format(monkeypatch):
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    mime, shrunk = vision.shrink_image(_noise_jpeg())
+    assert mime == "image/jpeg"
+    assert len(shrunk) <= 50_000
+    with Image.open(io.BytesIO(shrunk)) as img:
+        assert img.format == "JPEG"
+
+
+def test_shrink_image_leaves_an_image_within_the_limit_untouched(noise_png):
+    data = noise_png(20, 20)
+    assert vision.shrink_image(data) == ("image/png", data)
+
+
+def test_shrink_image_returns_none_for_bytes_it_cannot_decode(monkeypatch):
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", len(PNG) - 1)
+    assert vision.shrink_image(PNG) is None
+
+
+def test_shrink_image_returns_none_when_even_one_pixel_is_too_big(monkeypatch, noise_png):
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 10)
+    assert vision.shrink_image(noise_png(40, 40)) is None
+
+
+def test_shrink_image_refuses_an_animated_gif(monkeypatch):
+    frames = [Image.new("RGB", (60, 60), (255, 0, 0)), Image.new("RGB", (60, 60), (0, 0, 255))]
+    buf = io.BytesIO()
+    frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:], duration=100)
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", len(buf.getvalue()) - 1)
+    assert vision.shrink_image(buf.getvalue()) is None
+
+
+def test_local_image_over_limit_is_shrunk_into_an_attachment(tmp_path, monkeypatch, noise_png):
+    data = noise_png()
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    path = tmp_path / "big.png"
+    path.write_bytes(data)
+    result = vision.local_image_result(path, vision=True)
+    assert result.is_error is False
+    (attachment,) = result.images
+    assert attachment.mime == "image/png"
+    assert attachment.image_url.startswith("data:image/png;base64,")
+    assert len(base64.b64decode(attachment.image_url.split(",", 1)[1])) <= 50_000
+
+
+def test_local_image_reports_the_shrink_in_its_line(tmp_path, monkeypatch, noise_png):
+    data = noise_png()
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    path = tmp_path / "big.png"
+    path.write_bytes(data)
+    result = vision.local_image_result(path, vision=True)
+    attached = base64.b64decode(result.images[0].image_url.split(",", 1)[1])
+    assert result.content == (
+        f"Image read: {path} (image/png, {len(attached)} bytes, "
+        f"downscaled from {len(data)} bytes).")
+
+
+def test_alocal_image_result_shrinks_like_the_sync_one(tmp_path, monkeypatch, noise_png):
+    monkeypatch.setattr(vision, "MAX_IMAGE_BYTES", 50_000)
+    path = tmp_path / "big.png"
+    path.write_bytes(noise_png())
+    result = asyncio.run(vision.alocal_image_result(path, vision=True))
+    assert result.is_error is False
+    assert "downscaled" in result.content
+    assert result == vision.local_image_result(path, vision=True)
 
 
 def test_alocal_image_result_matches_sync(tmp_path):
