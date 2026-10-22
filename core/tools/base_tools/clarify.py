@@ -6,13 +6,12 @@ from core.tools.tool_base import BaseTool
 
 MAX_OPTIONS = 4
 DESCRIPTION = (
-    f"Ask the user to choose an answer when you need a decision, clarification, or feedback before proceeding. "
-    f"`options` holds 1-{MAX_OPTIONS} candidate answers; the user selects one (or several with `multi_select=true`) "
-    f"or types a custom answer instead, and the selection is returned as the tool result. "
-    f"The entries are rendered as a bare list with no separate question line, so each one must be a complete, "
-    f"self-contained reply that makes sense as the answer on its own, not a description of the problem. "
-    f"Make entries mutually exclusive and order them by preference, best first. "
-    f"Pass `options=[]` only for a fully open-ended question with no meaningful preset answers."
+    f"Ask the user to choose an answer when you need a decision or clarification before proceeding. "
+    f"`options` holds 1-{MAX_OPTIONS} candidate answers; the user picks one, picks several with "
+    f"`multi_select=true`, or types a custom reply (always available, so no option needs to prompt for it). "
+    f"Options are shown as a bare list with no question line, so each must read as the answer itself; "
+    f"make them mutually exclusive and order them best first. "
+    f"Pass `options=[]` only for a fully open-ended question."
 )
 
 
@@ -20,14 +19,14 @@ class Clarify(BaseTool):
     __doc__ = DESCRIPTION
 
     options: list[str] = Field(
-        description=f"Candidate answers presented to the user as selectable entries (1-{MAX_OPTIONS}; a single "
-                    f"choice is a one-entry list). A chosen entry is returned verbatim as the answer, so each entry "
-                    f"must already read as a complete reply on its own. Entries must be mutually exclusive and "
-                    f"ordered by preference, best first. Pass [] for a fully open-ended question.")
+        description=f"Candidate answers shown to the user (1-{MAX_OPTIONS}). "
+                    "A chosen entry is returned verbatim, so write each as a complete answer; "
+                    "mutually exclusive, ordered best first (a custom reply is always available, so no entry "
+                    "needs to offer one). Pass [] for an open-ended question.")
     multi_select: bool = Field(
         default=False,
-        description="Whether the user may select multiple entries from `options` instead of one "
-                    "(default: false, single selection; multiple selections are returned as a bulleted list).")
+        description="Allow selecting several options instead of one (default: false; "
+                    "multiple selections return as a bulleted list).")
 
     agent_type: set = {"main", "sub-agent"}
 
