@@ -12,7 +12,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from core.config import CRON_TASK_FILE
-from logger import get_logger
+from core.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

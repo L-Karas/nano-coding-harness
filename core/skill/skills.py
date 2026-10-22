@@ -8,7 +8,7 @@ from typing import Literal
 import yaml
 
 from core.config import SKILL_DIR, GLOBAL_SKILLS_DIR, PROJECT_SKILL_DIR
-from logger import get_logger
+from core.logger import get_logger
 from core.template import SKILL_MESSAGE_TEMPLATE
 
 _LOGGER = get_logger(__name__)

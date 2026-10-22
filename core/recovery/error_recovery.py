@@ -8,7 +8,7 @@ from typing import Callable
 
 from core.client import shared_model_client
 from core.config import CONFIGMANAGER
-from logger import get_logger
+from core.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

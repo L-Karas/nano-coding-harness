@@ -1,5 +1,6 @@
 from typing import Any, Literal, Mapping
 
+from core.logger import get_logger
 from core.runtime_context import ToolContext
 from core.tools.base_tools import *  # noqa: F401  # 导入内置工具类以注册 BaseTool 子类
 from core.tools.extra_tools import *  # noqa: F401  # 导入扩展工具类以注册 BaseTool 子类
@@ -7,7 +8,6 @@ from core.tools.tool_base import BaseTool
 from core.tools.tool_result import ToolResult
 from core.tools.utils import _camel_to_snake
 from core.tools.web_search import *  # noqa: F401  # 导入 web 工具类以注册 BaseTool 子类
-from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 _TOOLS: dict[str, type[BaseTool]] = {}

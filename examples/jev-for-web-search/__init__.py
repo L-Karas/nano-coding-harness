@@ -4,7 +4,7 @@ from contextvars import ContextVar
 
 import httpx
 
-from logger import get_logger
+from core.logger import get_logger
 
 MAX_RESULTS = 30
 # 本次调用用户请求的结果数：before_tool 写入，after_tool 读取后据此截断。

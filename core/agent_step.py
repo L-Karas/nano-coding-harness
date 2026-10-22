@@ -24,6 +24,7 @@ from core.extension import (
     ToolExecuteContext,
     dispatch,
 )
+from core.logger import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.runtime_context import ToolContext
 from core.streaming import streaming_message
@@ -34,7 +35,6 @@ from core.template import (
     USER_INTERRUPT_PROMPT,
 )
 from core.tools import ImageAttachment, ToolPool, ToolResult
-from logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

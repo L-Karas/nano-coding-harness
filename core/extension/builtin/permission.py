@@ -22,7 +22,7 @@ from core.extension.builtin.permission_patterns import floor_denial, is_destruct
 from core.extension.context import BeforeToolContext, Decision
 from core.extension.protocol import ACTIONS
 from core.interaction import ask_permission
-from logger import get_logger
+from core.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

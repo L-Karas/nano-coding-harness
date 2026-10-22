@@ -5,7 +5,7 @@ import dotenv
 from httpx import AsyncClient
 
 from core.config import WORKDIR
-from logger import get_logger
+from core.logger import get_logger
 
 _THRESHOLD = 0.8
 _REASONS = {

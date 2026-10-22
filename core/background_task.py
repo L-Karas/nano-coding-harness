@@ -13,7 +13,7 @@ from typing import Callable
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
-from logger import get_logger
+from core.logger import get_logger
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
 from core.template import (BACKGROUND_CANCELLED_PROMPT, BACKGROUND_MESSAGE_TEMPLATE,

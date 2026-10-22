@@ -9,7 +9,7 @@ from dataclasses import dataclass, asdict
 from typing import Literal, Optional
 
 from core.config import MEMORY_DIR
-from logger import get_logger
+from core.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

@@ -17,7 +17,7 @@ from typing import Any, Optional
 from openai import AsyncOpenAI
 
 from core.config import CONFIGMANAGER, CUSTOM_MODEL_FILE, CUSTOM_PROVIDER_FILE, PROVIDER_AUTH_FILE
-from logger import get_logger
+from core.logger import get_logger
 
 _MODEL_LIST_PATH: Path = Path(__file__).parent / "models.json"
 
