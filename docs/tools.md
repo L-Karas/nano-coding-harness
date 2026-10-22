@@ -24,7 +24,7 @@
 | `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示；图片路径（png/jpg/jpeg/gif/webp，单图 ≤ 5 MB，超出时等比缩小）与 `http(s)` 图片 URL 作为图片附件返回，供视觉模型使用；`limit` / `offset` 仅对文本有效 |
 | `write_file` | `path`, `content` | 写文件，执行前渲染 diff 预览 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
-| `glob` | `pattern` | 按 glob 模式查找文件（异步路径优先 ripgrep 并尊重 .gitignore，缺失时回退 Python glob） |
+| `glob` | `pattern`, `use_ignore=true` | 按 glob 模式查找文件，返回相对工作目录的排序路径（只含文件）；`*` / `?` 不跨 `/`，`**` 递归，不含 `/` 的模式按文件名任意深度匹配；默认跳过隐藏路径与 .gitignore 命中项（`use_ignore=false` 放开），ripgrep 与 Python 回退路径语义一致 |
 | `grep` | `pattern`, `path`, `file_pattern` | 优先 ripgrep / grep，缺失时回退纯 Python 实现 |
 | `clarify` | `options`, `multi_select=false` | 停靠区选项列表询问用户（main / sub-agent）：单选或 Space 多选 + Enter 确认，末尾 Other 可键入自定义回答，Esc 取消 |
 | `web_search` | `query`, `max_results=10` | 联网搜索：按已配置 Key 的提供方顺序（firecrawl → tavily → exa）尝试，失败自动禁用该提供方，最终回退免 Key 的 ddgs；`max_results` 最小 1 |
