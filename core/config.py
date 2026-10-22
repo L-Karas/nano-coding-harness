@@ -49,9 +49,9 @@ class AgentConfig(BaseModel):
     approval_mode: ApprovalMode = Field(
         default=DEFAULT_APPROVAL_MODE,
         description="Tool approval mode. Manual asks on destructive commands / outside paths; "
-                    "Yolo trusts all terminal commands and outside-path access (default layer skipped; "
-                    "floor, rules, and extension votes still apply); LLM / Decision Model are not implemented "
-                    "and fall back to Manual")
+                    "Yolo only runs the floor check and skips everything else (trusts LLM output: "
+                    "rules, extension votes and the default layer are ignored); LLM / Decision Model "
+                    "are not implemented and fall back to Manual")
 
     default_max_tokens: int = Field(default=16_000, description="Max tokens per default model call")
     escalated_max_tokens: int = Field(default=32_000,

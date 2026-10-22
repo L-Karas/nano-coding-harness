@@ -27,7 +27,7 @@ def floor_denial(command: str) -> str | None:
 
 
 def is_destructive(command: str) -> bool:
-    """是否命中默认层危险命令（Manual 下触发确认，Yolo 下默认层整体放行）。"""
+    """是否命中默认层危险命令（Manual 下触发确认；Yolo 下默认层被跳过）。"""
     normalized = _normalize_command(command)
     return any(regex.search(normalized) for regex in DESTRUCTIVE_PATTERNS)
 

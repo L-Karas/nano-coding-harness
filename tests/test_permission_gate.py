@@ -797,7 +797,7 @@ def test_path_rule_matches_resolved_symlink_target(tmp_path):
     assert ctx.block_reason == r"Permission denied by rule: ^\.\./outside/"
 
 
-# --- approval_mode：Yolo 信任所有 terminal 命令、越界访问同样放行（默认层关闭），其余层不变 ---
+# --- approval_mode：Yolo 只执行地板校验，其余（规则 / 扩展票 / 默认层）全部跳过 ---
 
 @pytest.mark.parametrize("tool_name,args", [
     ("terminal", {"command": "rm old.txt"}),          # 危险命令
@@ -806,7 +806,7 @@ def test_path_rule_matches_resolved_symlink_target(tmp_path):
     ("read_file", {"path": str(Path.cwd().parent / "secret.txt")}),  # 文件工具越界
 ])
 def test_yolo_allows_without_prompt(monkeypatch, tool_name, args):
-    """Yolo 信任所有 terminal 命令、越界访问同样放行：默认层不再询问。"""
+    """Yolo 信任 LLM 的输出：危险命令与越界访问都不再询问。"""
     _with_mode(monkeypatch, "Yolo")
     _no_prompt(monkeypatch)
     assert not run_gate(tool_name, args).blocked
@@ -819,55 +819,34 @@ def test_yolo_still_denies_floor(monkeypatch):
     assert ctx.block_reason == "Permission denied: 'sudo' is on the deny list."
 
 
-def test_yolo_rule_deny_still_wins(monkeypatch):
-    """默认层优先级最低：Yolo 不绕过规则 / 扩展表态。"""
+def test_yolo_skips_rule_vote(monkeypatch):
+    """Yolo 下规则层整体跳过：deny 不拦、ask 不弹卡。"""
     _with_mode(monkeypatch, "Yolo")
     _no_prompt(monkeypatch)
-    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"})
-    build_gate(Rules(terminal=[(re.compile("^rm "), "deny")]))(ctx)
-    assert ctx.block_reason == "Permission denied by rule: ^rm "
+    for action in ("deny", "ask"):
+        ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"})
+        build_gate(Rules(terminal=[(re.compile("^rm "), action)]))(ctx)
+        assert not ctx.blocked, action
 
 
-def test_yolo_rule_ask_still_prompts(monkeypatch):
-    _with_mode(monkeypatch, "Yolo")
-    cards = []
-    monkeypatch.setattr(permission, "ask_permission",
-                        lambda q, details: cards.append(q) or "n")
-    ctx = BeforeToolContext(tool_name="terminal", args={"command": "echo hi"})
-    build_gate(Rules(terminal=[(re.compile("^echo "), "ask")]))(ctx)
-    assert cards == ["^echo "] and ctx.blocked
-
-
-def test_yolo_extension_deny_still_wins(monkeypatch):
-    """默认层优先级最低：Yolo 不绕过扩展 deny。"""
+def test_yolo_skips_extension_votes(monkeypatch):
+    """Yolo 下扩展表态跳过：deny 不拦、ask 不弹卡。"""
     _with_mode(monkeypatch, "Yolo")
     _no_prompt(monkeypatch)
-    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"},
-                            decisions=[_vote("deny", "policy")])
-    build_gate(Rules())(ctx)
-    assert ctx.blocked and ctx.block_reason == "[Extension blocked] policy"
+    for action in ("deny", "ask"):
+        ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"},
+                                decisions=[_vote(action, "policy")])
+        build_gate(Rules())(ctx)
+        assert not ctx.blocked, action
 
 
-def test_yolo_extension_ask_still_prompts(monkeypatch):
-    """默认层优先级最低：Yolo 不绕过扩展 ask。"""
-    _with_mode(monkeypatch, "Yolo")
-    cards = []
-    monkeypatch.setattr(permission, "ask_permission",
-                        lambda q, details: cards.append(q) or "n")
-    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm old.txt"},
-                            decisions=[_vote("ask", "policy")])
-    build_gate(Rules())(ctx)
-    assert cards == ["policy"] and ctx.blocked
-
-
-def test_yolo_external_rule_deny_still_wins(monkeypatch):
-    """Yolo 只关默认层：显式 external_directory 规则仍然生效。"""
+def test_yolo_skips_external_rule_deny(monkeypatch):
+    """Yolo 下 external_directory 规则同样不参与。"""
     _with_mode(monkeypatch, "Yolo")
     _no_prompt(monkeypatch)
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "cat ../secret.txt"})
     build_gate(Rules(external_directory={"terminal": "deny"}))(ctx)
-    assert ctx.blocked and ctx.block_reason == (
-        "Permission denied by rule: Access outside working directory:\n- ../secret.txt")
+    assert not ctx.blocked
 
 
 def test_approval_mode_is_read_live(monkeypatch):

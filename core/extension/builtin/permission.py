@@ -3,8 +3,8 @@
 规则只覆盖 terminal 与三个文件工具（read_file / write_file / edit_file）；
 文件整体非法时忽略全部规则并记 ERROR，单条规则非法只丢弃自身，未知键记 WARN。
 地板（硬拒绝）与危险命令模式表在 core.extension.builtin.permission_patterns；
-默认层受 `approval_mode` 控制：Manual 询问危险命令与越界访问，Yolo 关闭默认层
-（地板与用户表态不受影响）。越界命中统一用「标题 + 触发数据」文案。
+`approval_mode` 为 Yolo 时只执行地板校验、其余全部跳过（该模式即信任 LLM 的输出）；
+Manual 询问危险命令与越界访问。越界命中统一用「标题 + 触发数据」文案。
 完整语义见 docs/permissions.md。
 """
 import json
@@ -389,11 +389,7 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
     """默认层：无任何用户表态时生效。
 
     Manual（含未实现的 LLM / Decision Model）对危险命令与越界访问询问；
-    Yolo 信任所有 terminal 命令、越界访问同样放行，默认层整体关闭。
-    地板与规则 / 扩展表态的优先级不变。"""
-    if CONFIGMANAGER.config.approval_mode == "Yolo":
-        return
-
+    Yolo 在 gate 里已提前放行，不会走到这里。"""
     tool_name, args = ctx.tool_name, ctx.args
     if tool_name == "terminal":
         command = args.get("command", "")
@@ -420,7 +416,7 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
 
 
 def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
-    """构造权限门回调：地板 → 规则/扩展表态 → 默认层。"""
+    """构造权限门回调：地板 → 规则/扩展表态 → 默认层；Yolo 只留地板。"""
 
     def gate(ctx: BeforeToolContext) -> None:
         if ctx.tool_name == "terminal":
@@ -429,6 +425,10 @@ def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
                 ctx.blocked = True
                 ctx.block_reason = f"Permission denied: '{denial}' is on the deny list."
                 return
+
+        # Yolo 相信 LLM 的输出结果：地板之外不再校验（规则 / 扩展票 / 默认层全跳过）
+        if CONFIGMANAGER.config.approval_mode == "Yolo":
+            return
 
         rule_vote = _rule_vote(rules, ctx)
         if rule_vote.decision is not None or ctx.decisions:
