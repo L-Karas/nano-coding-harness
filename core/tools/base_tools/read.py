@@ -12,27 +12,23 @@ from core.tools.tool_base import BaseTool
 from core.tools.tool_result import ToolResult
 
 DESCRIPTION = (
-    "Read the contents of a file. "
-    f"Text files are read as-is; document formats {', '.join(get_args(anydoc.Format))} are converted to Markdown. "
-    f"Image files ({', '.join(sorted(vision.IMAGE_MIME_TYPES))}) are attached for vision models "
-    f"(over {vision.MAX_IMAGE_BYTES // (1024 * 1024)} MB they are downscaled to fit); "
-    "http(s) image URLs are passed through without downloading. "
+    "Read a file. Text is returned as-is; documents "
+    f"({', '.join(get_args(anydoc.Format))}) are converted to Markdown; images "
+    f"({', '.join(sorted(ext.lstrip('.') for ext in vision.IMAGE_MIME_TYPES))}) are attached for vision models. "
     "Use this instead of `terminal` (cat/head/sed) to inspect files. "
-    f"Text output is capped at {MAX_OUTPUT_LINES} lines by default and at {MAX_OUTPUT_BYTES // 1024} KB, whichever comes first; when truncated, the "
-    f"final line reports the omitted amount and the `offset` to continue from. A line over the byte cap is cut — use "
-    f"`terminal` to read its remainder. `limit` / `offset` only apply to text."
+    f"Output is capped at {MAX_OUTPUT_LINES} lines / {MAX_OUTPUT_BYTES // 1024} KB, whichever comes first; the "
+    "final line reports how to continue with `offset`."
 )
 
 
 class ReadFile(BaseTool):
     __doc__ = DESCRIPTION
     path: str = Field(
-        description="Path to the file to read, or an http(s) image URL. "
-                    "Relative paths resolve against the working directory; absolute paths are used as-is.")
+        description="File path or http(s) image URL; relative paths resolve against the working directory.")
     limit: int = Field(default=MAX_OUTPUT_LINES,
-                       description=f"Maximum number of lines to return (default: {MAX_OUTPUT_LINES}).")
-    offset: int = Field(default=1, description="1-indexed line number to start reading from (default: 1); pass the "
-                                               "offset printed in the truncation notice to continue reading.")
+                       description=f"Max lines to return (default: {MAX_OUTPUT_LINES}).")
+    offset: int = Field(default=1, description="1-indexed line to start from (default: 1); continue with the "
+                                               "offset from the truncation notice.")
 
     agent_type: set = {"main", "sub-agent"}
     parallel_safe: bool = True
