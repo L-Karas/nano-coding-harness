@@ -19,6 +19,8 @@
 | `core/context/session/session.py` | `SessionManager`：消息状态的唯一 owner；`Message` 货币、JSON 只在文件边界、只读 `current_session` + `reset()`（ADR-0006） |
 | `core/context/message.py` | `Message` 会话消息类型（`content` 可为 `str` 或 OpenAI content 数组）与 `to_llm_messages` 请求视图（`vision=False` 时整条图片消息替换为文本占位） |
 | `core/tools/` | 工具基类（schema 字段 + `run`/`arun`）、注册表与 `ToolPool`（`tool_pool.py`）；`base_tools/`（基础工具）、`extra_tools/`（扩展工具）、`web_search/`（含 `ToolResult` / `ToolContext`） |
+| `core/tools/ripgrep.py` | rg 子进程封装：可用性探测、UTF-8 有损解码、取消清理；glob / grep 共用 |
+| `core/tools/file_walk.py` | rg 语义的候选文件枚举（隐藏 / `.gitignore` / 符号链接）；glob / grep 共用 |
 | `core/tools/vision.py` | 图片读取的视觉处理：MIME 判定、5 MB 上限与超限等比缩小、视觉能力门控与图片附件结果；read 工具与其他想随结果带回图片的工具共用 |
 | `core/context/compact/context_compact.py` | 两层上下文压缩（工具结果截断 / 历史摘要）与 token 估算 |
 | `core/context/truncate.py` | 工具输出截断（2000 行 / 50KB 双上限），read 工具与上下文压缩共用 |

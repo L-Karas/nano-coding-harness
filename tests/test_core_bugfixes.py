@@ -34,7 +34,7 @@ def test_glob_no_matches_placeholder(monkeypatch, tmp_path):
 def test_grep_async_python_fallback_searches(monkeypatch, tmp_path):
     import core.tools.base_tools.grep as grep_mod
 
-    monkeypatch.setattr(grep_mod, "_find_grep_tool", lambda: "python")
+    monkeypatch.setattr(grep_mod, "has_ripgrep", lambda: False)
     (tmp_path / "a.py").write_text("needle\n", encoding="utf-8")
 
     out = asyncio.run(grep_mod.Grep(pattern="needle", path=str(tmp_path)).arun(ToolContext(cwd=tmp_path)))
@@ -46,7 +46,7 @@ def test_grep_relative_path_resolves_against_tool_cwd(monkeypatch, tmp_path):
     """相对 path 按 tctx.cwd 解析（子代理可在自定义工作目录里 grep），不是进程 cwd。"""
     import core.tools.base_tools.grep as grep_mod
 
-    monkeypatch.setattr(grep_mod, "_find_grep_tool", lambda: "python")
+    monkeypatch.setattr(grep_mod, "has_ripgrep", lambda: False)
     (tmp_path / "a.py").write_text("needle\n", encoding="utf-8")
 
     out = asyncio.run(grep_mod.Grep(pattern="needle", path=".").arun(ToolContext(cwd=tmp_path)))

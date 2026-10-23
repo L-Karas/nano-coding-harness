@@ -25,7 +25,7 @@
 | `write_file` | `path`, `content` | 写文件，执行前渲染 diff 预览 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换，执行前渲染 diff 预览 |
 | `glob` | `pattern`, `use_ignore=true` | 按 glob 模式查找文件，返回相对工作目录的排序路径（只含文件）；`*` / `?` 不跨 `/`，`**` 递归，不含 `/` 的模式按文件名任意深度匹配；默认跳过隐藏路径与 .gitignore 命中项（`use_ignore=false` 放开），ripgrep 与 Python 回退路径语义一致 |
-| `grep` | `pattern`, `path`, `file_pattern` | 优先 ripgrep / grep，缺失时回退纯 Python 实现 |
+| `grep` | `pattern`, `path=""`, `file_pattern="*"`, `use_ignore=true` | 正则搜文件内容（Python `re` 语法），返回 `path:line:content` 单行记录，按路径 / 行号排序，最多 50 条；`path` 可为文件或目录，缺省为工作目录且不得越界；`file_pattern` 按路径尾部过滤；默认跳过隐藏与 .gitignore 命中项（`use_ignore=false` 放开），含 NUL 的文件不搜；优先 ripgrep，缺失时回退纯 Python，两条路径的隐藏 / .gitignore 取舍与行模型一致（回退只实现 .gitignore）；部分路径不可读时保留命中并附警告 |
 | `clarify` | `options`, `multi_select=false` | 停靠区选项列表询问用户（main / sub-agent）：单选或 Space 多选 + Enter 确认，末尾 Other 可键入自定义回答，Esc 取消 |
 | `web_search` | `query`, `max_results=10` | 联网搜索：按已配置 Key 的提供方顺序（firecrawl → tavily → exa）尝试，失败自动禁用该提供方，最终回退免 Key 的 ddgs；`max_results` 最小 1 |
 | `web_extract` | `url` | 抓取网页正文：先 `npx defuddle` 解析，再按同一提供方顺序回退，最终 ddgs；结果截断 15000 字符 |
