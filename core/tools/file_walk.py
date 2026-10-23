@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def iter_files(root: Path, use_ignore: bool = True) -> Iterator[Path]:
-    """枚举 `root` 下的文件（不含目录）；`use_ignore` 时跳过隐藏与 `.gitignore` 命中项。"""
-    rules = _IgnoreRules(root) if use_ignore else None
+def iter_files(root: Path, skip_hidden_and_ignored: bool = True) -> Iterator[Path]:
+    """枚举 `root` 下的文件（不含目录）；`skip_hidden_and_ignored` 时跳过隐藏与 `.gitignore` 命中项。"""
+    rules = _IgnoreRules(root) if skip_hidden_and_ignored else None
 
     for dirpath, dirnames, filenames in os.walk(root):
         rel_dir = relpath(root, dirpath)

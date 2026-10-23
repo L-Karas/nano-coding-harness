@@ -102,7 +102,7 @@ def test_bom_is_only_stripped_at_file_start(monkeypatch, tmp_path):
 
 
 def test_hidden_file_whitelisted_by_gitignore_is_skipped(monkeypatch, tmp_path):
-    """rg 会搜 .gitignore 白名单里的隐藏文件（`--hidden` 文档明说）；两条分支都必须按 `use_ignore` 跳过。"""
+    """rg 会搜 .gitignore 白名单里的隐藏文件（`--hidden` 文档明说）；两条分支都必须按 `skip_hidden_and_ignored` 跳过。"""
     (tmp_path / ".git").mkdir()
     (tmp_path / ".gitignore").write_text(".*\n!.hidden.py\n", encoding="utf-8")
     (tmp_path / ".hidden.py").write_text("needle\n", encoding="utf-8")
@@ -135,8 +135,8 @@ def test_locale_does_not_change_non_utf8_results(monkeypatch, tmp_path):
             ("latin.txt", 1, "caf\ufffd needle")]
 
 
-def test_use_ignore_false_includes_hidden_and_gitignored(monkeypatch, tmp_path):
-    """`use_ignore=false` 放开隐藏 / .gitignore（与 glob 对齐）；默认仍然跳过。"""
+def test_skip_hidden_and_ignored_false_includes_hidden_and_gitignored(monkeypatch, tmp_path):
+    """`skip_hidden_and_ignored=false` 放开隐藏 / .gitignore（与 glob 对齐）；默认仍然跳过。"""
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("needle\n", encoding="utf-8")
     (tmp_path / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
@@ -148,18 +148,19 @@ def test_use_ignore_false_includes_hidden_and_gitignored(monkeypatch, tmp_path):
         assert sorted(name for name, _, _ in _names(
             _grep(monkeypatch, tmp_path, engine=engine, pattern="needle"))) == ["kept.py"]
         assert sorted(name for name, _, _ in _names(
-            _grep(monkeypatch, tmp_path, engine=engine, pattern="needle", use_ignore=False))) == [
+            _grep(monkeypatch, tmp_path, engine=engine, pattern="needle", skip_hidden_and_ignored=False))) == [
             ".hidden.py", "config", "ignored.py", "kept.py"]
 
 
-@pytest.mark.parametrize("use_ignore", [True, False])
-def test_engines_agree_on_use_ignore(monkeypatch, tmp_path, use_ignore):
-    """两条分支在两种 `use_ignore` 下都必须输出完全相同的结果。"""
+@pytest.mark.parametrize("skip_hidden_and_ignored", [True, False])
+def test_engines_agree_on_skip_hidden_and_ignored(monkeypatch, tmp_path, skip_hidden_and_ignored):
+    """两条分支在两种 `skip_hidden_and_ignored` 下都必须输出完全相同的结果。"""
     if not shutil.which("rg"):
         pytest.skip("ripgrep not installed")
     _build_mixed(tmp_path)
 
-    outputs = {engine: _grep(monkeypatch, tmp_path, engine=engine, pattern="needle", use_ignore=use_ignore)
+    outputs = {engine: _grep(monkeypatch, tmp_path, engine=engine, pattern="needle",
+                             skip_hidden_and_ignored=skip_hidden_and_ignored)
                for engine in _engines()}
 
     assert len(set(outputs.values())) == 1, outputs
@@ -208,11 +209,11 @@ def test_sync_entry_searches_without_an_event_loop(monkeypatch, tmp_path):
     assert grep_mod.Grep(pattern="needle").run(ToolContext(cwd=tmp_path)) == f"{target}:1:needle"
 
 
-def test_use_ignore_is_part_of_the_tool_schema():
-    """use_ignore 由 LLM 决定，必须是工具参数而不是内部开关（与 glob 同名同义）。"""
+def test_skip_hidden_and_ignored_is_part_of_the_tool_schema():
+    """skip_hidden_and_ignored 由 LLM 决定，必须是工具参数而不是内部开关（与 glob 同名同义）。"""
     schema = grep_mod.Grep.to_openai_tool()["function"]
-    assert schema["parameters"]["properties"]["use_ignore"]["default"] is True
-    assert "use_ignore" in schema["description"]
+    assert schema["parameters"]["properties"]["skip_hidden_and_ignored"]["default"] is True
+    assert "skip_hidden_and_ignored" in schema["description"]
 
 
 def _grep(monkeypatch, root, *, engine: str = "python", **kwargs) -> str:

@@ -29,7 +29,7 @@ DESCRIPTION = (
     "Search for a pattern in files under `path` (a directory, or a single file), returning matching lines with "
     "file path, line number (1-indexed), and content. `pattern` uses Python `re` syntax and is validated up "
     "front. Files containing a NUL byte are not searched; hidden and git-ignored files are skipped unless "
-    "`use_ignore` is false."
+    "`skip_hidden_and_ignored` is false."
 )
 
 _MATCH_RE = re.compile(r"^(.*?):(\d+):(.*)$")
@@ -41,7 +41,7 @@ class _Query:
     """一次搜索的输入；两个引擎与记录过滤器共用。"""
     pattern: str
     file_pattern: str
-    use_ignore: bool
+    skip_hidden_and_ignored: bool
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,8 @@ class Grep(BaseTool):
     file_pattern: str = Field(default="*", description="Glob matched against each candidate path (e.g. '*.py' or "
                                                        "'src/*.py'; case-insensitive on Windows); '*' keeps every "
                                                        "file.")
-    use_ignore: bool = Field(default=True, description="Skip hidden and git-ignored paths while walking "
+    skip_hidden_and_ignored: bool = Field(default=True,
+                                          description="Skip hidden and git-ignored paths while walking "
                                                       "(default: true).")
 
     agent_type: set = {"main", "sub-agent"}
@@ -69,7 +70,7 @@ class Grep(BaseTool):
     def run(self, tctx: ToolContext | None = None) -> str:
         """同步入口：不起子进程，直接走 Python 回退分支。"""
         path = _validate_path(self.path, tctx.cwd if tctx else None)
-        query = _Query(self.pattern, self.file_pattern, self.use_ignore)
+        query = _Query(self.pattern, self.file_pattern, self.skip_hidden_and_ignored)
         return _format_matches(_search_python(path, query))
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
@@ -77,7 +78,7 @@ class Grep(BaseTool):
             tctx.raise_if_cancelled()
 
         path = _validate_path(self.path, tctx.cwd if tctx else None)
-        query = _Query(self.pattern, self.file_pattern, self.use_ignore)
+        query = _Query(self.pattern, self.file_pattern, self.skip_hidden_and_ignored)
         re.compile(query.pattern)  # 语法错误在分叉前统一报出，两条分支的报错因此一致
 
         if not has_ripgrep():
@@ -92,7 +93,7 @@ class Grep(BaseTool):
 def _search_python(root: Path, query: _Query) -> list[_Match]:
     """回退分支：枚举候选文件后逐文件流式匹配。"""
     regex = re.compile(query.pattern)
-    paths = (root,) if root.is_file() else iter_files(root, query.use_ignore)
+    paths = (root,) if root.is_file() else iter_files(root, query.skip_hidden_and_ignored)
     matches: list[_Match] = []
 
     for path in paths:
@@ -136,9 +137,10 @@ def _normalize_line(content: str, line_no: int) -> str:
 
 async def _search_ripgrep(tctx: ToolContext | None, root: Path,
                           query: _Query) -> tuple[list[_Match], str | None]:
-    """rg 分支：不传 `--glob`（会盖掉 ignore / hidden 规则）；`use_ignore=false` 放开隐藏与忽略（同 glob）。"""
+    """rg 分支：不传 `--glob`（会盖掉 ignore / hidden 规则）；`skip_hidden_and_ignored=false`
+    放开隐藏与忽略（同 glob）。"""
     command = ["--no-heading", "-n", "-H"]
-    if not query.use_ignore:
+    if not query.skip_hidden_and_ignored:
         command += ["--no-ignore", "--hidden"]
     command += ["-e", query.pattern, "--", str(root)]
 
@@ -154,11 +156,11 @@ async def _search_ripgrep(tctx: ToolContext | None, root: Path,
 
 
 def _keep_match(match: _Match, root: Path, query: _Query) -> bool:
-    """记录过滤：先 `file_pattern`；`use_ignore` 时还要求相对路径里没有隐藏片段——rg 会搜
+    """记录过滤：先 `file_pattern`；`skip_hidden_and_ignored` 时还要求相对路径里没有隐藏片段——rg 会搜
     `.gitignore` 白名单放出来的隐藏文件（`--hidden` 的文档行为），回退分支却始终不枚举它们。"""
     if not Path(match.path).match(query.file_pattern):
         return False
-    return not (query.use_ignore and is_hidden(relpath(root, match.path)))
+    return not (query.skip_hidden_and_ignored and is_hidden(relpath(root, match.path)))
 
 
 def _rg_error(returncode: int, stderr: str) -> str | None:

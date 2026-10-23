@@ -1,4 +1,4 @@
-"""glob 工具：ripgrep 与 Python 回退两条分支返回同一结果集，隐藏 / .gitignore 由 use_ignore 决定。"""
+"""glob 工具：ripgrep 与 Python 回退两条分支返回同一结果集，隐藏 / .gitignore 由 skip_hidden_and_ignored 决定。"""
 import asyncio
 import shutil
 import subprocess
@@ -25,10 +25,10 @@ def _build(root, *, git: bool) -> None:
         subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
 
 
-def _glob(monkeypatch, root, pattern: str, use_ignore: bool, *, ripgrep: bool) -> str:
+def _glob(monkeypatch, root, pattern: str, skip_hidden_and_ignored: bool, *, ripgrep: bool) -> str:
     monkeypatch.setattr(glob_mod, "has_ripgrep", lambda: ripgrep)
     monkeypatch.setattr(glob_mod, "WORKDIR", root)
-    return asyncio.run(glob_mod.Glob(pattern=pattern, use_ignore=use_ignore).arun())
+    return asyncio.run(glob_mod.Glob(pattern=pattern, skip_hidden_and_ignored=skip_hidden_and_ignored).arun())
 
 
 def _lines(out: str) -> list[str]:
@@ -42,7 +42,7 @@ def _git_repo(tmp_path) -> None:
 
 
 def test_default_skips_hidden_and_gitignored(monkeypatch, tmp_path):
-    """默认（use_ignore=True）跳过隐藏路径与 .gitignore 命中项，只回文件、路径相对且排序。"""
+    """默认（skip_hidden_and_ignored=True）跳过隐藏路径与 .gitignore 命中项，只回文件、路径相对且排序。"""
     _git_repo(tmp_path)
 
     assert _lines(_glob(monkeypatch, tmp_path, "*", True, ripgrep=False)) == [
@@ -65,8 +65,8 @@ def test_diamond_pattern_within_segment(monkeypatch, tmp_path):
     assert _lines(_glob(monkeypatch, tmp_path, "src/**/*.ts", True, ripgrep=False)) == ["src/a.ts"]
 
 
-def test_use_ignore_false_includes_hidden_and_ignored(monkeypatch, tmp_path):
-    """use_ignore=False 同时放开隐藏与忽略规则，两条分支结果一致。"""
+def test_skip_hidden_and_ignored_false_includes_hidden_and_ignored(monkeypatch, tmp_path):
+    """skip_hidden_and_ignored=False 同时放开隐藏与忽略规则，两条分支结果一致。"""
     _build(tmp_path, git=False)
 
     python = set(_lines(_glob(monkeypatch, tmp_path, "*", False, ripgrep=False)))
@@ -150,8 +150,8 @@ def test_leading_slash_anchors_to_workdir(monkeypatch, tmp_path):
     assert _glob(monkeypatch, tmp_path, "/deep.py", True, ripgrep=False) == "(No matches)"
 
 
-def test_branches_agree_in_git_repo_with_use_ignore_false(monkeypatch, tmp_path):
-    """git 仓库里 use_ignore=False 时两支一致（含 .git 内容、隐藏与忽略项）。"""
+def test_branches_agree_in_git_repo_with_skip_hidden_and_ignored_false(monkeypatch, tmp_path):
+    """git 仓库里 skip_hidden_and_ignored=False 时两支一致（含 .git 内容、隐藏与忽略项）。"""
     _git_repo(tmp_path)
     if not shutil.which("rg"):
         pytest.skip("ripgrep not installed")
@@ -185,8 +185,8 @@ def test_backslash_pattern_is_normalized_on_windows(monkeypatch, tmp_path):
     assert _lines(_glob(monkeypatch, tmp_path, r"src\*.ts", True, ripgrep=False)) == ["src/a.ts"]
 
 
-def test_use_ignore_is_part_of_the_tool_schema():
-    """use_ignore 由 LLM 决定，必须是工具参数而不是内部开关。"""
+def test_skip_hidden_and_ignored_is_part_of_the_tool_schema():
+    """skip_hidden_and_ignored 由 LLM 决定，必须是工具参数而不是内部开关。"""
     schema = glob_mod.Glob.to_openai_tool()["function"]
-    assert schema["parameters"]["properties"]["use_ignore"]["default"] is True
-    assert "use_ignore" in schema["description"]
+    assert schema["parameters"]["properties"]["skip_hidden_and_ignored"]["default"] is True
+    assert "skip_hidden_and_ignored" in schema["description"]

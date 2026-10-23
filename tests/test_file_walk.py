@@ -1,7 +1,7 @@
 """file_walk 模块：glob / grep 共用的 rg 语义文件枚举（隐藏 / .gitignore / 符号链接）。
 
 回归点：rg 是基准——仓库外的 .gitignore 不参与（`require_git`）、`!` 取反按浅→深覆盖、
-`use_ignore=False` 放开隐藏与忽略、符号链接不跟随。
+`skip_hidden_and_ignored=False` 放开隐藏与忽略、符号链接不跟随。
 """
 import os
 from pathlib import Path
@@ -51,10 +51,10 @@ def test_negation_in_deeper_gitignore_wins(tmp_path):
     assert _names(tmp_path) == ["sub/keep.log"]
 
 
-def test_use_ignore_false_includes_hidden_and_ignored(tmp_path):
+def test_skip_hidden_and_ignored_false_includes_hidden_and_ignored(tmp_path):
     _build(tmp_path)
 
-    assert _names(tmp_path, use_ignore=False) == [
+    assert _names(tmp_path, skip_hidden_and_ignored=False) == [
         ".git/config", ".gitignore", ".hidden.py", "ignored.log", "src/a.py", "top.py"]
 
 

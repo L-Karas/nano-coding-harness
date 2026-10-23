@@ -16,7 +16,7 @@ DESCRIPTION = (
     "Find files by glob pattern; use `grep` for file contents. Patterns are relative to the working directory "
     "(`*` and `?` don't cross `/`, `**` does; a pattern without `/` matches file names at any depth). Returns "
     "matching paths relative to the working directory; `(No matches)` if none. "
-    "Hidden and git-ignored paths are skipped unless `use_ignore` is false."
+    "Hidden and git-ignored paths are skipped unless `skip_hidden_and_ignored` is false."
 )
 
 
@@ -26,7 +26,7 @@ class Glob(BaseTool):
         description="Glob pattern relative to the working directory, e.g. '*.py' or "
                     "'src/**/*.ts'."
     )
-    use_ignore: bool = Field(
+    skip_hidden_and_ignored: bool = Field(
         default=True,
         description="Skip hidden and git-ignored paths (default: true)."
     )
@@ -37,8 +37,8 @@ class Glob(BaseTool):
     def run(self, tctx: ToolContext | None = None) -> str:
         root = _root(tctx)
         # 回退分支：候选文件由 file_walk 枚举（隐藏 / .gitignore / 符号链接的取舍见该模块）
-        return _format(_match([relpath(root, path) for path in iter_files(root, self.use_ignore)],
-                              self.pattern, self.use_ignore))
+        return _format(_match([relpath(root, path) for path in iter_files(root, self.skip_hidden_and_ignored)],
+                              self.pattern, self.skip_hidden_and_ignored))
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
         if tctx:
@@ -49,7 +49,7 @@ class Glob(BaseTool):
 
         root = _root(tctx)
         args = ["--files", "-0"]
-        if not self.use_ignore:
+        if not self.skip_hidden_and_ignored:
             args += ["--no-ignore", "--hidden"]
 
         stdout, stderr, returncode = await run_rg([*args, str(root)], tctx)
@@ -57,14 +57,14 @@ class Glob(BaseTool):
             raise RuntimeError(stderr or f"rg --files failed with exit code {returncode}")
 
         paths = [relpath(root, line) for line in stdout.split("\0") if line]
-        return _format(_match(paths, self.pattern, self.use_ignore))
+        return _format(_match(paths, self.pattern, self.skip_hidden_and_ignored))
 
 
 def _root(tctx: ToolContext | None) -> Path:
     return tctx.cwd if tctx and tctx.cwd else WORKDIR
 
 
-def _matcher(pattern: str, use_ignore: bool) -> re.Pattern[str]:
+def _matcher(pattern: str, skip_hidden_and_ignored: bool) -> re.Pattern[str]:
     """pattern → 相对路径正则：`*` / `?` 不跨 `/`，`**` 跨目录。
 
     `include_hidden` 与 `iter_files` 的 dot 剪枝是同一层保险：rg 的 walker 在 `.gitignore` 用 `!` 取反放出
@@ -80,12 +80,12 @@ def _matcher(pattern: str, use_ignore: bool) -> re.Pattern[str]:
         pat = pat[2:]
     if pat and pat != "**" and "/" not in pat and not rooted:
         pat = "**/" + pat
-    return re.compile(g.translate(pat, recursive=True, include_hidden=not use_ignore) if pat else r"(?!)")
+    return re.compile(g.translate(pat, recursive=True, include_hidden=not skip_hidden_and_ignored) if pat else r"(?!)")
 
 
-def _match(paths: list[str], pattern: str, use_ignore: bool) -> list[str]:
+def _match(paths: list[str], pattern: str, skip_hidden_and_ignored: bool) -> list[str]:
     """两条分支共用的过滤：按 pattern 匹配、去重、排序。"""
-    matcher = _matcher(pattern, use_ignore)
+    matcher = _matcher(pattern, skip_hidden_and_ignored)
     return sorted({path for path in paths if matcher.fullmatch(path)})
 
 
