@@ -13,6 +13,7 @@
 | `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、内置扩展、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
 | `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |
+| `core/file_io.py` | 文件落盘：`atomic_write`（临时文件 → 保留权限 → fsync → `os.replace`，失败 / 中断清理临时文件）与换行风格工具（`normalize_newlines` / `match_eol`）；write / edit 共用 |
 | `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
 | `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹、后台通知包裹） |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |

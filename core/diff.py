@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.config import WORKDIR
+from core.file_io import normalize_newlines
 
 DIFF_TOOLS = ("write_file", "edit_file")
 
@@ -42,8 +43,8 @@ def _read_old(fp: Path) -> str:
 
 
 def preview_write(path: str, content: str, cwd: Optional[Path] = None) -> list[tuple[str, int, str]]:
-    """执行前计算 write 将产生的变化行；内容未变时返回空列表"""
-    return _diff_rows(_read_old(_resolve(path, cwd)), content)
+    """执行前计算 write 将产生的变化行；内容未变（按归一化换行比较）时返回空列表"""
+    return _diff_rows(_read_old(_resolve(path, cwd)), normalize_newlines(content))
 
 
 def preview_edit(

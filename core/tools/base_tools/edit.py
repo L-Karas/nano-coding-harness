@@ -1,13 +1,8 @@
-import asyncio
-import os
-import stat
-import tempfile
-from contextlib import suppress
-
 import aiofiles
 from pydantic import Field
 
 from core.diff import _resolve
+from core.file_io import atomic_write, match_eol, normalize_newlines
 from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
@@ -43,9 +38,9 @@ class EditFile(BaseTool):
             raise FileNotFoundError(f"file not found: {self.path}") from None
 
         # read_file 把 CRLF 归一成 \n，这里匹配前同样归一，写回时再还原原文件的换行风格。
-        text = original.replace("\r\n", "\n")
-        old = self.old_text.replace("\r\n", "\n")
-        new = self.new_text.replace("\r\n", "\n")
+        text = normalize_newlines(original)
+        old = normalize_newlines(self.old_text)
+        new = normalize_newlines(self.new_text)
 
         first = text.find(old)
         if first < 0:
@@ -63,33 +58,6 @@ class EditFile(BaseTool):
         if updated == text:
             return f"No changes to {self.path}."
 
-        crlf = original.count("\r\n")
         # 按多数行选择整文件 EOL：纯 LF / 纯 CRLF 原样保留，混合换行统一为多数风格。
-        eol = "\r\n" if crlf > original.count("\n") - crlf else "\n"
-        if eol != "\n":
-            updated = updated.replace("\n", eol)
-
-        # Windows 只有只读位，mkstemp 的权限已足够；POSIX 需恢复 mode，避免 0600 覆盖原权限。
-        mode = stat.S_IMODE(path.stat().st_mode) if os.name == "posix" else None
-        tmp = None
-        try:
-            fd, tmp = tempfile.mkstemp(dir=path.parent)
-            os.close(fd)
-            if tctx:
-                tctx.raise_if_cancelled()
-            async with aiofiles.open(tmp, mode="w", encoding="utf-8", newline="") as f:
-                await f.write(updated)
-                await f.flush()
-                if mode is not None:
-                    os.chmod(tmp, mode)
-                await asyncio.to_thread(os.fsync, f.fileno())
-
-            if tctx:
-                tctx.raise_if_cancelled()
-            os.replace(tmp, path)
-            tmp = None
-            return f"Edited {self.path}."
-        finally:
-            if tmp is not None:
-                with suppress(OSError):
-                    os.unlink(tmp)
+        await atomic_write(path, match_eol(updated, original), tctx)
+        return f"Edited {self.path}."

@@ -27,3 +27,4 @@ def test_interrupt_after_mkstemp_removes_tmp(tmp_path):
         ToolContext(agent_run=ctx, cwd=tmp_path))))
 
     assert sorted(p.name for p in tmp_path.iterdir()) == ["a.txt"]
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "hello"  # 中断不应改动目标文件
