@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual import events
 from textual.binding import Binding
@@ -19,9 +20,9 @@ from core.tui.utils import (
     slash_command_rows,
 )
 
-# / 指令候选行：指令名列定宽（utils.slash_command_rows）+ 简短说明
+# 候选行：左列名称定宽 + 简短说明 / 相对路径（淡灰）
 _CMD_ROWS: dict[str, tuple[str, str]] = dict(zip(SLASH_COMMANDS, slash_command_rows()))
-_CMD_DESC_STYLE = SECONDARY_TEXT
+_ROW_DESC_STYLE = SECONDARY_TEXT
 
 
 def _cmd_candidates(value: str) -> list[str]:
@@ -41,7 +42,7 @@ def _cmd_row(cmd: str) -> Text:
     """候选行 = 指令名列（定宽，含别名括注）+ 空距 + 简短说明（淡灰）。"""
     label, desc = _CMD_ROWS[cmd]
     row = Text(label, no_wrap=True)
-    row.append(f"    {desc}", style=_CMD_DESC_STYLE)
+    row.append(f"    {desc}", style=_ROW_DESC_STYLE)
     return row
 
 
@@ -65,6 +66,24 @@ def _level_entries(files: list[str], level: str, rem: str) -> set[str]:
             if r in name.lower():
                 entries[name] = f"{prefix}{name}/" if deeper else f
     return set(entries.values())
+
+
+def _file_display_name(candidate: str) -> str:
+    """@ 候选左列名称：路径末段；目录保留结尾 /，与文件区分。"""
+    is_dir = candidate.endswith("/")
+    name = candidate.rstrip("/").rsplit("/", 1)[-1]
+    return f"{name}/" if is_dir else name
+
+
+def _file_rows(candidates: list[str]) -> list[tuple[str, Text]]:
+    """@ 候选行 = 条目名列（定宽）+ 空距 + 完整相对路径（淡灰），排版同 / 指令候选。"""
+    names = [_file_display_name(candidate) for candidate in candidates]
+    width = max((cell_len(name) for name in names), default=0)
+    return [
+        (candidate, Text(name, no_wrap=True).append(
+            " " * (width - cell_len(name)) + f"    {candidate}", style=_ROW_DESC_STYLE))
+        for candidate, name in zip(candidates, names)
+    ]
 
 
 def _match_project_entries(query: str) -> list[str]:
@@ -150,7 +169,7 @@ class _CommandInput(TextArea):
         # ponytail: 每次按键全树扫描（已剪 .git/venv 等）；项目极大卡顿再按目录树增量缓存
         self._file_candidates = _match_project_entries(mention[2]) if mention else []
         self._sync_list("cmd-suggest", [(cmd, _cmd_row(cmd)) for cmd in self._candidates])
-        self._sync_list("file-suggest", [(c, Text(c, no_wrap=True)) for c in self._file_candidates])
+        self._sync_list("file-suggest", _file_rows(self._file_candidates))
 
     def _apply_cmd_candidate(self) -> None:
         """接受高亮的 / 指令候选：整行替换并复位光标（Enter 时随后提交）。"""

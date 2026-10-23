@@ -4,7 +4,17 @@ from __future__ import annotations
 from textual.widgets import OptionList
 
 from smoke._util import prompt_of, settle, type_query
-from core.tui.widgets import _match_project_entries
+from core.tui.widgets import _file_rows, _match_project_entries
+
+
+def _shown_rows(flv: OptionList) -> list[str]:
+    """候选列表当前显示的各行文本。"""
+    return [flv.get_option_at_index(i).prompt.plain for i in range(flv.option_count)]
+
+
+def _expected_rows(candidates: list[str]) -> list[str]:
+    """与 _CommandInput 同源的候选行文本（左列名称 + 右列相对路径）。"""
+    return [prompt.plain for _value, prompt in _file_rows(candidates)]
 
 
 async def run(app, pilot) -> None:
@@ -19,9 +29,8 @@ async def run(app, pilot) -> None:
     expected = _match_project_entries("core/tu")
     assert prompt._file_candidates == expected and expected, prompt._file_candidates
     assert flv.styles.display != "none", "输入 @ 前缀未弹出文件列表"
-    shown = [flv.get_option_at_index(i).prompt.plain
-             for i in range(flv.option_count)]
-    assert shown == expected, f"列表展示与匹配不一致: {shown} != {expected}"
+    shown = _shown_rows(flv)
+    assert shown == _expected_rows(expected), f"列表展示与匹配不一致: {shown} != {expected}"
     assert "core/tui/" in expected and all(c.startswith("core/tu") for c in expected), \
         f"同级规则：应展示 core/tu 前缀下的目录与文件，实际 {expected}"
     await pilot.press("tab")  # 选中 core/tui/ → 补全为 @core/tui/ 并展开其内容
@@ -31,9 +40,8 @@ async def run(app, pilot) -> None:
     assert prompt._file_candidates == inner and inner, prompt._file_candidates
     assert all(c.startswith("core/tui/") for c in inner), \
         "进入目录后应展示完整路径"
-    shown = [flv.get_option_at_index(i).prompt.plain
-             for i in range(flv.option_count)]
-    assert shown == inner, f"展开目录展示不一致: {shown} != {inner}"
+    shown = _shown_rows(flv)
+    assert shown == _expected_rows(inner), f"展开目录展示不一致: {shown} != {inner}"
     # 无 / 的 query：全树相似匹配（名称包含 ui），命中深层文件 → 展示完整路径
     await type_query(prompt, pilot, "view @ui")
     fuzzy = _match_project_entries("ui")
@@ -44,9 +52,8 @@ async def run(app, pilot) -> None:
     assert "core/tui/" in fuzzy and "core/tui/ui_textual.py" in fuzzy, fuzzy
     assert all(c.rstrip("/").rsplit("/", 1)[-1].lower().find("ui") >= 0 for c in fuzzy), \
         f"相似匹配应只含名称带 ui 的条目: {fuzzy}"
-    shown = [flv.get_option_at_index(i).prompt.plain
-             for i in range(flv.option_count)]
-    assert shown == fuzzy, f"列表展示与相似匹配不一致: {shown} != {fuzzy}"
+    shown = _shown_rows(flv)
+    assert shown == _expected_rows(fuzzy), f"列表展示与相似匹配不一致: {shown} != {fuzzy}"
     # 大小写不敏感（同名文件如 tests/test_tui_context_length.py 也会命中，不假设唯一）
     await type_query(prompt, pilot, "view @TUI")
     assert "core/tui/" in prompt._file_candidates, prompt._file_candidates
@@ -93,4 +100,4 @@ async def run(app, pilot) -> None:
     await pilot.press("enter")
     await settle(pilot)
     assert not app._busy and flv.styles.display == "none"
-    print("[smoke] @ file completion OK: same-level list, / drill-down, full-path insert")
+    print("[smoke] @ file completion OK: leaf name + relative path, same-level list, / drill-down, full-path insert")
