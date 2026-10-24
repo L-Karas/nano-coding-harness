@@ -7,21 +7,35 @@ from pydantic import BaseModel, Field
 
 dotenv.load_dotenv()
 
+
+def format_workdir_name(workdir: Path) -> str:
+    """工作目录绝对路径 → 单层会话目录名：分隔符与盘符冒号转 `_`，空格转 `-`。
+
+    例：``E:\\AI-Programs\\nano-harness`` → ``E__AI-Programs_nano-harness``。
+    映射是有损的（``E:\\a_b`` 与 ``E:\\a/b`` 同名）；``workdir`` 须为绝对路径。
+    """
+    if not workdir.is_absolute():
+        raise ValueError(f"workdir must be absolute: {workdir}")
+    translation = str.maketrans({"\\": "_", "/": "_", ":": "_", " ": "-"})
+    return str(workdir).translate(translation)
+
+
 WORKDIR = Path.cwd()
 HARNESS_CONFIG_DIR = WORKDIR / ".harness"
 LOG_DIR = HARNESS_CONFIG_DIR / "log"
 SKILL_DIR = HARNESS_CONFIG_DIR / "skills"
 EXTENSION_DIR = HARNESS_CONFIG_DIR / "extensions"
 MEMORY_DIR = HARNESS_CONFIG_DIR / ".memory"
-SESSION_DIR = HARNESS_CONFIG_DIR / ".session"
 TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
 MCP_DIR = HARNESS_CONFIG_DIR / ".mcp"
+SESSION_ROOT_DIR = HARNESS_CONFIG_DIR / ".session"
+SESSION_DIR = SESSION_ROOT_DIR / format_workdir_name(WORKDIR)
 
 HARNESS_SETTING_FILE = HARNESS_CONFIG_DIR / ".settings.json"
 PROVIDER_AUTH_FILE = HARNESS_CONFIG_DIR / ".auth.json"
 CUSTOM_PROVIDER_FILE = HARNESS_CONFIG_DIR / ".custom_providers.json"
 CUSTOM_MODEL_FILE = HARNESS_CONFIG_DIR / ".custom_models.json"
-SESSION_INDEX_FILE = HARNESS_CONFIG_DIR / ".session" / "session_index.jsonl"
+SESSION_INDEX_FILE = SESSION_DIR / "session_index.jsonl"
 MCP_CONFIG_FILE = MCP_DIR / ".mcp.json"
 CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
 PERMISSION_FILE = HARNESS_CONFIG_DIR / ".permissions.json"

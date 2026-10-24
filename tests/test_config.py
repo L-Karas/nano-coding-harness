@@ -1,5 +1,7 @@
 """core/config.py 校验逻辑测试。"""
 import json
+import os
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -125,3 +127,36 @@ def test_save_config_refreshes_runtime_singleton(tmp_path, monkeypatch):
 def test_load_missing_file_uses_defaults(tmp_path, monkeypatch):
     monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", tmp_path / "nope.json")
     assert AgentConfigManager.load_config().config == AgentConfig()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows 盘符路径示例")
+def test_format_workdir_name_matches_spec_example():
+    """Spec 的字面示例被独立断言，不通过重复实现来构造期望值。"""
+    assert config_mod.format_workdir_name(
+        Path(r"E:\AI-Programs\nano-harness")) == "E__AI-Programs_nano-harness"
+
+
+def test_format_workdir_name_replaces_separators_and_spaces():
+    """分隔符 / 盘符冒号转 `_`，空格转 `-`。"""
+    if os.name == "nt":
+        workdir, expected = Path(r"C:\Users\me\a b"), "C__Users_me_a-b"
+    else:
+        workdir, expected = Path("/home/me/a b"), "_home_me_a-b"
+    assert config_mod.format_workdir_name(workdir) == expected
+
+
+def test_format_workdir_name_requires_absolute_path():
+    with pytest.raises(ValueError):
+        config_mod.format_workdir_name(Path("relative/path"))
+
+
+def test_session_dir_is_scoped_by_workdir():
+    """会话保存到 .session/<格式化工作目录>/，索引文件也跟随该目录。"""
+    name = config_mod.format_workdir_name(config_mod.WORKDIR)
+    assert "\\" not in name
+    assert "/" not in name
+    assert ":" not in name
+    assert config_mod.SESSION_ROOT_DIR == config_mod.HARNESS_CONFIG_DIR / ".session"
+    assert config_mod.SESSION_DIR.parent == config_mod.SESSION_ROOT_DIR
+    assert config_mod.SESSION_DIR.name == name
+    assert config_mod.SESSION_INDEX_FILE == config_mod.SESSION_DIR / "session_index.jsonl"

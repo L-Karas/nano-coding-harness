@@ -28,7 +28,7 @@
 | `.harness/.permissions.json` | 权限规则（terminal 命令正则与外部目录策略 / 文件工具 path 正则与越界策略，见 [`permissions.md`](permissions.md)）：启动时读取，修改后需重启；本期不设写保护 |
 | `~/.agents/skills/<name>/SKILL.md` / `.harness/skills/<name>/SKILL.md` / `.agents/skills/<name>/SKILL.md` | 技能清单三来源（global / user / project，同名 project > user > global；YAML frontmatter + 正文） |
 | `.harness/.memory/*.json` | 长期记忆条目 |
-| `.harness/.session/` | `session-<ts>.jsonl` 会话文件 + `session_index.jsonl` 索引 |
+| `.harness/.session/<workdir>/` | 按工作目录分目录的会话目录：`session-<ts>.jsonl` 会话文件 + `session_index.jsonl` 索引。`<workdir>` 由工作目录绝对路径格式化而来：路径分隔符与盘符冒号转 `_`、空格转 `-`（如 `E:\AI-Programs\nano-harness` → `E__AI-Programs_nano-harness`）；转义有损（可能碰撞），超长路径受文件名长度限制，详见 [ADR-0011](adr/0011-session-directory-per-workdir.md) |
 | `.harness/.scheduled_tasks.json` | 持久化 cron 任务 |
 | `.harness/.task_outputs/tool_results/` | 超长工具输出落盘文件 |
 | `.harness/log/<module>.log` | 各模块日志 |

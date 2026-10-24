@@ -70,7 +70,7 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
   重试一次，仍截断则追加续写提示（最多 `max_recovery_retries` 次）。
 - **错误重试**：`core/recovery` 按 provider 把异常分类（限流 / 模型过载 / 上下文过长 / 不可恢复），
   限流类指数退避重试（最多 `max_retries` 次）。
-- **会话持久化**：每条消息即时落盘 `.harness/.session/`，工具结果携带的 diff 以 `payload` 保存在会话里，
+- **会话持久化**：每条消息即时落盘 `.harness/.session/<格式化工作目录>/`（映射规则与已知限制见 [ADR-0011](adr/0011-session-directory-per-workdir.md)），工具结果携带的 diff 以 `payload` 保存在会话里，
   回放历史与 `/compact` 回写时都能还原。
 
 ## 上下文压缩（两层）
