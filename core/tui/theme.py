@@ -6,6 +6,7 @@ DEFAULT_TITLE = "Nano Harness"
 DEFAULT_SUBTITLE = "Enter your query and press Enter to send it. Type /exit or /quit to quit."
 TERMINAL_TITLE = "nano-harness"  # 运行期终端窗口标题（OSC 2），退出时清空
 SECONDARY_TEXT = "#94a3b8"  # 次级文字色：说明 / 未配置 / 占位提示等
+COMPACT_HINT = "#7dd3fc"  # 页脚压缩阈值提示色（青蓝，区别于次级灰）
 PLACEHOLDER = "Type a message… Enter to send · Ctrl+J for newline"
 
 # 页脚审批模式值配色（按危险度分档）：Manual 黄 / Decision Model·LLM 绿 / Yolo 红；表外模式回落次级灰

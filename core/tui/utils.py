@@ -101,6 +101,24 @@ def current_context_length() -> int:
         return 0
 
 
+def current_compact_trigger_tokens() -> int:
+    """当前模型的有效压缩阈值（绝对 token）；client 不可用 / 未选模型时返回 0。"""
+    try:
+        from core.client import shared_model_client
+        return int(shared_model_client().compact_trigger_tokens())
+    except Exception:
+        return 0
+
+
+def current_auto_compact() -> bool:
+    """自动压缩开关；配置不可用时按默认开启（与 config 默认值一致）。"""
+    try:
+        from core.config import CONFIGMANAGER
+        return bool(CONFIGMANAGER.config.auto_compact)
+    except Exception:
+        return True
+
+
 _IMPLEMENTED_APPROVAL_MODES = ("Manual", "Yolo")
 
 

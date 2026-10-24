@@ -8,8 +8,11 @@ Textual 全屏界面。安装、启动与快捷键 / 内置指令见 [README](..
 ## 布局
 
 左右分栏（约 4:1）：左侧标题栏 + 卡片式聊天记录 + 状态行 + 输入条 + 页脚（cwd / git 分支）
-+ 底行（左：`Context Usage:` 标签 + 上下文占用条（当前会话 token 占上下文长度的进度条与百分比），右：当前模型）
-+ 其下方 `Approval Mode: <mode>` 行显示当前实际生效的审批模式（`LLM` / `Decision Model` 暂按 `Manual`）；
++ 底行：`Context Usage:` 标签 + 上下文占用条（盲文点阵：20 格 × 8 点，末格按点亮点数呈现部分填充，
+一格内 0.625% 一档；40%/80% 阈值绿→黄→红）+ 占用百分比，
+末尾括号提示压缩阈值（K/M 单位，青色，如 `(compact at 160K)`；`auto_compact` 关闭时改为 `(auto-compact off)`）
++ 其下方：左 `Approval Mode: <mode>` 显示当前实际生效的审批模式（`LLM` / `Decision Model` 暂按 `Manual`），
+右端按实际行宽填充对齐显示当前模型（`(provider) model * level`）；
 标签保持次级灰，模式值按危险度染色：`Manual` 黄 `#e5c890`、`Decision Model` / `LLM` 绿 `#a6d189`、
 `Yolo` 红 `#e78284`（色表见 `core/tui/theme.py` 的 `APPROVAL_MODE_COLORS`，表外模式回落次级灰）；
 右侧 Information 面板实时展示 Todos（`in_progress` 转圈）、后台任务（`running` 转圈）与
@@ -27,6 +30,8 @@ cron / 后台结果注入自动回合）、后台任务、子代理任一在跑�
 终端单元格宽度：键帽 emoji（`1️⃣` = 数字 + U+FE0F + U+20E3）在 Windows Terminal 缺组合圈字形时
 按 3 格渲染，比 Textual 的单元格模型多 1 格，会把该行后续单元格（分栏线 / 滑块）整体右推；
 正文 Markdown、工具 / diff 卡、用户输入与右栏条目在入 UI 前统一降级为基字符（`1️⃣` → `1`）。
+同理，占用条与状态行 spinner 依赖盲文点阵字形（U+2800–U+28FF）：终端字体缺字形时会显示方块，
+宽度仍按 1 格计（缺字形不影响列对齐，只影响观感）。
 
 ## 界面模块
 

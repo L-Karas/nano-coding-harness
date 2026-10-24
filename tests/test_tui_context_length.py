@@ -2,6 +2,7 @@
 from types import SimpleNamespace
 
 import core.client
+import core.config
 import core.tui.utils as utils
 
 
@@ -17,3 +18,31 @@ def test_current_context_length_returns_zero_on_failure(monkeypatch):
 
     monkeypatch.setattr(core.client, "shared_model_client", boom)
     assert utils.current_context_length() == 0
+
+
+def test_current_compact_trigger_tokens_uses_model_threshold(monkeypatch):
+    monkeypatch.setattr(core.client, "shared_model_client",
+                        lambda: SimpleNamespace(compact_trigger_tokens=lambda: 160_000))
+    assert utils.current_compact_trigger_tokens() == 160_000
+
+
+def test_current_auto_compact_reads_config(monkeypatch):
+    monkeypatch.setattr(core.config, "CONFIGMANAGER",
+                        SimpleNamespace(config=SimpleNamespace(auto_compact=False)))
+    assert utils.current_auto_compact() is False
+    monkeypatch.setattr(core.config, "CONFIGMANAGER",
+                        SimpleNamespace(config=SimpleNamespace(auto_compact=True)))
+    assert utils.current_auto_compact() is True
+
+
+def test_current_auto_compact_defaults_true_on_failure(monkeypatch):
+    monkeypatch.setattr(core.config, "CONFIGMANAGER", SimpleNamespace())
+    assert utils.current_auto_compact() is True
+
+
+def test_current_compact_trigger_tokens_returns_zero_on_failure(monkeypatch):
+    def boom():
+        raise RuntimeError("no client")
+
+    monkeypatch.setattr(core.client, "shared_model_client", boom)
+    assert utils.current_compact_trigger_tokens() == 0

@@ -143,10 +143,10 @@ Toast, Toast:ansi { background: #1e293b; }
 #footer-bar { width: 1fr; height: auto; }
 #footer { height: 1; color: $secondary-text; padding: 0 2; }
 
-/* 占用条行：左 Context Usage: [####----] 40.0% / 200.0K，右模型状态（右下角）；阈值 40%/80% 绿→黄→红 */
+/* 占用条行：Context Usage: [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦         ] 53.0% / 200.0K (compact at 160K，阈值提示青色)；阈值 40%/80% 绿→黄→红 */
 #token-bar { height: 1; padding: 0 2; }
 
-/* 审批模式行：Approval Mode: Manual / Yolo / ... */
+/* 审批模式行：左 Approval Mode: Manual / Yolo / ...，右模型状态（右下角填充对齐） */
 #approval-mode { height: 1; padding: 0 2; }
 
 /* ── 补全与权限列表 ── */

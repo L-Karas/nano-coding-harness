@@ -69,7 +69,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 
 | 窗口显示名 | 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| Auto compact context | `auto_compact` | 开 | 每回合 `prepare_messages` 是否做摘要压缩；关闭时只截断超长工具输出，超长历史可能由 API 报 context 超限 |
+| Auto compact context | `auto_compact` | 开 | 每回合 `prepare_messages` 是否做摘要压缩；关闭时只截断超长工具输出，超长历史可能由 API 报 context 超限；页脚占用条提示同步改为 `(auto-compact off)` |
 | Compact trigger tokens | `compact_trigger_tokens` | `500000` | 历史估算 token 超过它触发压缩；有效阈值按当前模型窗口动态解析（规则见 [`context-compaction.md`](context-compaction.md)），无可用窗口时为 0（不压缩） |
 | Compact reserve tokens | `compact_reserve_tokens` | `50000` | 自动压缩后保留的最近消息 token 预算；封顶有效触发阈值 |
 
