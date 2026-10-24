@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import core.extension.registry as registry
-from textual.widgets import Input, OptionList
+from textual.widgets import Input, OptionList, Static
 
 from core.extension import list_extensions
 from core.tui.screens import ExtensionsScreen
@@ -33,6 +33,13 @@ async def run(app, pilot) -> None:
         assert app._exception is None, f"渲染异常: {app._exception}"
         screen = app.screen_stack[-1]
         assert isinstance(screen, ExtensionsScreen), "/extensions 未打开扩展弹窗"
+        # 列表背景透明（同 /skills），且 height:1fr 撑满主体、提示行钉在窗口最下方
+        lst = screen.query_one("#extensions-list", OptionList)
+        hint = screen.query_one(".picker-hint", Static)
+        picker = screen.query_one(".picker")
+        assert lst.styles.background.is_transparent, lst.styles.background
+        assert hint.region.bottom == picker.content_region.bottom, \
+            f"提示行应钉在窗口最下方: {hint.region} / {picker.content_region}"
         assert _rows(app) == [
             "● smoke-builtin [builtin]\nhooks: before_tool",
             "● smoke-off [user]\nmissing extension.json",

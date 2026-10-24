@@ -87,7 +87,7 @@ Toast, Toast:ansi { background: #1e293b; }
 #todos-list, #bg-list, #subagents-list,
 #chat,
 #cmd-suggest, #file-suggest, #perm-list, #clarify-list,
-#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list,
+#sess-list, #provider-list, #model-list, #skills-list, #extensions-list, #fork-list, #mcp-list, #mcp-tools-list, #login-list, #unreg-provider-list, #unreg-model-list,
 #mcp-stdio-args, #mcp-http-headers,
 #settings-form, #settings-picker Select > SelectOverlay,
 #reg-model-provider > SelectOverlay, #mcp-server-type > SelectOverlay {
@@ -190,6 +190,7 @@ Toast, Toast:ansi { background: #1e293b; }
 #provider-list > .option-list--option-highlighted,
 #model-list > .option-list--option-highlighted,
 #skills-list > .option-list--option-highlighted,
+#extensions-list > .option-list--option-highlighted,
 #fork-list > .option-list--option-highlighted,
 #mcp-list > .option-list--option-highlighted,
 #mcp-tools-list > .option-list--option-highlighted,
@@ -331,8 +332,8 @@ ModalScreen {
 }
 
 /* 弹窗主体：撑满标题与提示行之间的剩余高度，内容超出时自身滚动（列表 / 设置表单共用） */
-#sess-list, #provider-list, #model-list, #skills-list, #fork-list, #mcp-list, #mcp-tools-list,
-#settings-form {
+#sess-list, #provider-list, #model-list, #skills-list, #extensions-list, #fork-list, #mcp-list,
+#mcp-tools-list, #settings-form {
     border: none;
     background: transparent;
     height: 1fr;

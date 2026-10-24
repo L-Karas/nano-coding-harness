@@ -2,7 +2,7 @@
 import asyncio
 
 import pytest
-from textual.widgets import Input, OptionList
+from textual.widgets import Input, OptionList, Static
 
 import core.extension.registry as registry
 import core.tui.render as _render
@@ -85,6 +85,23 @@ def test_search_filters_by_name_and_enter_does_not_close():
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen_stack[-1], ExtensionsScreen)
+    asyncio.run(main())
+
+
+def test_list_is_transparent_and_hint_is_pinned_to_window_bottom():
+    async def main():
+        app = ChatApp(handle_query=lambda query: None)
+        async with app.run_test() as pilot:
+            app._open_extensions()
+            await pilot.pause()
+            screen = app.screen_stack[-1]
+            lst = screen.query_one("#extensions-list", OptionList)
+            hint = screen.query_one(".picker-hint", Static)
+            picker = screen.query_one(".picker")
+            assert lst.styles.background.is_transparent, lst.styles.background
+            assert lst.region.bottom <= hint.region.y, (lst.region, hint.region)
+            assert hint.region.bottom == picker.content_region.bottom, \
+                f"提示行应钉在窗口最下方: {hint.region} / {picker.content_region}"
     asyncio.run(main())
 
 
