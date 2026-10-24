@@ -7,6 +7,7 @@ import pytest
 
 import core.extension.builtin as builtin_mod
 import core.extension.dispatcher as dispatcher
+from core.extension import ExtensionInfo, list_extensions, reset_extensions
 from core.extension.builtin import observers, register_builtin_extensions
 from core.extension.builtin.permission import Rules
 from core.extension.context import BeforeToolContext
@@ -14,7 +15,7 @@ from core.extension.context import BeforeToolContext
 
 @pytest.fixture(autouse=True)
 def _clean():
-    dispatcher.reset(); yield; dispatcher.reset()
+    reset_extensions(); yield; reset_extensions()
 
 
 def test_builtins_register_observers_before_gate():
@@ -60,3 +61,19 @@ def test_use_extensions_false_still_enforces_floor():
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "sudo ls"})
     asyncio.run(dispatcher.dispatch("before_tool", ctx, include_external=False))
     assert ctx.block_reason == "Permission denied: 'sudo' is on the deny list."
+
+
+def test_builtins_are_recorded_with_origin_and_events():
+    register_builtin_extensions(rules=Rules())
+
+    assert list_extensions() == [
+        ExtensionInfo("observers", "builtin", True, "", ("before_tool",)),
+        ExtensionInfo("permission", "builtin", True, "", ("before_tool",)),
+    ]
+
+
+def test_reregistering_builtins_does_not_duplicate_rows():
+    register_builtin_extensions(rules=Rules())
+    register_builtin_extensions(rules=Rules())
+
+    assert [e.name for e in list_extensions()] == ["observers", "permission"]
