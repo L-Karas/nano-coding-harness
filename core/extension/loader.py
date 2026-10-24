@@ -9,6 +9,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import core.extension.dispatcher as dispatcher
+import core.extension.registry as registry
 from core.config import EXTENSION_DIR
 from core.extension.api import ExtensionAPI
 from core.shared.logger import get_logger
@@ -33,8 +34,21 @@ def load_extensions(directory: Path | None = None) -> None:
     for folder in sorted(target.iterdir()):
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
-        if _read_enabled(folder):
-            _load_extension(folder)
+        reason = _manifest_reason(folder)
+        if reason is not None:
+            registry.record(folder.name, "user", enabled=False, detail=reason)
+            continue
+        try:
+            events = _load_extension(folder)
+        except Exception:
+            _LOGGER.exception(f"[Extension] 加载失败，已隔离: {folder.name}")
+            registry.record(folder.name, "user", enabled=False, detail="load failed")
+            continue
+        if events is None:
+            registry.record(
+                folder.name, "user", enabled=False, detail="missing register(api)")
+        else:
+            registry.record(folder.name, "user", enabled=True, events=events)
 
 
 def reset() -> None:
@@ -43,25 +57,28 @@ def reset() -> None:
     _LOADED = False
 
 
-def _read_enabled(folder: Path) -> bool:
-    """按 manifest 门槛决定是否加载；enabled 必须严格 is True。"""
+def _manifest_reason(folder: Path) -> str | None:
+    """按 manifest 门槛判断是否加载；通过返回 None，否则返回未启用原因。"""
     manifest = folder / "extension.json"
     if not manifest.exists():
         _LOGGER.info(f"[Extension] 缺少 extension.json，跳过: {folder.name}")
-        return False
+        return "missing extension.json"
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except Exception:
         _LOGGER.error(f"[Extension] extension.json 解析失败，跳过: {folder.name}")
-        return False
-    if not isinstance(data, dict) or data.get("enabled") is not True:
+        return "invalid extension.json"
+    if not isinstance(data, dict):
+        _LOGGER.error(f"[Extension] extension.json 不是对象，跳过: {folder.name}")
+        return "invalid extension.json"
+    if data.get("enabled") is not True:
         _LOGGER.debug(f"[Extension] enabled 不是严格 True，跳过: {folder.name}")
-        return False
-    return True
+        return "disabled"
+    return None
 
 
-def _load_extension(folder: Path) -> None:
-    """按包加载单个扩展；register 失败时回滚，不留下半个扩展的注册。"""
+def _load_extension(folder: Path) -> list[str] | None:
+    """按包加载单个扩展；register 失败时回滚并上抛，缺 register 返回 None。"""
     module_name = f"nano_extension_{folder.name}"
     try:
         spec = spec_from_file_location(
@@ -76,7 +93,7 @@ def _load_extension(folder: Path) -> None:
         register = getattr(module, "register", None)
         if not callable(register):
             _LOGGER.info(f"[Extension] 缺少可调用 register，跳过: {folder.name}")
-            return
+            return None
 
         api = ExtensionAPI()
         register(api)
@@ -85,6 +102,7 @@ def _load_extension(folder: Path) -> None:
             dispatcher.add(
                 event, callback, module_name, stage=stage, fail_closed=fail_closed)
         _LOGGER.info(f"[Extension] 加载成功: {folder.name}（注册 {len(registered)} 个回调）")
+        return [event for event, _callback, _stage, _fail_closed in registered]
     except Exception:
-        _LOGGER.exception(f"[Extension] 加载失败，已隔离: {folder.name}")
         sys.modules.pop(module_name, None)
+        raise

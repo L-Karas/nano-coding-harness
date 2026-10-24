@@ -7,7 +7,7 @@ import pytest
 
 import core.extension.dispatcher as dispatcher
 import core.extension.loader as loader
-from core.extension import reset_extensions
+from core.extension import ExtensionInfo, list_extensions, reset_extensions
 from core.extension.loader import load_extensions
 
 REGISTER_LLM = "def register(api):\n    api.on('before_llm', lambda ctx: None)\n"
@@ -149,3 +149,81 @@ def test_example_extension_loads(tmp_path):
     shutil.copytree(source, tmp_path / "extension_example")
     load_extensions(tmp_path)
     assert _count("before_llm") >= 1
+
+
+def test_enabled_extension_recorded_with_events(tmp_path):
+    _make_extension(tmp_path, "demo", REGISTER_LLM)
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("demo", "user", True, "", ("before_llm",)),
+    ]
+
+
+def test_disabled_extension_recorded_with_reason(tmp_path):
+    _make_extension(tmp_path, "off", REGISTER_LLM, enabled=False)
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("off", "user", False, "disabled", ()),
+    ]
+
+
+def test_missing_and_invalid_manifest_recorded(tmp_path):
+    _make_extension(tmp_path, "missing", REGISTER_LLM, manifest=False)
+    bad = _make_extension(tmp_path, "bad", REGISTER_LLM)
+    (bad / "extension.json").write_text("{not json", encoding="utf-8")
+    not_object = _make_extension(tmp_path, "not_object", REGISTER_LLM)
+    (not_object / "extension.json").write_text("[]", encoding="utf-8")
+    load_extensions(tmp_path)
+
+    assert [(e.name, e.enabled, e.detail) for e in list_extensions()] == [
+        ("bad", False, "invalid extension.json"),
+        ("missing", False, "missing extension.json"),
+        ("not_object", False, "invalid extension.json"),
+    ]
+
+
+def test_missing_register_recorded(tmp_path):
+    _make_extension(tmp_path, "no_register", "X = 1\n")
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("no_register", "user", False, "missing register(api)", ()),
+    ]
+
+
+def test_register_failure_recorded_as_load_failed(tmp_path):
+    _make_extension(tmp_path, "half",
+                    "def register(api):\n    api.on('before_llm', lambda ctx: None)\n    raise RuntimeError('late')\n")
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("half", "user", False, "load failed", ()),
+    ]
+
+
+def test_underscore_folder_not_recorded(tmp_path):
+    _make_extension(tmp_path, "_hidden", REGISTER_LLM)
+    load_extensions(tmp_path)
+
+    assert list_extensions() == []
+
+
+def test_load_twice_records_once(tmp_path):
+    _make_extension(tmp_path, "demo", REGISTER_LLM)
+    load_extensions(tmp_path)
+    load_extensions(tmp_path)
+
+    assert [e.name for e in list_extensions()] == ["demo"]
+
+
+def test_events_keep_registration_order_and_dedupe(tmp_path):
+    _make_extension(tmp_path, "multi",
+                    "def register(api):\n"
+                    "    api.on('after_tool', lambda ctx: None)\n"
+                    "    api.on('before_llm', lambda ctx: None)\n"
+                    "    api.on('after_tool', lambda ctx: None)\n")
+    load_extensions(tmp_path)
+
+    assert list_extensions()[0].events == ("after_tool", "before_llm")
