@@ -65,12 +65,14 @@ Use this EXACT format:
 - [or "(none)" if not applicable]
 
 ## File Operations
+One bullet per file. Format: - `path` — description. Keep each description to a single short sentence.
+
 ### Read Files
-- [All file paths that have been read previously using the tool calls]
+- `[file path that has been read previously using the tool calls]` — [brief description of what this file contains / what was learned from it]
 - [Or "(none)" if no files were read]
 
 ### Modified Files
-- [All file paths that have been modified previously using the tool calls]
+- `[file path that has been modified previously using the tool calls]` — [brief description of what was changed in this file]
 - [Or "(none)" if no files were modified]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.'''
