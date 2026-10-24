@@ -88,6 +88,19 @@ tail -f .harness/log/loader.log       # 加载 / 清单门槛相关日志
 tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 ```
 
+### 1.4 TUI 查看扩展
+
+TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`）：
+
+- 已启用与未启用的扩展都会列出；`[user]` = `.harness/extensions/` 下的外部扩展，
+  `[builtin]` = 内置观察者 / 权限门。
+- 已启用项第二行显示注册的 hook 事件（`hooks: before_tool`），无回调显示 `no hooks`；
+  未启用项显示原因：`disabled`、`missing extension.json`、`invalid extension.json`、
+  `missing register(api)` 或 `load failed`。
+- 列表只读（`Enter` / 单击无动作，`Esc` 关闭），可用搜索栏按名称过滤。
+- 窗口展示的是**启动时**的扫描 / 注册结果；修改 `enabled` 或扩展代码后仍需重启进程，
+  列表才会与实际运行状态一致。
+
 ## 2. 加载规则
 
 启动流程为 `bootstrap()` → `load_extensions()`，加载器逐个扫描扩展目录：

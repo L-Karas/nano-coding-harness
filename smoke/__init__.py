@@ -14,6 +14,7 @@ from .demo import _demo_agent
 from . import (
     chat,
     clarify,
+    extensions,
     footer,
     login,
     mcp,
@@ -29,7 +30,7 @@ from core.tui.ui_textual import ChatApp
 
 # 执行顺序即断言顺序（各段复用同一 App 实例的累积状态，勿随意调换）
 _SECTIONS = (chat, providers, models, login, footer, mentions, sessions, panels, settings, skills,
-             mcp, clarify)
+             extensions, mcp, clarify)
 
 
 async def _smoke() -> None:
