@@ -192,7 +192,7 @@ async def compact_history(
     auto_compact: bool = True,
     sub_model: bool = False,
 ) -> tuple[list, bool]:
-    """压缩历史消息；阈值/保留预算按当前模型（主代理或子代理）窗口封顶。
+    """压缩历史消息；阈值/保留预算按当前模型（主代理或子代理）窗口解析，阈值封顶到窗口 80%。
 
     Returns:
         (messages, compacted)：未触发压缩（低于阈值 / 无可用上下文窗口）时返回原 list 且

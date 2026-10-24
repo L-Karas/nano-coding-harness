@@ -46,6 +46,8 @@ PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
 # 工具审批策略；下拉选项的取值即这里的字面量（顺序即表单顺序）
 ApprovalMode = Literal["LLM", "Decision Model", "Manual", "Yolo"]
 DEFAULT_APPROVAL_MODE: ApprovalMode = "Manual"
+# 压缩阈值兜底：最多取窗口的 80%。
+COMPACT_FALLBACK_PERCENT = 80
 
 
 class AgentConfig(BaseModel):
@@ -69,7 +71,7 @@ class AgentConfig(BaseModel):
 
     default_max_tokens: int = Field(default=16_000, description="Max tokens per default model call")
     escalated_max_tokens: int = Field(default=32_000,
-                                      description="Max tokens for escalated calls when the default limit is insufficient; also the tokens compaction reserves for output when the model declares no fixed max output")
+                                      description="Max tokens for escalated calls when the default limit is insufficient; also the output reserve used by the compaction threshold only after compact_trigger_tokens exceeds the 80% fallback")
 
     max_retries: int = Field(default=3, description="Max retries for a failed model call")
     max_recovery_retries: int = Field(default=3,
@@ -80,7 +82,7 @@ class AgentConfig(BaseModel):
     auto_compact: bool = Field(default=True, description="Enable automatic context compaction")
     compact_type: str = Field(default="summary", description="Context compaction method")
     compact_trigger_tokens: int = Field(default=500_000,
-                                        description="Absolute token count of the context that triggers compaction; capped per model to leave room for max output",
+                                        description="Absolute token count of the context that triggers compaction; the effective threshold is resolved per model and capped at 80% of the model window (see docs/context-compaction.md)",
                                         gt=0)
     compact_reserve_tokens: int = Field(default=50_000,
                                         description="Absolute token budget of recent messages kept after compaction; capped by the effective trigger threshold",
@@ -91,14 +93,23 @@ class AgentConfig(BaseModel):
     enable_defer_tools: bool = Field(default=False, description="Enable deferred tool loading")
     enable_defer_skills: bool = Field(default=False, description="Enable deferred skill loading")
 
-    def resolve_compact_trigger_tokens(self, context_length: int, max_output: Optional[int]) -> int:
-        """有效压缩阈值（绝对 token 数）；无可用上下文窗口（0）时返回 0；上限给单次输出留空间——
-        max_output 为空（无固定输出上限）时用 escalated_max_tokens，保证 输入 + 输出 < 上下文长度。"""
+    def resolve_compact_trigger_tokens(self, context_length: int) -> int:
+        """有效压缩阈值（绝对 token 数）；无可用上下文窗口（0）时返回 0。
+
+        兜底 = max(1, context_length × 80%)：最终阈值不超过兜底（窗口过小时保底 1），
+        防止用户配置过大。优先使用 compact_trigger_tokens；超过兜底时再尝试
+        context_length - escalated_max_tokens；仍超过兜底时使用兜底。
+        """
         if context_length <= 0:
             return 0
-        # todo: max output 与 context length 一样时，会出现问题
-        output_reserve_tokens = max_output if max_output is not None else self.escalated_max_tokens
-        return min(self.compact_trigger_tokens, max(1, context_length - output_reserve_tokens))
+        # todo: escalated_max_tokens 接近或超过 context_length 时，候选值会塌到 1（每轮压缩）；
+        # 后续评估极端配置下回落到 80% 兜底，或限制 escalated_max_tokens。
+        # 下限 1：0 是“无可用窗口”的哨兵值，不能作为阈值返回。
+        fallback_tokens = max(1, context_length * COMPACT_FALLBACK_PERCENT // 100)
+        if self.compact_trigger_tokens <= fallback_tokens:
+            return self.compact_trigger_tokens
+        reserve_tokens = max(1, context_length - self.escalated_max_tokens)
+        return min(fallback_tokens, reserve_tokens)
 
     def resolve_compact_reserve_tokens(self, compact_trigger_tokens: int) -> int:
         """有效保留预算（绝对 token 数），封顶有效压缩阈值。"""

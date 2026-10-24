@@ -47,3 +47,7 @@ _Avoid_: 图片对象、base64 字符串
 **Session**:
 一串 Message 及其标题 / 时间戳；SessionManager 持有当前会话并负责 map / 指针 / 文件三者一致。
 _Avoid_: 会话文件、session_map
+
+**Compact trigger threshold**:
+按当前模型上下文窗口解析出的压缩触发阈值；优先级与兜底规则见 `docs/context-compaction.md`。
+_Avoid_: 固定压缩阈值、按 max_output 计算阈值

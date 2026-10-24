@@ -83,13 +83,15 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
    `.harness/.task_outputs/tool_results/`，正文替换为「截断内容 + `<saved-path>`」的
    `<persisted-output>` 包裹，提示中的 `offset=N` 与落盘全文行号对齐，可用
    `read_file <saved-path> offset=N` 续读，避免重新调用工具重新获取结果；
-2. `compact_history`：估算 token > `compact_trigger_tokens`（默认 500_000，且不超过
-   `上下文 − 最大输出`）时，按 user 消息切分轮次，从后往前保留 ≤ `compact_reserve_tokens`
-   （默认 50_000，封顶有效压缩阈值）的历史，其余交给模型总结成 `<compacted_messages>` 摘要。
+2. `compact_history`：估算 token > 有效压缩阈值时，按 user 消息切分轮次，从后往前保留
+   ≤ `compact_reserve_tokens`（默认 50_000，封顶有效压缩阈值）的历史，其余交给模型总结成
+   `<compacted_messages>` 摘要。有效阈值按当前模型窗口解析（规则见
+   [`context-compaction.md`](context-compaction.md)）。
 
-阈值来自 `AgentConfig`（默认值见 `core/config.py`），并在运行中按当前模型窗口封顶，
-切换模型（`/model`）后立即生效；`compact_trigger_tokens` / `compact_reserve_tokens` /
-`summary_max_tokens` 等参数说明见 [`configuration.md`](configuration.md#上下文压缩参数)。
+阈值来自 `AgentConfig`（默认值见 `core/config.py`），并在运行中按当前模型窗口解析，
+切换模型（`/model`）后立即生效；具体规则见 [`context-compaction.md`](context-compaction.md)，
+`compact_trigger_tokens` / `compact_reserve_tokens` / `summary_max_tokens` 等参数说明见
+[`configuration.md`](configuration.md#上下文压缩参数)。
 
 `/compact` 走 `AgentRuntime.run_compact()`：对整个会话做一次全量摘要后替换（中断则不落盘；
 低于压缩阈值 / 未选择模型时不压缩，UI 提示 Nothing to compact）。

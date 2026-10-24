@@ -43,10 +43,18 @@ prepare_messages(messages, ctx, sub_model=?)
 `ModelClient.compact_trigger_tokens()` / `compact_reserve_tokens()` 每次调用时都按当前模型重新解析，
 所以 `/model` 切换后立即生效：
 
-- 有效触发阈值 = `min(compact_trigger_tokens, max(1, context_length − output_reserve_tokens))`：
-    - `output_reserve_tokens`（为单次输出预留的 token 数）= 模型注册表声明的 `max_output`；未声明时用 `escalated_max_tokens`（保证 输入 + 输出 < 上下文长度）；
-    - `context_length <= 0`（未选择模型 / 上下文未知）→ 阈值解析为 `0`，压缩管线原样返回、不触发摘要；
-    - 退化：`output_reserve_tokens >= context_length` 时 `max(1, …)` 保底为 `1`，等于几乎每轮都压缩。
+- 有效触发阈值按优先级选取，兜底 = `max(1, context_length × 80%)`：
+  最终阈值不超过兜底（窗口过小时保底 1），防止用户把配置改得过大。
+    1. `compact_trigger_tokens` 不超过兜底时直接使用（优先尊重配置值）；
+    2. 否则计算 `max(1, context_length − escalated_max_tokens)`，不超过兜底时使用它；
+    3. 若它也超过兜底，则使用兜底。
+- 注意：优先级 1 会绕过输出余量预留。若 `compact_trigger_tokens` 很小但
+  `escalated_max_tokens` 很大，阈值不会被抬高；需要为输出留空间时应同时调小后者。
+- `max_output` 不参与压缩阈值计算：部分模型声明 `max_output == context_length`，
+  按它预留会把阈值压到 `1`，导致几乎每轮都压缩；输出钳制仍使用 `max_output`。
+- `context_length <= 0`（未选择模型 / 上下文未知）→ 阈值解析为 `0`，压缩管线原样返回、不触发摘要；
+- 退化：`escalated_max_tokens >= context_length` 时 `context_length − escalated_max_tokens`
+  保底为 `1`，等于几乎每轮都压缩。
 - 有效保留预算 = `min(compact_reserve_tokens, 有效触发阈值)`：保留预算永远不超过触发阈值。
 - `summary_max_tokens` 经 `clamp_max_tokens` 钳到当前模型 `max_output`。
 

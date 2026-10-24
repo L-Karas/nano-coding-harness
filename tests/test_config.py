@@ -37,26 +37,40 @@ def test_approval_mode_defaults_to_manual_and_rejects_unknown():
         AgentConfig(approval_mode="always-ask")
 
 
-def test_resolve_compact_trigger_tokens_caps_at_output_reserve():
-    """绝对阈值取 min(值, 上下文 - 最大输出)，给单次最大输出留空间。"""
-    cfg = AgentConfig(compact_trigger_tokens=500_000)
-    assert cfg.resolve_compact_trigger_tokens(1_000_000, 200_000) == 500_000  # 绝对值本身更小
-    assert cfg.resolve_compact_trigger_tokens(262_144, 52_428) == 209_716  # 262144 - 52428
-    assert cfg.resolve_compact_trigger_tokens(100_000, 150_000) == 1  # 退化下限
+def test_resolve_compact_trigger_tokens_prefers_configured_value_below_fallback():
+    """窗口 80% 以内优先使用配置值，即使 context - escalated 更小。"""
+    cfg = AgentConfig(compact_trigger_tokens=500_000, escalated_max_tokens=900_000)
+    assert cfg.resolve_compact_trigger_tokens(1_000_000) == 500_000
+    exact = AgentConfig(compact_trigger_tokens=800_000, escalated_max_tokens=900_000)
+    assert exact.resolve_compact_trigger_tokens(1_000_000) == 800_000  # 等于兜底
 
 
-def test_resolve_compact_trigger_tokens_without_fixed_max_output_reserves_escalated_tokens():
-    """max_output 为空：无固定输出上限，但压缩上限仍给最大单次请求（escalated）留空间。"""
-    cfg = AgentConfig(compact_trigger_tokens=500_000, escalated_max_tokens=24_000)
-    assert cfg.resolve_compact_trigger_tokens(262_144, None) == 238_144  # 262144 - 24000
-    assert cfg.resolve_compact_trigger_tokens(1_000_000, None) == 500_000  # 绝对值本身更小
+def test_resolve_compact_trigger_tokens_caps_configured_value_at_80_percent():
+    """配置值超过窗口 80% 且 context - escalated 也更高时，使用 80% 兜底。"""
+    cfg = AgentConfig(compact_trigger_tokens=900_000, escalated_max_tokens=32_000)
+    assert cfg.resolve_compact_trigger_tokens(1_000_000) == 800_000  # context - escalated = 968000
+
+
+def test_resolve_compact_trigger_tokens_uses_context_reserve_when_below_fallback():
+    """配置值超过 80% 时，若 context - escalated 更低则使用它。"""
+    cfg = AgentConfig(compact_trigger_tokens=900_000, escalated_max_tokens=300_000)
+    assert cfg.resolve_compact_trigger_tokens(1_000_000) == 700_000  # 80% = 800000
+    low = AgentConfig(compact_trigger_tokens=900_000, escalated_max_tokens=60_000)
+    assert low.resolve_compact_trigger_tokens(200_000) == 140_000  # 80% = 160000
+
+
+def test_resolve_compact_trigger_tokens_degenerate_reserve_keeps_minimum():
+    """输出余量不小于上下文时 context - escalated 保底为 1。"""
+    cfg = AgentConfig(compact_trigger_tokens=500_000, escalated_max_tokens=150_000)
+    assert cfg.resolve_compact_trigger_tokens(100_000) == 1
+    equal = AgentConfig(compact_trigger_tokens=500_000, escalated_max_tokens=32_000)
+    assert equal.resolve_compact_trigger_tokens(32_768) == 768  # 32768 - 32000
 
 
 def test_resolve_compact_trigger_tokens_returns_zero_without_context_window():
     """未选择模型（上下文为 0）：阈值 0 代表无窗口，压缩管线据此原样返回。"""
     cfg = AgentConfig(compact_trigger_tokens=500_000)
-    assert cfg.resolve_compact_trigger_tokens(0, 200_000) == 0
-    assert cfg.resolve_compact_trigger_tokens(0, None) == 0
+    assert cfg.resolve_compact_trigger_tokens(0) == 0
 
 
 def test_resolve_compact_reserve_tokens_caps_at_trigger():

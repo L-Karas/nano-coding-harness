@@ -62,7 +62,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 | 窗口显示名 | 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | Default max tokens | `default_max_tokens` | `16000` | 主 / 子代理每次模型调用的默认 `max_tokens`；经当前模型 `max_output` 钳制 |
-| Escalated max tokens | `escalated_max_tokens` | `32000` | `finish_reason == "length"` 后升级重试一次用的上限；模型未声明 `max_output` 时，也是压缩阈值预留的输出余量（`output_reserve_tokens`） |
+| Escalated max tokens | `escalated_max_tokens` | `32000` | `finish_reason == "length"` 后升级重试一次用的上限；压缩阈值中仅当 `compact_trigger_tokens` 超过 80% 兜底时，才用 `context − escalated_max_tokens` 作为候选余量 |
 | Summary max tokens | `summary_max_tokens` | `20000` | 生成摘要时的最大 token 生成数；经当前模型 `max_output` 钳制 |
 
 ### 上下文压缩
@@ -70,7 +70,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 | 窗口显示名 | 字段 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | Auto compact context | `auto_compact` | 开 | 每回合 `prepare_messages` 是否做摘要压缩；关闭时只截断超长工具输出，超长历史可能由 API 报 context 超限 |
-| Compact trigger tokens | `compact_trigger_tokens` | `500000` | 历史估算 token 超过它触发压缩；按当前模型窗口封顶（`min(值, 上下文 − 输出余量)`），无可用窗口时为 0（不压缩） |
+| Compact trigger tokens | `compact_trigger_tokens` | `500000` | 历史估算 token 超过它触发压缩；有效阈值按当前模型窗口动态解析（规则见 [`context-compaction.md`](context-compaction.md)），无可用窗口时为 0（不压缩） |
 | Compact reserve tokens | `compact_reserve_tokens` | `50000` | 自动压缩后保留的最近消息 token 预算；封顶有效触发阈值 |
 
 触发判断、切分规则与手动 `/compact` 的细节见 [`context-compaction.md`](context-compaction.md)。
@@ -87,8 +87,9 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 
 `compact_trigger_tokens` / `compact_reserve_tokens` / `summary_max_tokens` 等来自 `AgentConfig`
 （默认值见 `core/config.py`），均为绝对 token 数，可在 `/settings` 中调整；上下文长度与最大输出
-直接取自当前模型的注册表配置（`core/client/models.json` / `.harness/.custom_models.json`），两个阈值
-在运行中按当前模型窗口封顶，切换模型（`/model`）后立即生效。模型未声明最大输出时不做输出钳制，
-压缩阈值改为给 `escalated_max_tokens` 留出余量（保证 输入 + 输出 < 上下文长度）。
+直接取自当前模型的注册表配置（`core/client/models.json` / `.harness/.custom_models.json`）。
+压缩阈值按当前模型窗口动态解析，切换模型（`/model`）后立即生效；完整优先级与退化处理见
+[`context-compaction.md`](context-compaction.md#22-按当前模型解析coreclientmodelpy)。
+`max_output` 只用于调用时的输出钳制，不参与阈值计算。
 
 两层管线、切分规则与手动 `/compact` 等细节见 [`context-compaction.md`](context-compaction.md)。

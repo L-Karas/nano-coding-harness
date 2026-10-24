@@ -325,9 +325,8 @@ class ModelClient:
         return bool(self._model_config().get("vision", False))
 
     def compact_trigger_tokens(self) -> int:
-        """当前模型的上下文压缩触发阈值（绝对 token 预算，按模型窗口封顶）。"""
-        return CONFIGMANAGER.config.resolve_compact_trigger_tokens(
-            self.load_context_length(), self.load_max_output())
+        """当前模型的上下文压缩触发阈值（优先配置值，最终不超过窗口 80%）。"""
+        return CONFIGMANAGER.config.resolve_compact_trigger_tokens(self.load_context_length())
 
     def compact_reserve_tokens(self) -> int:
         """压缩后保留的最近消息 token 预算（绝对值，封顶压缩阈值）。"""

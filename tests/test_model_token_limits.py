@@ -31,12 +31,12 @@ def test_budgets_follow_current_model(monkeypatch):
     )
     assert client.load_context_length() == 262_144
     assert client.load_max_output() == 52_000
-    assert client.compact_trigger_tokens() == 210_144  # 绝对预算被模型窗口封顶：262144 - 52000
+    assert client.compact_trigger_tokens() == 209_715  # 配置值超 80% 兜底；候选余量 230144 更高，取 80%
     assert client.compact_reserve_tokens() == 50_000
 
 
-def test_null_max_output_disables_clamping_and_reserves_escalated_tokens(monkeypatch):
-    """注册表 max_output 为空 = 无固定输出上限：不钳制；压缩上限用 上下文 - escalated_max_tokens。"""
+def test_null_max_output_disables_clamping_and_uses_escalated_fallback(monkeypatch):
+    """注册表 max_output 为空 = 无固定输出上限：不钳制；压缩阈值最终不超过窗口 80%。"""
     cfg = config_mod.AgentConfig(compact_trigger_tokens=500_000, escalated_max_tokens=32_000)
     client = _client(
         monkeypatch,
@@ -46,7 +46,14 @@ def test_null_max_output_disables_clamping_and_reserves_escalated_tokens(monkeyp
     )
     assert client.load_max_output() is None
     assert client.clamp_max_tokens(200_000) == 200_000
-    assert client.compact_trigger_tokens() == 230_144  # 262144 - 32000
+    assert client.compact_trigger_tokens() == 209_715  # 候选余量 230144 仍高于 80% 兜底
+
+
+def test_huge_max_output_does_not_collapse_compact_threshold(monkeypatch):
+    """max_output 与上下文一致时不再把压缩阈值压到 1（否则每轮都压缩）。"""
+    cfg = config_mod.AgentConfig(compact_trigger_tokens=500_000, escalated_max_tokens=32_000)
+    client = _client(monkeypatch, 200_000, 200_000, cfg)
+    assert client.compact_trigger_tokens() == 160_000  # 80% 兜底 160000；context - escalated 168000 更高
 
 
 def test_unselected_model_has_no_budget(monkeypatch):
