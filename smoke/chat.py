@@ -177,8 +177,9 @@ async def run(app, pilot) -> None:
     prompt.text = "/"
     await settle(pilot)
     assert suggest.styles.display != "none", "输入 / 未弹出候选 OptionList"
-    assert prompt._candidates == ["/new", "/sessions", "/compact", "/fork", "/skills", "/mcp", "/provider",
-                                  "/model", "/effort", "/settings", "/login", "/exit"], prompt._candidates
+    assert prompt._candidates == ["/new", "/sessions", "/compact", "/fork", "/skills",
+                                  "/extensions", "/mcp", "/provider", "/model", "/effort",
+                                  "/settings", "/login", "/exit"], prompt._candidates
     # 候选行 = 指令名列（含别名括注）+ 空距 + 简短说明（选项 prompt 为分段 Text，
     # plain 即整行字符），各行说明左端对齐于同一列
     assert [suggest.get_option_at_index(i).prompt.plain
@@ -188,6 +189,7 @@ async def run(app, pilot) -> None:
                "/compact           Compact the conversation history",
                "/fork              Fork session from a user message",
                "/skills            List available skills",
+               "/extensions        List loaded and disabled extensions",
                "/mcp               List configured MCP servers",
                "/provider          Configure API providers",
                "/model             Switch the active model",

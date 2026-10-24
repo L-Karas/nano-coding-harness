@@ -12,6 +12,7 @@ _SLASH_COMMAND_META: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("/compact", (), "Compact the conversation history"),
     ("/fork", (), "Fork session from a user message"),
     ("/skills", (), "List available skills"),
+    ("/extensions", (), "List loaded and disabled extensions"),
     ("/mcp", (), "List configured MCP servers"),
     ("/provider", (), "Configure API providers"),
     ("/model", (), "Switch the active model"),

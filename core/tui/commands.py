@@ -10,6 +10,7 @@ import threading
 from typing import Any, Callable, Optional
 
 from core.context.message import content_text
+from core.extension import list_extensions as _list_extensions
 from core.runtime_context import AgentInterrupted
 from core.skill import skills as _skills
 from core.tui.render import (
@@ -20,6 +21,7 @@ from core.tui.render import (
 )
 from core.tui.screens import (
     EffortScreen,
+    ExtensionsScreen,
     ForkScreen,
     LoginScreen,
     MCPServersScreen,
@@ -37,6 +39,7 @@ class _CommandFlow:
 
     _OPENERS = {  # / 指令 → 打开方法名（方法见下）
         "/sessions": "_open_sessions", "/fork": "_open_fork", "/skills": "_open_skills",
+        "/extensions": "_open_extensions",
         "/mcp": "_open_mcp", "/provider": "_open_providers", "/model": "_open_models",
         "/effort": "_open_effort", "/login": "_open_login", "/logout": "_open_login",
         "/settings": "_open_settings",
@@ -120,6 +123,14 @@ class _CommandFlow:
         query = f"Invoke skill '{skill_name}'"
         self._prompt().text = query  # 填入后随发送清空（效果同手打回车）
         self._send_user_query(query)
+
+    def _open_extensions(self) -> None:
+        """/extensions：全部扩展（含未启用）与来源标签；只读，Esc 关闭。"""
+        rows = _list_extensions()
+        if not rows:
+            render_background_notification("No extensions found", title="⚠️ Extensions")
+            return
+        self.push_screen(ExtensionsScreen(rows))
 
     def _open_mcp(self) -> None:
         """/mcp：MCP server 列表（懒导入 + 异常兜底；servers 为空也打开，窗内可 Insert 配置）。"""
