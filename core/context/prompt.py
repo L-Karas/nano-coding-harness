@@ -9,7 +9,7 @@ from typing import Literal
 
 from core.config import WORKDIR
 from core.context.memory import MEMORY_MANAGER
-from core.logger import get_logger
+from core.shared.logger import get_logger
 from core.skill import load_skills
 from core.template import SYSTEM_PROMPT_TEMPLATE
 from core.template.prompt_template import SUB_AGENT_PROMPT_TEMPLATE

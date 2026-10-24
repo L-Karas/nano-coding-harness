@@ -18,7 +18,7 @@ from mcp.client.session_group import SseServerParameters, StreamableHttpParamete
 from mcp_types import ImageContent, TextContent
 
 from core.config import MCP_CONFIG_FILE
-from core.logger import get_logger
+from core.shared.logger import get_logger
 from core.tools import vision
 from core.tools.tool_result import ImageAttachment, ToolResult
 

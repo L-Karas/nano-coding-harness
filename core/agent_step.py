@@ -15,7 +15,6 @@ from openai.types.chat import ChatCompletionMessageToolCall
 from core.background_task import should_run_background, start_background_task
 from core.client import model_supports_vision
 from core.context import to_llm_messages
-from core.diff import DIFF_TOOLS, preview_edit, preview_write
 from core.extension import (
     AfterLLMContext,
     AfterToolContext,
@@ -24,9 +23,10 @@ from core.extension import (
     ToolExecuteContext,
     dispatch,
 )
-from core.logger import get_logger
 from core.recovery.error_recovery import with_retry_async
 from core.runtime_context import ToolContext
+from core.shared.diff import DIFF_TOOLS, preview_edit, preview_write
+from core.shared.logger import get_logger
 from core.streaming import streaming_message
 from core.template import (
     BACKGROUND_STARTED_PROMPT,

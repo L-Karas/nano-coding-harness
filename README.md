@@ -2,7 +2,7 @@
 
 一个用 Python 3.13 + Textual 写的 coding agent harness：全屏 TUI 对话、流式工具调用、
 分层上下文压缩、后台任务、cron 调度与子代理。
-源码即文档，主体实现位于 `core/`；入口 `main.py` 与日志 `logger.py` 在根目录。
+源码即文档，主体实现位于 `core/`；入口 `main.py` 在根目录，日志实现位于 `core/shared/logger.py`。
 
 ## 核心特性
 

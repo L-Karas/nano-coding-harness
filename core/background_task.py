@@ -13,9 +13,9 @@ from typing import Callable
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
-from core.logger import get_logger
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
+from core.shared.logger import get_logger
 from core.template import (BACKGROUND_CANCELLED_PROMPT, BACKGROUND_MESSAGE_TEMPLATE,
                            USER_INTERRUPT_PROMPT)
 from core.tools import ToolPool, ToolResult

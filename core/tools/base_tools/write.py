@@ -3,9 +3,9 @@ from pathlib import Path
 import aiofiles
 from pydantic import Field
 
-from core.diff import _resolve
-from core.file_io import atomic_write, match_eol, normalize_newlines
 from core.runtime_context import ToolContext
+from core.shared.diff import resolve_path
+from core.shared.file_io import atomic_write, match_eol, normalize_newlines
 from core.tools.tool_base import BaseTool
 
 DESCRIPTION = (
@@ -26,7 +26,7 @@ class WriteFile(BaseTool):
     # 不覆写 run：BaseTool.run 即 asyncio.run(arun)，同步与异步入口只有一套语义。
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
-        path = _resolve(self.path, tctx.cwd if tctx else None)
+        path = resolve_path(self.path, tctx.cwd if tctx else None)
         if path.is_dir():
             raise IsADirectoryError(f"is a directory: {self.path}")
         if tctx:

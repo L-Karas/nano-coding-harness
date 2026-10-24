@@ -1,5 +1,5 @@
-from core.logger import get_logger
 from core.runtime_state import RUNTIME_STATE, TodoEntry
+from core.shared.logger import get_logger
 from core.template import TODO_ITEM_MESSAGE_TEMPLATE, TODOS_MESSAGE_TEMPLATE
 
 _LOGGER = get_logger(__name__)

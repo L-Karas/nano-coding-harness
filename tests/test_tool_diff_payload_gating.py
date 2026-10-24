@@ -8,7 +8,7 @@ import json
 import pytest
 
 import core.agent_step as step_mod
-import core.diff as diff_module
+import core.shared.diff as diff_module
 from core.agent_step import StepPolicy, StepRenderer, run_agent_step
 from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool

@@ -5,7 +5,6 @@
 | 路径 | 职责 |
 | --- | --- |
 | `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
-| `logger.py` | 日志：`get_logger()` 按模块名写 `.harness/log/<module>.log` |
 | `core/agent_loop.py` | Agent 主循环 `AgentRuntime`：外层骨架（cron / 后台注入、预算、会话落盘、长度恢复）、`/compact`；线程契约（loop / 锁 / 中断）委托 `TurnRunner` |
 | `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
 | `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
@@ -13,7 +12,10 @@
 | `core/bootstrap.py` | 启动初始化（composition root）：`.harness` 目录树/文件、内置扩展、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
 | `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |
-| `core/file_io.py` | 文件落盘：`atomic_write`（临时文件 → 保留权限 → fsync → `os.replace`，失败 / 中断清理临时文件）与换行风格工具（`normalize_newlines` / `match_eol`）；write / edit 共用 |
+| `core/shared/` | 跨模块（包）共用的基础模块：只放无业务归属、被多处复用的底层工具；领域类型与服务留在原包 |
+| `core/shared/file_io.py` | 文件落盘：`atomic_write`（临时文件 → 保留权限 → fsync → `os.replace`，失败 / 中断清理临时文件）与换行风格工具（`normalize_newlines` / `match_eol`）；write / edit 共用 |
+| `core/shared/diff.py` | write / edit 的 diff 预览：按 `WORKDIR` / `cwd` 解析路径并在执行前计算变化行（`DIFF_TOOLS` / `preview_write` / `preview_edit`）；agent_step 渲染与 base_tools 共用 |
+| `core/shared/logger.py` | 日志：`get_logger()` 按模块名写 `.harness/log/<module>.log` |
 | `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
 | `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹、后台通知包裹） |
 | `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
@@ -99,4 +101,4 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 
 - 同一轮内的多个工具调用按 `BaseTool.parallel_safe` 声明（分组函数 `group_parallel_tool_calls`，经 `ToolPool.is_parallel_safe()` 查询）分组（ADR-0008）：组内 `asyncio.gather` 并发，写文件 / 终端等未声明工具作为屏障自成一组，组间串行；扩展钩子、权限确认与渲染仍在每组的准备 / 收尾段串行执行；
 - 工具结果仅取文本内容；图片由 `read_file` 通过 `ToolResult.images` 带回，再由 step 汇总为 user 注入消息（见 `tools.md`）；
-- 权限策略由内置权限扩展在 `before_tool` 的 gate 阶段裁决（地板 / 规则 / 扩展决定票；规则文件 `.harness/.permissions.json`）；根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被代码读取。
+- 权限策略由内置权限扩展在 `before_tool` 的 gate 阶段裁决（地板 / 规则 / 扩展决定票；规则文件 `.harness/.permissions.json`）；`examples/tutorials/s08_hook_system.py` 是独立教学示例，不被代码读取。

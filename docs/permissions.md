@@ -188,7 +188,7 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 **可以写入这两个位置**；修改在重启进程后生效。本期不设写保护（用户已确认），应由用户人工审阅
 规则与扩展的变更，只放入可信内容。
 
-> 根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被运行时读取，
+> `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被运行时读取，
 > 与上述机制无关。
 
 ## 参考

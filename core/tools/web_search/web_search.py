@@ -4,8 +4,8 @@ import os
 import httpx
 from pydantic import Field
 
-from core.logger import get_logger
 from core.runtime_context import ToolContext
+from core.shared.logger import get_logger
 from core.tools.tool_base import BaseTool
 from core.tools.web_search.utils import update_provider_state, format_search_result, PROVIDER_STATE
 

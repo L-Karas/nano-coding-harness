@@ -11,8 +11,8 @@ from pathlib import Path
 
 import aiofiles
 
-from core.logger import get_logger
 from core.runtime_context import ToolContext
+from core.shared.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 _POSIX = os.name == "posix"

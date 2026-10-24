@@ -23,7 +23,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from tool_schema import CHILD_TOOLS
+from tool_schema import BASE_TOOLS
 from tools import BASE_TOOL_HANDLERS
 
 load_dotenv(override=True)
@@ -46,17 +46,18 @@ TRUST_MARKER = WORKDIR / ".claude" / ".claude_trusted"
 
 class HookManager:
     """
-    Load and execute hooks from .hooks.json configuration.
+    Load and execute hooks from a JSON configuration (default: `.hooks.json` next to this script).
     The hook manager does three simple jobs:
     - load hook definitions
     - run matching commands for an event
     - aggregate block / message results for the caller
     """
 
-    def __init__(self, config_path: Path = None, sdk_mode: bool = False):
-        self.hooks = {"PreToolUse": [], "PoseToolUse": [], "SessionStart": []}
+    def __init__(self, config_path: Path | None = None, sdk_mode: bool = False):
+        self.hooks = {"PreToolUse": [], "PostToolUse": [], "SessionStart": []}
         self._sdk_mode = sdk_mode
-        config_path = config_path or (WORKDIR / ".hooks.json")
+        # Resolve the bundled config next to this script, not the caller's CWD.
+        config_path = config_path or (Path(__file__).resolve().parent / ".hooks.json")
 
         if config_path.exists():
             try:
@@ -177,7 +178,7 @@ def agent_loop(messages: list, hooks: HookManager):
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            tools=CHILD_TOOLS,
+            tools=BASE_TOOLS,
             max_tokens=int(8e3),
             extra_body={"enable_thinking": False}
         )

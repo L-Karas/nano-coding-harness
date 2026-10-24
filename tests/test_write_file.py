@@ -124,7 +124,7 @@ def test_posix_readonly_file_is_replaced_and_keeps_mode(tmp_path):
 def test_mode_preserved_after_content_is_written(tmp_path, monkeypatch):
     """POSIX 分支（跨平台可测）：chmod 用原文件 mode，且发生在写完数据之后——
     先改 mode 会让只读原文件的 open("w") 被拒。"""
-    import core.file_io as file_io
+    import core.shared.file_io as file_io
 
     target = tmp_path / "run.sh"
     target.write_text("old\n", encoding="utf-8")

@@ -16,9 +16,9 @@ from core.context.compact import compact_history, prepare_messages
 from core.context.prompt import build_system_prompt
 from core.context.session import SESSION_MANAGER
 from core.cron_scheduler import consume_cron_queue
-from core.logger import get_logger
 from core.recovery.error_recovery import RecoveryState
 from core.runtime_context import AgentRunContext, AgentInterrupted, ToolContext
+from core.shared.logger import get_logger
 from core.template import (
     CONTINUATION_PROMPT,
     INJECTION_MESSAGES_PREFIX,

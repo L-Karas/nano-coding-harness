@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from core.extension.protocol import STAGE_ORDER, validate_registration
-from core.logger import get_logger
+from core.shared.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

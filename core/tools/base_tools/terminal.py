@@ -56,6 +56,7 @@ class Terminal(BaseTool):
             run_kwargs["input"] = args.stdin_script.encode("utf-8")
         res = subprocess.run(args.argv, **run_kwargs)
         output = (_to_text(res.stdout) + _to_text(res.stderr)).strip()
+        # todo: 是否由 prepare_messages 方法统一截断处理
         return output[:int(5e4)] if output else "(Tool no output)"
 
     async def arun(self, tctx: ToolContext | None = None) -> str:

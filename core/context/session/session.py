@@ -18,7 +18,7 @@ from typing import Any
 from core.config import SESSION_DIR, SESSION_INDEX_FILE
 from core.context.message import Message, as_message, content_text, is_synthetic_content
 from core.context.token import estimate_size
-from core.logger import get_logger
+from core.shared.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 

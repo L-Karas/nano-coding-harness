@@ -462,7 +462,7 @@ def test_blocks_rm_commands():
 - **不在覆盖范围**：
   - 后台任务异步完成的结果不触发 `after_tool`（派发时的 `before_tool` 与占位结果的 `after_tool` 已触发）；接管即不后台化，后台任务路径也不会二次派发 `tool_execute`；
   - 上下文压缩、标题生成等辅助 LLM 调用不触发 `before_llm` / `after_llm`；
-  - 根目录 `.hooks.json` 与 `examples/tutorials/s08_hook_system.py` 是独立教学示例，不参与扩展加载；工具节点顺序固定为「外部 `before_tool`（参数改写 + 决定票）→ 内置观察者 → 内置权限门（gate）→ 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
+  - `examples/tutorials/s08_hook_system.py` 是独立教学示例，不参与扩展加载；工具节点顺序固定为「外部 `before_tool`（参数改写 + 决定票）→ 内置观察者 → 内置权限门（gate）→ 外部 `tool_execute`（接管则跳过内置）→ 执行 → 外部 `after_tool`」；
   - 被扩展 / 权限拦截、后台任务占位、中断占位、参数 JSON 解析失败等路径没有真实执行结果，但同样以占位结果触发 `after_tool` 与结果渲染（拦截与解析失败 `is_error=True`；中断的内部结果 `ToolResult.is_cancelled=True`、`is_error=False`；后台派发占位为 `is_error=False`，接管结果沿用扩展传入的 `is_error`）。
 
 ## 参考

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.config import WORKDIR
-from core.file_io import normalize_newlines
+from core.shared.file_io import normalize_newlines
 
 DIFF_TOOLS = ("write_file", "edit_file")
 
@@ -31,7 +31,8 @@ def _diff_rows(old: str, new: str, context: int = 3) -> list[tuple[str, int, str
     return rows
 
 
-def _resolve(path: str, cwd: Optional[Path]) -> Path:
+def resolve_path(path: str, cwd: Optional[Path] = None) -> Path:
+    """相对路径按 cwd（缺省 WORKDIR）解析为绝对路径。"""
     return ((cwd or WORKDIR) / path).resolve()
 
 
@@ -44,7 +45,7 @@ def _read_old(fp: Path) -> str:
 
 def preview_write(path: str, content: str, cwd: Optional[Path] = None) -> list[tuple[str, int, str]]:
     """执行前计算 write 将产生的变化行；内容未变（按归一化换行比较）时返回空列表"""
-    return _diff_rows(_read_old(_resolve(path, cwd)), normalize_newlines(content))
+    return _diff_rows(_read_old(resolve_path(path, cwd)), normalize_newlines(content))
 
 
 def preview_edit(
@@ -54,7 +55,7 @@ def preview_edit(
     cwd: Optional[Path] = None,
 ) -> list[tuple[str, int, str]]:
     """执行前计算 edit 将产生的变化行；old_text 不存在时返回空列表"""
-    text = _read_old(_resolve(path, cwd))
+    text = _read_old(resolve_path(path, cwd))
     if old_text not in text:
         return []
     return _diff_rows(text, text.replace(old_text, new_text, 1))

@@ -15,9 +15,9 @@ from core.client import shared_sub_model_client, model_supports_vision
 from core.config import CONFIGMANAGER, WORKDIR
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
-from core.logger import get_logger
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
+from core.shared.logger import get_logger
 
 MAX_SUB_AGENT_ROUNDS = 30
 _LOGGER = get_logger(__name__)
