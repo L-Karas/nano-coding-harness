@@ -10,16 +10,23 @@ from core.tui.theme import _SPINNER_FRAMES
 async def run(app, pilot) -> None:
 
     # 右栏信息分区：Todos / Background Tasks / Subagents 折叠列表（Skills 已迁往 /skills
-    # 弹窗，不再显示在右栏）。默认展开并同步 RuntimeState 快照（ADR-0004，1s 轮询）；
-    # 标题（▼/▶ + 计数）嵌在上边框，点边框独立折叠/展开（列表本体隐藏，边框标题保留）
+    # 弹窗，不再显示在右栏）。分区按内容有无自动展开（空分区只留 ▶ 标题行）并同步
+    # RuntimeState 快照（ADR-0004，1s 轮询）；标题（▼/▶ + 计数）嵌在上边框，
+    # 点边框独立折叠/展开（列表本体隐藏，边框标题保留）
     from core.runtime_state import RUNTIME_STATE, TodoEntry
     from core.tools import ToolResult
     todos_section = app.query_one("#todos-section", Vertical)
     bg_section = app.query_one("#bg-section", Vertical)
     sub_section = app.query_one("#subagents-section", Vertical)
-    assert str(todos_section.border_title).startswith("▼ Todos"), "Todos 分区应默认展开"
-    assert str(bg_section.border_title).startswith("▼ Background Tasks"), "bg 分区应默认展开"
-    assert str(sub_section.border_title).startswith("▼ Subagents"), "Subagents 分区应默认展开"
+    for _section, _list_id in (
+        (todos_section, "#todos-list"),
+        (bg_section, "#bg-list"),
+        (sub_section, "#subagents-list"),
+    ):
+        _present = bool(app.query(f"{_list_id} .info-row.-expandable"))
+        assert _section.has_class("-collapsed") == (not _present), \
+            f"分区展开态应与条目有无一致: {_section.id} present={_present}"
+        assert str(_section.border_title).startswith("▼" if _present else "▶"), _section.border_title
     assert not list(app.query("#skills-head")) and not list(app.query("#skills-section")), \
         "Skills 不应再显示在右栏（已迁往 /skills 弹窗）"
     assert todos_section.region.y < bg_section.region.y < sub_section.region.y, \
@@ -30,6 +37,9 @@ async def run(app, pilot) -> None:
         "bg-7777", "terminal(command='pip install textual', cwd='/very/long/remote/path')")
     RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc", "explore asyncio docs")
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
+    for _section in (todos_section, bg_section, sub_section):
+        assert not _section.has_class("-collapsed"), f"有内容的分区应展开: {_section.id}"
+        assert str(_section.border_title).startswith("▼"), _section.border_title
 
     def _row_text(row) -> str:
         """单条目行文本：.info-row 是容器，正文在 .-info-text；空态占位行自身即文本。"""
@@ -76,7 +86,10 @@ async def run(app, pilot) -> None:
     assert "[tool: terminal]" in sub_str, f"子代理阶段切换未上屏: {sub_str}"
     RUNTIME_STATE.remove_subagent("sa-0001")
     await pilot.pause(1.3)
-    assert _rows_text("#subagents-list .info-row") == "(Empty)", "子代理结束后应显示 (Empty)"
+    assert sub_section.has_class("-collapsed"), "子代理结束后分区应自动收起"
+    assert str(sub_section.border_title).startswith("▶ Subagents"), sub_section.border_title
+    assert not app.query_one("#subagents-list", VerticalScroll).display, "自动收起后列表应隐藏"
+    assert _rows_text("#subagents-list .info-row") == "(Empty)", "占位行保留（手动展开时可见）"
     # 运行中条目行尾 ■ = 指名停止（ADR-0009）：挂探针句柄，点 ■ 应投递并撤下按钮
     cancelled = []
     RUNTIME_STATE.attach_cancel("bg-7777", lambda: cancelled.append("bg-7777"))
@@ -118,13 +131,15 @@ async def run(app, pilot) -> None:
     assert not bg_section.has_class("-collapsed")
     assert str(bg_section.border_title).startswith("▼ Background Tasks")
     assert app.query_one("#bg-list", VerticalScroll).display, "展开后列表应恢复"
-    await pilot.click(sub_section, offset=(2, 0))  # 点边框标题折叠 Subagents 分区
+    await pilot.click(sub_section, offset=(2, 0))  # 手动展开空分区：占位行可见
+    assert not sub_section.has_class("-collapsed")
+    assert str(sub_section.border_title).startswith("▼ Subagents")
+    assert app.query_one("#subagents-list", VerticalScroll).display, "手动展开后列表应恢复"
+    assert _rows_text("#subagents-list .info-row") == "(Empty)"
+    await pilot.click(sub_section, offset=(2, 0))  # 再点收起
     assert sub_section.has_class("-collapsed")
     assert str(sub_section.border_title).startswith("▶ Subagents")
     assert not app.query_one("#subagents-list", VerticalScroll).display, "折叠后列表应隐藏"
-    await pilot.click(sub_section, offset=(2, 0))  # 再点展开
-    assert not sub_section.has_class("-collapsed")
-    assert app.query_one("#subagents-list", VerticalScroll).display, "展开后列表应恢复"
     # 右栏左缘 »/« 标签常驻：点击折叠/展开整个右栏（Information 标题已去除，标签为唯一开关）
     tab = app.query_one("#info-tab-glyph", Static)
     assert str(tab.render()) == "»" and "Collapse" in str(tab.tooltip), (tab.render(), tab.tooltip)
@@ -182,13 +197,21 @@ async def run(app, pilot) -> None:
     assert not app.query_one("#info-panel").display, "折叠后提示应随面板隐藏"
     await pilot.click(tab)
     await pilot.pause(0.1)
-    # 空态：三区数据清空后各显示 (Empty)（bg 列表还留有演示回合的任务，临时清空再还原）
+    # 空态：三区数据清空后自动折叠（占位行保留但列表隐藏；bg 列表还留有演示回合的任务，
+    # 临时清空再还原）
     saved = RUNTIME_STATE.snapshot()
+    # subagents 分区此前被手动收起；先补一个临时子代理触发自动展开，清空后才能验证自动折叠
+    RUNTIME_STATE.register_subagent("sa-empty-check", "temporary empty-state check", "temporary")
+    await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
+    assert not sub_section.has_class("-collapsed"), "临时子代理应触发 subagents 分区自动展开"
     RUNTIME_STATE.clear()  # 空态检查（仅冒烟进程内生效）
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
-    for _key in ("todos", "bg", "subagents"):
+    for _key, _section in (("todos", todos_section), ("bg", bg_section), ("subagents", sub_section)):
+        assert _section.has_class("-collapsed"), f"空分区应自动折叠: {_key}"
+        assert str(_section.border_title).startswith("▶"), _section.border_title
+        assert not app.query_one(f"#{_key}-list", VerticalScroll).display, f"折叠后列表应隐藏: {_key}"
         _rows = _rows_text(f"#{_key}-list .info-row")
-        assert _rows == "(Empty)", f"空分区应显示 (Empty): #{_key}-list = {_rows!r}"
+        assert _rows == "(Empty)", f"空分区占位行应保留: #{_key}-list = {_rows!r}"
     # 还原，避免影响后续分区
     RUNTIME_STATE.set_todos(saved.todos)
     for _bg in saved.background:
@@ -198,4 +221,5 @@ async def run(app, pilot) -> None:
     for _sa in saved.subagents:
         RUNTIME_STATE.register_subagent(_sa.id, _sa.description, _sa.goal)
         RUNTIME_STATE.update_subagent(_sa.id, _sa.phase, _sa.detail)
-    print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + independent collapse")
+    await pilot.pause(1.3)  # 还原后让有内容的分区重新自动展开
+    print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + content-driven collapse")

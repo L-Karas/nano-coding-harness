@@ -1,8 +1,9 @@
 """右栏信息面板：Todos / Background Tasks / Subagents 分区。
 
 数据源为 RuntimeState 单例的类型化快照（core.runtime_state，ADR-0004）；agent 等线程经具名
-写入口更新，面板 1s 轮询同步，有进行中项时 0.1s 轮播字形。分区与条目点击在本部件内处理：
-运行中条目行尾 ■ = 指名停止（ADR-0009），行其余处 = 展开 / 折叠。
+写入口更新，面板 1s 轮询同步，有进行中项时 0.1s 轮播字形。分区按内容有无自动展开 / 折叠：
+空分区只留标题行，有内容的分区展开；手动点击覆盖保持到该分区下次「空 ↔ 非空」跳变。
+分区与条目点击在本部件内处理：运行中条目行尾 ■ = 指名停止（ADR-0009），行其余处 = 展开 / 折叠。
 """
 
 from __future__ import annotations
@@ -99,7 +100,10 @@ class _InfoRow(Horizontal):
 
 
 class _InfoPanel(Vertical):
-    """右栏分区卡片：标题（▼/▶ + 计数）随边框点击折叠，条目行按数据签名 1s 轮询重建。"""
+    """右栏分区卡片：标题（▼/▶ + 计数）随边框点击折叠，条目行按数据签名 1s 轮询重建。
+
+    分区展开态由内容有无驱动：空 ↔ 非空跳变时自动折叠 / 展开；无跳变时保留手动点击状态。
+    手动点击不是永久覆盖：内容跳变时以内容为准（与右栏整体的手动展开语义不同）。"""
 
     SECTIONS = {"todos": "Todos", "bg": "Background Tasks", "subagents": "Subagents"}  # 顺序即上下顺序
     EMPTY = "(Empty)"  # 空分区占位行（各分区同一文案）
@@ -114,6 +118,7 @@ class _InfoPanel(Vertical):
         self._state = state  # 读侧只在 snapshot() 上取数，不 import 三个写入方
         self._on_sections_changed = on_sections_changed  # 三区活动状态回传（驱动 App 自动展开/收回）
         self._sig: dict[str, object] = {}  # 各区上次渲染的数据签名
+        self._has_content: dict[str, bool] = {}  # 各区上次的内容有无（仅跳变时重设展开态）
         self._cursor = 0
         self._anim = None  # 加载动画 interval（有进行中项时惰性启动）
 
@@ -146,18 +151,21 @@ class _InfoPanel(Vertical):
             kind = target.id.removesuffix("-section")
             target.set_class(not target.has_class("-collapsed"), "-collapsed")
             self._head_text(kind, len(self._items(kind, self._state.snapshot())))
+            # 不更新 _has_content：手动状态保持到该分区下次内容有无跳变
 
     # ---------- 数据同步 ----------
 
     def _refresh(self) -> None:
-        """同步分区：条目按签名按需重建，标题更新计数，有进行中项时驱动轮播；
-        最后把三区活动状态回传给构造时注入的回调（驱动 App 自动展开/收回）。"""
+        """同步分区：条目按签名按需重建，内容有无跳变时重设展开态，标题更新计数，
+        有进行中项时驱动轮播；最后把三区活动状态回传给构造时注入的回调（驱动 App 自动展开/收回）。"""
         running = False
         non_empty = False
         snap = self._state.snapshot()
         for kind in self.SECTIONS:
             items = self._sync_rows(kind, snap)
-            non_empty |= bool(items)
+            has_content = bool(items)
+            self._sync_section(kind, has_content)
+            non_empty |= has_content
             self._head_text(kind, len(items))
             running |= any(it["status"] in _RUNNING_STATUSES for it in items)
         self._sync_anim(running)
@@ -202,6 +210,15 @@ class _InfoPanel(Vertical):
         else:
             holder.mount(*(_InfoRow(kind, it, self._cursor) for it in items))
         return items
+
+    def _sync_section(self, kind: str, has_content: bool) -> None:
+        """仅在「空 ↔ 非空」跳变时按内容重设展开态；其余时间保留用户手动状态。"""
+        previous = self._has_content.get(kind)
+        if previous == has_content:
+            return
+        # 首次同步时 previous 为 None，与 bool 不等：按当前内容初始化展开态
+        self._has_content[kind] = has_content
+        self.query_one(f"#{kind}-section", Vertical).set_class(not has_content, "-collapsed")
 
     def _head_text(self, kind: str, count: int) -> None:
         """上边框左端标题 = 折叠箭头（随分区状态）+ 分区名 + dim 计数。"""

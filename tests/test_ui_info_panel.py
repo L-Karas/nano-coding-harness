@@ -1,5 +1,5 @@
-"""右栏信息面板的折叠生命周期：三区（Todos / Background Tasks / Subagents）全空时默认折叠，
-任一非空即自动展开；清空后若无手动展开则自动收回；Ctrl+←/→ 调宽，下限即折叠态。"""
+"""右栏信息面板的折叠生命周期：分区按内容有无自动展开（空分区默认折叠），三区全空时右栏
+默认折叠、任一非空即自动展开；清空后若无手动展开则自动收回；Ctrl+←/→ 调宽，下限即折叠态。"""
 import asyncio
 
 from textual.containers import Vertical
@@ -22,6 +22,10 @@ def _is_collapsed(app: ChatApp) -> bool:
 def _refresh(app: ChatApp) -> None:
     """驱动一次面板同步（等价于 1s 轮询那一拍），避免测试等真实 interval。"""
     app.query_one("#info-panel", _InfoPanel)._refresh()
+
+
+def _section(app: ChatApp, key: str) -> Vertical:
+    return app.query_one(f"#{key}-section", Vertical)
 
 
 def test_panel_starts_collapsed():
@@ -84,6 +88,183 @@ def test_auto_collapses_when_activity_ends():
             state.set_todos([])
             _refresh(app)
             assert _is_collapsed(app)
+
+    asyncio.run(main())
+
+
+def test_empty_sections_start_collapsed():
+    async def main() -> None:
+        app = _app(RuntimeState())
+        async with app.run_test():
+            for key in ("todos", "bg", "subagents"):
+                section = _section(app, key)
+                assert section.has_class("-collapsed")
+                assert str(section.border_title).startswith("▶")
+                assert "· 0" in str(section.border_title)
+
+    asyncio.run(main())
+
+
+def test_only_sections_with_content_start_expanded():
+    state = RuntimeState()
+    state.set_todos([TodoEntry("task", "pending")])
+    state.register_background("bg-1", "terminal(pytest)")
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test():
+            assert not _section(app, "todos").has_class("-collapsed")
+            assert not _section(app, "bg").has_class("-collapsed")
+            assert _section(app, "subagents").has_class("-collapsed")
+
+    asyncio.run(main())
+
+
+def test_completed_items_count_as_content():
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test():
+            state.set_todos([TodoEntry("done", "completed")])
+            state.register_background("bg-1", "terminal(pytest)")
+            _refresh(app)
+            state.complete_background("bg-1", ToolResult(content="done"))
+            _refresh(app)
+            assert not _section(app, "todos").has_class("-collapsed")
+            assert not _section(app, "bg").has_class("-collapsed")
+            assert _section(app, "subagents").has_class("-collapsed")
+
+    asyncio.run(main())
+
+
+def test_section_follows_content_presence_transitions():
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test():
+            state.set_todos([TodoEntry("one", "pending")])
+            _refresh(app)
+            assert not _section(app, "todos").has_class("-collapsed")
+
+            state.register_background("bg-1", "terminal(pytest)")
+            _refresh(app)
+            assert not _section(app, "bg").has_class("-collapsed")
+            assert not _section(app, "todos").has_class("-collapsed")
+
+            state.register_subagent("sa-1", "explore")
+            _refresh(app)
+            assert not _section(app, "subagents").has_class("-collapsed")
+
+            state.set_todos([])
+            _refresh(app)
+            assert _section(app, "todos").has_class("-collapsed")
+            assert not _section(app, "bg").has_class("-collapsed")
+            assert not _section(app, "subagents").has_class("-collapsed")
+
+    asyncio.run(main())
+
+
+def test_manual_section_collapse_holds_until_presence_changes():
+    state = RuntimeState()
+    state.set_todos([TodoEntry("one", "pending")])
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            section = _section(app, "todos")
+            assert not section.has_class("-collapsed")
+            await pilot.click(section, offset=(2, 0))
+            assert section.has_class("-collapsed")
+
+            state.set_todos([TodoEntry("one", "pending"), TodoEntry("two", "pending")])
+            _refresh(app)
+            assert section.has_class("-collapsed"), "仍非空：手动收起应保持"
+
+            state.set_todos([])
+            _refresh(app)
+            assert section.has_class("-collapsed")
+            state.set_todos([TodoEntry("again", "pending")])
+            _refresh(app)
+            assert not section.has_class("-collapsed"), "空 → 非空后自动规则重新接管"
+
+    asyncio.run(main())
+
+
+def test_manual_expand_empty_section_shows_placeholder():
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            await pilot.click("#info-tab-glyph")  # 空态手动展开右栏
+            section = _section(app, "todos")
+            assert section.has_class("-collapsed")
+            await pilot.click(section, offset=(2, 0))
+            assert not section.has_class("-collapsed")
+            await pilot.pause()
+            rows = app.query_one("#todos-list").query(".info-row")
+            assert len(rows) == 1 and str(rows[0].render()) == "(Empty)"
+
+            state.set_todos([TodoEntry("task", "pending")])
+            _refresh(app)
+            assert not section.has_class("-collapsed")
+            state.set_todos([])
+            _refresh(app)
+            assert section.has_class("-collapsed"), "清空后自动收起"
+
+    asyncio.run(main())
+
+
+def test_section_manual_state_survives_panel_toggle():
+    state = RuntimeState()
+    state.set_todos([TodoEntry("task", "pending")])
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            section = _section(app, "todos")
+            assert not section.has_class("-collapsed")
+            await pilot.click(section, offset=(2, 0))
+            assert section.has_class("-collapsed")
+
+            await pilot.click("#info-tab-glyph")  # 收起整个右栏
+            assert _is_collapsed(app)
+            await pilot.click("#info-tab-glyph")  # 再展开
+            assert not _is_collapsed(app)
+            assert section.has_class("-collapsed"), "右栏开关不应重置分区手动状态"
+
+    asyncio.run(main())
+
+
+def test_sections_update_while_panel_collapsed():
+    state = RuntimeState()
+    state.set_todos([TodoEntry("task", "pending")])
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            assert not _is_collapsed(app)  # 挂载时 todos 非空：右栏自动展开
+            await pilot.click("#info-tab-glyph")  # 手动收起右栏
+            assert _is_collapsed(app)
+
+            state.register_background("bg-1", "terminal(pytest)")
+            _refresh(app)
+            assert _is_collapsed(app), "全局仍非空，右栏不应自动展开"
+            assert not _section(app, "bg").has_class("-collapsed")
+            assert _section(app, "subagents").has_class("-collapsed")
+
+            state.set_todos([])
+            _refresh(app)
+            assert _is_collapsed(app)
+            assert _section(app, "todos").has_class("-collapsed")
+            assert not _section(app, "bg").has_class("-collapsed")
+
+            await pilot.click("#info-tab-glyph")  # 展开右栏：分区已按折叠期间的内容更新
+            assert not _is_collapsed(app)
+            assert _section(app, "todos").has_class("-collapsed")
+            assert not _section(app, "bg").has_class("-collapsed")
 
     asyncio.run(main())
 

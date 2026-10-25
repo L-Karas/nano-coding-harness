@@ -46,8 +46,9 @@ Toast, Toast:ansi { background: #1e293b; }
 #info-tab-glyph { pointer: pointer; }
 
 /* ── 右栏分区卡片（Todos / Background Tasks / Subagents）──
-   折叠时 height:auto，只剩上下边框（标题已嵌上边框）；展开时 height 取 Vertical 默认 1fr，
-   与另一个展开分区均分右栏，各自列表滚动 */
+   _InfoPanel 按内容有无设置 -collapsed：空分区默认折叠，有内容的分区展开；点边框可手动切换，
+   手动状态保持到该分区下次「空 ↔ 非空」跳变。折叠时 height:auto，只剩上下边框（标题已嵌上边框）；
+   展开时 height 取 Vertical 默认 1fr，与另一个展开分区均分右栏，各自列表滚动 */
 #todos-section, #bg-section, #subagents-section {
     margin-top: 1;
     padding: 0 1;             /* 终端行宝贵，竖距不设 padding，边框紧贴文字 */
