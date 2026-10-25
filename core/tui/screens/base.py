@@ -17,21 +17,27 @@ from textual.widget import Widget
 from textual.widgets import Input, OptionList, Select, Static, Tabs, TextArea
 from textual.widgets.option_list import Option
 
-from core.tui.theme import SECONDARY_TEXT
+from core.tui.theme import (
+    ACTIVE_GLYPH,
+    ACTIVE_STYLE,
+    INACTIVE_GLYPH,
+    INACTIVE_STYLE,
+    SECONDARY_TEXT,
+)
 
 _MODEL_NAME_STYLE = "#f8fafc"
 _MODEL_PROVIDER_STYLE = SECONDARY_TEXT
 _MODEL_CURRENT_STYLE = "#34d399"  # 同 _SessionRow 的 current 标记色
-_ENTRY_NAME_STYLE = "bold #4ade80"  # 「● 名称」段（/skills、/mcp 工具列表共用）
 _ENTRY_DESC_STYLE = SECONDARY_TEXT
 _ENTRY_TAG_STYLE = "#a5adce"  # [tag] 段（/skills 的来源标记 global/user/project）
 
 
-def _entry_row(name: str, desc: str = "", tag: str = "") -> Text:
-    """「● 名称」行；tag 非空时以源标记色追加 [tag]；描述 strip 后自第二行起
-    （内部换行 / 缩进原样保留）。"""
+def _entry_row(name: str, desc: str = "", tag: str = "", *, enabled: bool = True) -> Text:
+    """「● 名称」行；enabled=False 改用红色「○ 名称」（同 /mcp 连接失败的 server）；
+    tag 非空时以源标记色追加 [tag]；描述 strip 后自第二行起（内部换行 / 缩进原样保留）。"""
     row = Text()
-    row.append("● " + name, style=_ENTRY_NAME_STYLE)
+    glyph = ACTIVE_GLYPH if enabled else INACTIVE_GLYPH
+    row.append(f"{glyph} {name}", style=ACTIVE_STYLE if enabled else INACTIVE_STYLE)
     if tag:
         row.append(f" [{tag}]", style=_ENTRY_TAG_STYLE)
     desc = (desc or "").strip()

@@ -9,6 +9,12 @@ SECONDARY_TEXT = "#94a3b8"  # 次级文字色：说明 / 未配置 / 占位提�
 COMPACT_HINT = "#7dd3fc"  # 页脚压缩阈值提示色（青蓝，区别于次级灰）
 PLACEHOLDER = "Type a message… Enter to send · Ctrl+J for newline"
 
+# 状态字形 / 配色：/extensions 启用/禁用、/mcp connected/failed 共用
+ACTIVE_GLYPH = "●"
+INACTIVE_GLYPH = "○"
+ACTIVE_STYLE = "bold #4ade80"
+INACTIVE_STYLE = "#f87171"
+
 # 页脚审批模式值配色（按危险度分档）：Manual 黄 / Decision Model·LLM 绿 / Yolo 红；表外模式回落次级灰
 APPROVAL_MODE_COLORS = {
     "Manual": "#e5c890",

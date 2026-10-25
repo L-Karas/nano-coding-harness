@@ -46,6 +46,14 @@ def test_same_origin_and_name_replaces_in_place():
     ]
 
 
+def test_description_is_stored_and_replaced_in_place():
+    registry.record("demo", "user", enabled=True, description="first")
+    registry.record("demo", "user", enabled=False, detail="disabled",
+                    description="second")
+
+    assert list_extensions()[0].description == "second"
+
+
 def test_same_name_keeps_user_and_builtin_separate():
     registry.record("permission", "user", enabled=True)
     registry.record("permission", "builtin", enabled=True)

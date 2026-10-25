@@ -9,17 +9,21 @@ from core.tui.screens.base import _entry_row, _ListPickerScreen, _rebuild_option
 
 
 def _summary(entry: ExtensionInfo) -> str:
-    """第二行：已启用展示 hook 事件，未启用展示原因。"""
+    """名称行之后：可选描述（第二行）+ hook 事件 / 未启用原因（其后一行）。"""
     if not entry.enabled:
-        return entry.detail or "disabled"
-    return f"hooks: {', '.join(entry.events)}" if entry.events else "no hooks"
+        status = entry.detail or "disabled"
+    else:
+        status = f"hooks: {', '.join(entry.events)}" if entry.events else "no hooks"
+    return f"{entry.description}\n{status}" if entry.description else status
 
 
 class ExtensionsScreen(_ListPickerScreen):
-    """扩展列表弹窗（/extensions）：行 = ● 名称 [user|builtin] + hook / 未启用原因。
+    """扩展列表弹窗（/extensions）：行 = 状态字形 名称 [user|builtin] + 可选描述 + hook /
+    未启用原因。
 
-    只读浏览：搜索过滤名称，Esc 关闭；Enter / 单击不触发动作。数据来自
-    core.extension.list_extensions()（loader 扫描与内置注册时登记）。"""
+    已启用为绿色 ●，未启用为红色 ○（同 /mcp 连接失败的 server）。只读浏览：搜索过滤
+    名称，Esc 关闭；Enter / 单击不触发动作。数据来自 core.extension.list_extensions()
+    （loader 扫描与内置注册时登记）。"""
 
     TITLE = "Extensions"
     HINT = "  ↑/↓ browse    Esc close"
@@ -33,7 +37,8 @@ class ExtensionsScreen(_ListPickerScreen):
     def _reload(self) -> None:
         _rebuild_options(
             self._list(),
-            [Option(_entry_row(entry.name, _summary(entry), entry.origin),
+            [Option(_entry_row(entry.name, _summary(entry), entry.origin,
+                               enabled=entry.enabled),
                     id=f"{entry.origin}:{entry.name}")
              for entry in self._extensions if self._match(entry.name)],
         )

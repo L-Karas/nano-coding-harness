@@ -11,13 +11,16 @@ Origin = Literal["user", "builtin"]
 
 @dataclass(frozen=True)
 class ExtensionInfo:
-    """一条扩展登记：user = .harness/extensions 下的文件夹；builtin = 内置模块。"""
+    """一条扩展登记：user = .harness/extensions 下的文件夹；builtin = 内置模块。
+
+    description 为清单里的可选展示描述（空 = 不显示）。"""
 
     name: str
     origin: Origin
     enabled: bool
     detail: str = ""
     events: tuple[str, ...] = ()
+    description: str = ""
 
 
 _ENTRIES: list[ExtensionInfo] = []
@@ -30,9 +33,17 @@ def record(
         enabled: bool,
         detail: str = "",
         events: Iterable[str] = (),
+        description: str = "",
 ) -> None:
     """登记一条扩展；同名同源原地替换，不同来源同名各自保留。"""
-    info = ExtensionInfo(name, origin, enabled, detail, _unique_events(events))
+    info = ExtensionInfo(
+        name=name,
+        origin=origin,
+        enabled=enabled,
+        detail=detail,
+        events=_unique_events(events),
+        description=description,
+    )
     for index, existing in enumerate(_ENTRIES):
         if (existing.origin, existing.name) == (origin, name):
             _ENTRIES[index] = info

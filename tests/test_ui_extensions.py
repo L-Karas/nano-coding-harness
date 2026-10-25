@@ -1,4 +1,4 @@
-"""`/extensions` 弹窗：来源 tag、hook / 未启用原因、搜索、Enter 无动作、Esc 关闭、空列表提示。"""
+"""`/extensions` 弹窗：来源 tag、可选描述、hook / 未启用原因、搜索、Enter 无动作、Esc 关闭、空列表提示。"""
 import asyncio
 
 import pytest
@@ -19,12 +19,14 @@ def _extensions():
     registry.record("observers", "builtin", enabled=True, events=["before_tool"])
     registry.record("permission", "builtin", enabled=True, events=["before_tool"])
     registry.record("alpha", "user", enabled=False, detail="invalid extension.json")
-    registry.record("zeta", "user", enabled=True, events=["before_llm", "after_tool"])
+    registry.record("zeta", "user", enabled=True, events=["before_llm", "after_tool"],
+                    description="Zeta extension")
     yield
     registry.reset()
     for entry in original:
         registry.record(entry.name, entry.origin, enabled=entry.enabled,
-                        detail=entry.detail, events=entry.events)
+                        detail=entry.detail, events=entry.events,
+                        description=entry.description)
 
 
 def _rows(app):
@@ -49,8 +51,8 @@ def test_extensions_command_is_completable_and_opens_read_only_screen():
             assert rows == [
                 "● observers [builtin]\nhooks: before_tool",
                 "● permission [builtin]\nhooks: before_tool",
-                "● alpha [user]\ninvalid extension.json",
-                "● zeta [user]\nhooks: before_llm, after_tool",
+                "○ alpha [user]\ninvalid extension.json",
+                "● zeta [user]\nZeta extension\nhooks: before_llm, after_tool",
             ]
             assert screen.TITLE == "Extensions"
             assert screen.HINT == "  ↑/↓ browse    Esc close"
@@ -71,8 +73,11 @@ def test_search_filters_by_name_and_enter_does_not_close():
             search.value = "ZETA"
             await pilot.pause()
             assert [lst.get_option_at_index(i).prompt.plain for i in range(lst.option_count)] == [
-                "● zeta [user]\nhooks: before_llm, after_tool",
+                "● zeta [user]\nZeta extension\nhooks: before_llm, after_tool",
             ]
+            search.value = "Zeta extension"
+            await pilot.pause()
+            assert lst.option_count == 0, "搜索只匹配名称，不匹配描述"
             search.value = ""
             await pilot.pause()
             assert lst.option_count == 4
@@ -102,6 +107,34 @@ def test_list_is_transparent_and_hint_is_pinned_to_window_bottom():
             assert lst.region.bottom <= hint.region.y, (lst.region, hint.region)
             assert hint.region.bottom == picker.content_region.bottom, \
                 f"提示行应钉在窗口最下方: {hint.region} / {picker.content_region}"
+    asyncio.run(main())
+
+
+def test_disabled_extension_uses_failed_mcp_server_style():
+    async def main():
+        app = ChatApp(handle_query=lambda query: None)
+        async with app.run_test() as pilot:
+            app._open_extensions()
+            await pilot.pause()
+            _screen, lst, _ = _rows(app)
+            row = lst.get_option_at_index(2).prompt  # alpha（禁用）
+            assert row.plain.startswith("○ alpha")
+            head = next(span for span in row.spans
+                        if row.plain[span.start:span.end] == "○ alpha")
+            assert str(head.style) == "#f87171", "未启用行应同 /mcp failed server 的红色"
+    asyncio.run(main())
+
+
+def test_disabled_extension_shows_description_before_reason():
+    async def main():
+        registry.record("off", "user", enabled=False, detail="disabled",
+                        description="Disabled but described")
+        app = ChatApp(handle_query=lambda query: None)
+        async with app.run_test() as pilot:
+            app._open_extensions()
+            await pilot.pause()
+            _screen, _lst, rows = _rows(app)
+            assert "○ off [user]\nDisabled but described\ndisabled" in rows
     asyncio.run(main())
 
 

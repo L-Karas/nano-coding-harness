@@ -8,10 +8,11 @@
 
 扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
 
-扩展所需的自定义配置可以直接写在扩展目录的 `extension.json` 中；加载器只解析 `enabled`，其余字段由扩展在 `register(api)` 里自行读取（见 5.8）。
+扩展所需的自定义配置可以直接写在扩展目录的 `extension.json` 中；加载器解析 `enabled` 与可选的 `description`（后者仅用于 `/extensions` 展示），其余字段由扩展在 `register(api)` 里自行读取（见 5.8）。
 
 > 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py` / `protocol.py`）
-> 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（`after_tool` 覆盖范围已由本文件 §3.3 / §8 取代）
+> 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（`after_tool` 覆盖范围已由本文件 §3.3 / §8 取代；
+> `description` 字段见本文件 §1.4 / §2 / §5.8）
 
 - [1. 快速开始](#1-快速开始)
 - [2. 加载规则](#2-加载规则)
@@ -31,7 +32,7 @@
 ```
 .harness/extensions/
   my_ext/
-    extension.json     # 启用开关 + 扩展自定义配置（见 5.8）
+    extension.json     # 启用开关 + 可选展示描述 + 扩展自定义配置（见 5.8）
     __init__.py        # 入口：必须定义 register(api)
     helpers.py         # 可选：同包模块，包内导入必须用相对导入
   disabled_ext/
@@ -45,11 +46,12 @@
 
 ```json
 {
-    "enabled": true
+    "enabled": true,
+    "description": "在 before_llm 与 after_tool 处追加标记。"
 }
 ```
 
-`enabled` 是加载器唯一的门槛字段；需要给扩展传配置时，直接在同一文件里追加自定义字段（如 `"tag": "[my_ext]"`）。加载器不会解析或校验这些字段，由扩展自行读取（见 5.8）。
+`enabled` 是加载器唯一的门槛字段；`description` 是可选的展示描述，仅用于 `/extensions` 窗口（空串 / 纯空白 / 非字符串视为无描述，不影响加载）。需要给扩展传配置时，直接在同一文件里追加自定义字段（如 `"tag": "[my_ext]"`）。加载器不会解析或校验这些自定义字段，由扩展自行读取（见 5.8）。
 
 `__init__.py`：
 
@@ -92,14 +94,17 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 
 TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`）：
 
-- 已启用与未启用的扩展都会列出；`[user]` = `.harness/extensions/` 下的外部扩展，
+- 已启用与未启用的扩展都会列出；未启用项以红色 `○` 标示（同 `/mcp` 连接失败的
+  server），已启用项为绿色 `●`。`[user]` = `.harness/extensions/` 下的外部扩展，
   `[builtin]` = 内置观察者 / 权限门。
-- 已启用项第二行显示注册的 hook 事件（`hooks: before_tool`），无回调显示 `no hooks`；
-  未启用项显示原因：`disabled`、`missing extension.json`、`invalid extension.json`、
-  `missing register(api)` 或 `load failed`。
+- 清单含非空 `description` 时，描述显示在名称下方（第二行），hook 事件或未启用原因
+  顺延到下一行；无描述时不占行。
+- 已启用项显示注册的 hook 事件（`hooks: before_tool`），无回调显示 `no hooks`；未启用项
+  显示原因：`disabled`、`missing extension.json`、`invalid extension.json`、
+  `missing register(api)` 或 `load failed`。只要清单可解析，禁用 / 加载失败的扩展也显示描述。
 - 列表只读（`Enter` / 单击无动作，`Esc` 关闭），可用搜索栏按名称过滤。
-- 窗口展示的是**启动时**的扫描 / 注册结果；修改 `enabled` 或扩展代码后仍需重启进程，
-  列表才会与实际运行状态一致。
+- 窗口展示的是**启动时**的扫描 / 注册结果；修改 `enabled`、`description` 或扩展代码后
+  仍需重启进程，列表才会与实际运行状态一致。
 
 ## 2. 加载规则
 
@@ -111,14 +116,15 @@ TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`
 | 跳过前缀 | 名称以 `_` 开头的文件夹跳过（如 `_draft/`） |
 | 启用门槛 | `extension.json` 中 `enabled` **严格为布尔 `true`**（Python 的 `is True`）才加载 |
 | 不启用的情况 | `enabled` 为 `false`、缺失、`"true"`、`1`、`null`、清单缺失、JSON 非法 → 一律按不启用处理并记日志 |
-| 自定义配置 | `enabled` 以外的字段由扩展自行读取（`Path(__file__).parent / "extension.json"`）；加载器不解析、不校验、不注入 |
+| 展示描述 | 可选 `description` 字符串；`/extensions` 中显示在名称下方。连续空白折叠为单空格；缺失、空串、纯空白、非字符串视为无描述，不影响加载 |
+| 自定义配置 | `enabled` / `description` 以外的字段由扩展自行读取（`Path(__file__).parent / "extension.json"`）；加载器不解析、不校验、不注入 |
 | 入口 | 固定为 `__init__.py`，以包方式加载（模块名 `nano_extension_<文件夹名>`）；扩展目录不在 `sys.path` 上，包内多文件**必须用相对导入**（`from .helpers import x`） |
 | 注册入口 | 必须定义可调用的 `register(api)`；缺失或不认识 `api.on` 的非法参数 → 该扩展整体作废 |
 | 原子性 | `api.on()` 只缓冲注册；`register(api)` **正常返回后**才一次性提交全部注册。中途抛错 → 该扩展零注册 |
 | 失败隔离 | 单个扩展导入失败 / 注册失败只影响自己并记日志，不阻断启动，也不影响其它扩展 |
 | 加载顺序 | 文件夹名字典序；同一扩展内按 `api.on()` 调用顺序 |
 | 幂等 | 进程内 `load_extensions()` 只生效一次 |
-| 生效时机 | 启动时读取一次；修改 `enabled`、自定义配置或扩展代码后**必须重启进程** |
+| 生效时机 | 启动时读取一次；修改 `enabled`、`description`、自定义配置或扩展代码后**必须重启进程** |
 
 `.harness/extensions/` 相对于**启动进程时的工作目录**（`WORKDIR`）。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
 
@@ -363,13 +369,14 @@ async def local_web_search(ctx):
 
 ### 5.8 读取扩展配置（`extension.json`）
 
-加载器只读取 `enabled`，不会把清单内容注入 `api`；扩展需要配置时，在同一个 `extension.json` 里追加自定义字段，并在 `register(api)` 中按包路径自行读取。
+加载器读取 `enabled` 与可选的 `description`（后者仅用于 `/extensions` 展示），不会把清单内容注入 `api`；扩展需要配置时，在同一个 `extension.json` 里追加自定义字段，并在 `register(api)` 中按包路径自行读取。
 
 `extension.json`：
 
 ```json
 {
     "enabled": true,
+    "description": "在 after_tool 结果末尾追加标记。",
     "tag": "[my_ext]"
 }
 ```
@@ -392,10 +399,11 @@ def register(api):
 
 
 def _read_manifest():
-    """读取本扩展清单；enabled 属于加载器，其余字段交给扩展。"""
+    """读取本扩展清单；enabled / description 属于加载器，其余字段交给扩展。"""
     path = Path(__file__).parent / "extension.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {key: value for key, value in data.items() if key != "enabled"}
+    return {key: value for key, value in data.items()
+            if key not in ("enabled", "description")}
 
 
 def _mark(ctx, tag):

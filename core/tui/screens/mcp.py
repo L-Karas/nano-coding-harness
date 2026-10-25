@@ -22,11 +22,17 @@ from core.tui.screens.base import (
     _field,
     _rebuild_options,
 )
-from core.tui.theme import _SPINNER_FRAMES
+from core.tui.theme import (
+    ACTIVE_GLYPH,
+    ACTIVE_STYLE,
+    INACTIVE_GLYPH,
+    INACTIVE_STYLE,
+    _SPINNER_FRAMES,
+)
 
 # server 行按连接状态着色：connected 绿 ●；connecting 橙色 spinner（_cursor 轮播）；failed 红 ○
-_SERVER_STYLE = {"connected": "bold #4ade80", "connecting": "#fb923c", "failed": "#f87171"}
-_SERVER_GLYPH = {"connected": "●", "failed": "○"}
+_SERVER_STYLE = {"connected": ACTIVE_STYLE, "connecting": "#fb923c", "failed": INACTIVE_STYLE}
+_SERVER_GLYPH = {"connected": ACTIVE_GLYPH, "failed": INACTIVE_GLYPH}
 
 _HTTP_TRANSPORTS = ("sse", "streamable_http")  # 走 url + headers 的传输类型
 
@@ -35,7 +41,7 @@ def _server_row(name: str, info: dict, cursor: int = 0) -> Text:
     """server 行 = 「状态字形 名称」；未识别状态按 connected 样式。"""
     status = info.get("status", "")
     glyph = (_SPINNER_FRAMES[cursor % len(_SPINNER_FRAMES)] if status == "connecting"
-             else _SERVER_GLYPH.get(status, "●"))
+             else _SERVER_GLYPH.get(status, ACTIVE_GLYPH))
     return Text(f"{glyph} {name}", style=_SERVER_STYLE.get(status, _SERVER_STYLE["connected"]))
 
 

@@ -1,5 +1,5 @@
-"""冒烟自检 · /extensions：来源 tag / hook 与未启用原因 / 搜索 / Enter 不关窗 / Esc 关闭 /
-空 registry 提示卡。"""
+"""冒烟自检 · /extensions：来源 tag / 可选描述 / hook 与未启用原因 / 搜索 / Enter 不关窗 /
+Esc 关闭 / 空 registry 提示卡。"""
 from __future__ import annotations
 
 import core.extension.registry as registry
@@ -20,10 +20,14 @@ async def run(app, pilot) -> None:
     original = list_extensions()
     registry.reset()
     registry.record("smoke-builtin", "builtin", enabled=True, events=["before_tool"])
-    registry.record("smoke-off", "user", enabled=False, detail="missing extension.json")
-    registry.record("smoke-on", "user", enabled=True, events=["before_llm", "after_tool"])
+    registry.record("smoke-missing", "user", enabled=False, detail="missing extension.json")
+    registry.record("smoke-off", "user", enabled=False, detail="disabled",
+                    description="Smoke disabled extension")
+    registry.record("smoke-on", "user", enabled=True, events=["before_llm", "after_tool"],
+                    description="Smoke enabled extension")
     try:
-        # /ext 补全到 /extensions，Enter 打开只读弹窗；行 = ● 名称 [来源] + hook / 未启用原因
+        # /ext 补全到 /extensions，Enter 打开只读弹窗；行 = 状态字形 名称 [来源] + 可选描述 +
+        # hook / 未启用原因（未启用以同 /mcp failed server 的红色 ○ 标示）
         prompt.focus()
         await type_query(prompt, pilot, "/ext")
         assert prompt._candidates == ["/extensions"], prompt._candidates
@@ -42,18 +46,21 @@ async def run(app, pilot) -> None:
             f"提示行应钉在窗口最下方: {hint.region} / {picker.content_region}"
         assert _rows(app) == [
             "● smoke-builtin [builtin]\nhooks: before_tool",
-            "● smoke-off [user]\nmissing extension.json",
-            "● smoke-on [user]\nhooks: before_llm, after_tool",
+            "○ smoke-missing [user]\nmissing extension.json",
+            "○ smoke-off [user]\nSmoke disabled extension\ndisabled",
+            "● smoke-on [user]\nSmoke enabled extension\nhooks: before_llm, after_tool",
         ], _rows(app)
         # 搜索栏过滤名称（忽略大小写）；清空恢复
         search = screen.query_one("#search-input", Input)
         assert search.placeholder == "Search extensions…" and search.has_focus
         search.value = "SMOKE-ON"
         await settle(pilot)
-        assert _rows(app) == ["● smoke-on [user]\nhooks: before_llm, after_tool"], _rows(app)
+        assert _rows(app) == [
+            "● smoke-on [user]\nSmoke enabled extension\nhooks: before_llm, after_tool"
+        ], _rows(app)
         search.value = ""
         await settle(pilot)
-        assert len(_rows(app)) == 3, "清空搜索应恢复全部扩展"
+        assert len(_rows(app)) == 4, "清空搜索应恢复全部扩展"
         # 只读：单击 / Enter 都不关窗，Esc 关闭
         await pilot.click("#extensions-list", offset=(2, 0))
         await pilot.pause()
@@ -73,9 +80,11 @@ async def run(app, pilot) -> None:
         assert not isinstance(app.screen_stack[-1], ExtensionsScreen), "空 registry 不应开空弹窗"
         bodies = [str(w.render()) for w in app.query(".card-body")]
         assert any("No extensions found" in body for body in bodies), bodies
-        print("[smoke] /extensions OK: source tags, disabled reason, search, read-only, empty notice")
+        print("[smoke] /extensions OK: descriptions, source tags, disabled reasons, search, "
+              "read-only, empty notice")
     finally:
         registry.reset()
         for entry in original:
             registry.record(entry.name, entry.origin, enabled=entry.enabled,
-                            detail=entry.detail, events=entry.events)
+                            detail=entry.detail, events=entry.events,
+                            description=entry.description)

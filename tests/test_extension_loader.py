@@ -11,6 +11,7 @@ from core.extension import ExtensionInfo, list_extensions, reset_extensions
 from core.extension.loader import load_extensions
 
 REGISTER_LLM = "def register(api):\n    api.on('before_llm', lambda ctx: None)\n"
+_MISSING = object()
 
 
 @pytest.fixture(autouse=True)
@@ -28,11 +29,15 @@ def _make_extension(
     enabled=True,
     manifest=True,
     entry=True,
+    description=_MISSING,
 ):
     folder = root / name
     folder.mkdir(parents=True)
     if manifest:
-        (folder / "extension.json").write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
+        payload = {"enabled": enabled}
+        if description is not _MISSING:
+            payload["description"] = description
+        (folder / "extension.json").write_text(json.dumps(payload), encoding="utf-8")
     if entry:
         (folder / "__init__.py").write_text(body, encoding="utf-8")
     return folder
@@ -160,6 +165,52 @@ def test_enabled_extension_recorded_with_events(tmp_path):
     ]
 
 
+def test_description_is_recorded_and_whitespace_collapsed(tmp_path):
+    _make_extension(tmp_path, "demo", REGISTER_LLM,
+                    description="  Marks\n\tthings  ")
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("demo", "user", True, "", ("before_llm",), "Marks things"),
+    ]
+
+
+def test_disabled_extension_keeps_description(tmp_path):
+    _make_extension(tmp_path, "off", REGISTER_LLM, enabled=False,
+                    description="Shown while disabled")
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("off", "user", False, "disabled", (), "Shown while disabled"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ("X = 1\n", "missing register(api)"),
+        ("def register(api):\n    raise RuntimeError('boom')\n", "load failed"),
+    ],
+)
+def test_load_failure_keeps_description(tmp_path, body, detail):
+    _make_extension(tmp_path, "broken", body, description="Broken but described")
+    load_extensions(tmp_path)
+
+    entry = list_extensions()[0]
+    assert (entry.enabled, entry.detail, entry.description) == (
+        False, detail, "Broken but described")
+
+
+@pytest.mark.parametrize("value", [None, "", "   \n\t", 123, True, [], {}])
+def test_invalid_or_empty_description_is_ignored(tmp_path, value):
+    _make_extension(tmp_path, "demo", REGISTER_LLM, description=value)
+    load_extensions(tmp_path)
+
+    entry = list_extensions()[0]
+    assert entry.enabled is True
+    assert entry.description == ""
+
+
 def test_disabled_extension_recorded_with_reason(tmp_path):
     _make_extension(tmp_path, "off", REGISTER_LLM, enabled=False)
     load_extensions(tmp_path)
@@ -182,6 +233,7 @@ def test_missing_and_invalid_manifest_recorded(tmp_path):
         ("missing", False, "missing extension.json"),
         ("not_object", False, "invalid extension.json"),
     ]
+    assert all(e.description == "" for e in list_extensions())
 
 
 def test_missing_register_recorded(tmp_path):

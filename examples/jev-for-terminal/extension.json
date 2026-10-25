@@ -1,3 +1,4 @@
 {
-  "enabled": false
+  "enabled": false,
+  "description": "Uses Jev to assess terminal command risk and returns allow, ask, or deny."
 }

@@ -1,3 +1,4 @@
 {
-    "enabled": true
+    "enabled": true,
+    "description": "最小扩展示例：在 before_llm 与 after_tool 处追加标记。"
 }
