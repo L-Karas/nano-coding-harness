@@ -38,8 +38,8 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert fake.created == 0 and fake.current_session == "", \
         "忙碌中 /new 不应清空会话指针"
-    bodies = [str(w.render()) for w in app.query(".card-body")]
-    assert any("Previous turn is still running" in b for b in bodies), "忙碌中 /new 应提示"
+    toasts = [n.message for n in app._notifications]
+    assert any("Previous turn is still running" in message for message in toasts), "忙碌中 /new 应提示"
     app._busy = False
     app._manager = None
     app._clear_cards()

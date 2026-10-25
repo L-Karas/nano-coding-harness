@@ -1,5 +1,5 @@
 """冒烟自检 · /extensions：来源 tag / 可选描述 / hook 与未启用原因 / 搜索 / Enter 不关窗 /
-Esc 关闭 / 空 registry 提示卡。"""
+Esc 关闭 / 空 registry toast 提示。"""
 from __future__ import annotations
 
 import core.extension.registry as registry
@@ -71,15 +71,15 @@ async def run(app, pilot) -> None:
         await pilot.press("escape")
         await settle(pilot)
         assert not isinstance(app.screen_stack[-1], ExtensionsScreen), "Esc 未关闭扩展弹窗"
-        # 空 registry：提示卡而非空弹窗
+        # 空 registry：toast 提示而非空弹窗
         registry.reset()
         prompt.focus()
         prompt.text = "/extensions"
         await pilot.press("enter")
         await settle(pilot, 10)
         assert not isinstance(app.screen_stack[-1], ExtensionsScreen), "空 registry 不应开空弹窗"
-        bodies = [str(w.render()) for w in app.query(".card-body")]
-        assert any("No extensions found" in body for body in bodies), bodies
+        toasts = [n.message for n in app._notifications]
+        assert any("No extensions found" in message for message in toasts), toasts
         print("[smoke] /extensions OK: descriptions, source tags, disabled reasons, search, "
               "read-only, empty notice")
     finally:

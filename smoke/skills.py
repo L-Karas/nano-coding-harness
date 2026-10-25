@@ -34,7 +34,7 @@ async def run(app, pilot) -> None:
 
     # /skills：SkillsScreen（OptionList 弹窗，同会话 /provider /model 弹窗组件）
     # 列出全部已扫描技能，行 = ● 技能名（绿色加粗）+ 描述（暗灰完整多行）；Esc 关闭；
-    # 无技能时给出提示卡而非空弹窗（点击右栏条目后焦点可能已不在输入框：先显式聚焦）
+    # 无技能时给出 toast 提示而非空弹窗（点击右栏条目后焦点可能已不在输入框：先显式聚焦）
     prompt.focus()
     prompt.text = "/skills"
     await pilot.press("enter")
@@ -105,14 +105,14 @@ async def run(app, pilot) -> None:
         await pilot.pause(0.05)
     assert not app._busy, "技能回合未结束"
     print("[smoke] /skills Enter OK: fills & sends Invoke skill '<name>'")
-    _skills_mod.SKILL_REGISTRY.clear()  # 无技能场景：应给出提示卡而非空弹窗
+    _skills_mod.SKILL_REGISTRY.clear()  # 无技能场景：应给 toast 提示而非空弹窗
     prompt.focus()
     prompt.text = "/skills"
     await pilot.press("enter")
     await settle(pilot, 10)
     assert not app._busy and not isinstance(app.screen_stack[-1], SkillsScreen), \
         "无技能时不应打开空弹窗"
-    bodies = [str(w.render()) for w in app.query(".card-body")]
-    assert any("No skills found" in b for b in bodies), bodies
+    toasts = [n.message for n in app._notifications]
+    assert any("No skills found" in message for message in toasts), toasts
     _skills_mod.SKILL_REGISTRY.update(_skills_orig)  # 复原（原样放回，含磁盘扫描项）
     print("[smoke] /skills OK: picker-style popup lists all skills, empty registry notifies")

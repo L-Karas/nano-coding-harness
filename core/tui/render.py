@@ -137,10 +137,16 @@ def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = D
     _add_capped_card("diff", body, max_lines)
 
 
-def render_background_notification(message: str, title: str = "🔔 Background Task") -> None:
-    """后台任务通知卡片：加粗标题行固定常驻 + 暗灰正文，正文超出折叠。"""
-    head = Text.assemble((title, "bold #f8fafc"), "\n")
+def render_background_notification(message: str) -> None:
+    """后台任务结果通知卡片（仅后台任务结果回流使用）：加粗固定标题行 + 暗灰正文，正文超出折叠。"""
+    head = Text.assemble(("🔔 Background Task", "bold #f8fafc"), "\n")
     _add_capped_card("notice", _dim_body(message), head=head)
+
+
+def notify(message: str, title: str = "", severity: str = "information") -> None:
+    """即时 toast 通知（后台任务结果之外的提示）：正文按纯文本渲染（markup=False 见
+    `_RenderSurface._notify`，避免工具输出 / 异常文本里的方括号被 Rich 当成标记解析）。"""
+    _exec(lambda app: app._notify(message, title, severity))
 
 
 def render_sessions() -> None:
@@ -270,6 +276,7 @@ register_render(
     render_tool_result=render_tool_result,
     render_tool_result_diff=render_tool_result_diff,
     render_background_notification=render_background_notification,
+    notify=notify,
     render_thinking_status=render_thinking_status,
     render_working_status=render_working_status,
     render_scope=render_scope,

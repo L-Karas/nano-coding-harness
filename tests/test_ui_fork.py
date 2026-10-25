@@ -64,10 +64,10 @@ class _FakePrompt:
 
 def _app(monkeypatch, events):
     """不跑事件循环的 ChatApp：渲染 / 推屏 / 输入栏打桩，返回 (app, prompt, pushed)"""
-    monkeypatch.setattr(commands, "render_background_notification",
-                        lambda body, title="": events.append(("notice", title, body)))
     monkeypatch.setattr(commands, "render_session_history", lambda session: events.append(("render", session)))
     app = ChatApp(handle_query=lambda query: None, on_interrupt=lambda: None)
+    app.notify = lambda message, title="", severity="information", **kw: events.append(
+        ("notice", title, message, severity))
     app._clear_cards = lambda: events.append(("clear",))
     prompt = _FakePrompt(events)
     app._prompt = lambda: prompt
@@ -124,7 +124,8 @@ def test_open_fork_guards(monkeypatch):
     app._busy = True
     app._manager = _FakeManager([_Message("m1", "x")])
     app._open_fork()  # 回合进行中：换会话须拒绝
-    assert events == [("notice", "⏳ Busy", "Previous turn is still running, please wait…")] and not pushed
+    assert events == [("notice", "⏳ Busy", "Previous turn is still running, please wait…", "information")] \
+        and not pushed
 
     events.clear()
     app._busy = False
@@ -172,6 +173,7 @@ def test_fork_pick_failure_notifies(monkeypatch):
     app._manager = _FakeManager()  # fork_session -> None
     app._on_fork_picked("m1", [])
     assert events[-1][1] == "⚠️ Fork" and "not found" in events[-1][2]
+    assert events[-1][3] == "error", "分叉失败应是 error 级通知"
     assert prompt.text == "old" and prompt.cursor_location is None and events[0][0] != "clear"
 
 

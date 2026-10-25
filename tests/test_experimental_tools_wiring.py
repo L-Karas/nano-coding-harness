@@ -49,7 +49,7 @@ def _config_with(monkeypatch, module, **overrides):
 
 def _silence_render(monkeypatch):
     for name in ("stream_assistant_response", "render_tool_call", "render_tool_result",
-                 "render_tool_result_diff", "render_background_notification",
+                 "render_tool_result_diff", "render_background_notification", "notify",
                  "render_working_status", "render_thinking_status", "render_scope"):
         monkeypatch.setattr(interaction, name, lambda *a, **k: nullcontext())
 

@@ -53,7 +53,7 @@ def _demo_agent(query: str) -> None:
     RUNTIME_STATE.update_subagent("sa-0001", "tool", "read_file")
     time.sleep(1.6)  # 右栏可见状态流转（✓ 完成 / 子代理阶段切换）
     RUNTIME_STATE.remove_subagent("sa-0001")
-    render_background_notification("Background task bg-0001 finished (demo)", title="🔔 Background Task")
+    render_background_notification("Background task bg-0001 finished (demo)")
     if query.startswith("sudo"):
         answer = ask_permission("High-risk command detected — allow execution?", [f"command: {query}"])
         render_assistant_response(f"**Permission**: {'Allowed' if answer.strip().lower() in ('y', 'yes') else 'Denied'}")

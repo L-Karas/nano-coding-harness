@@ -97,6 +97,13 @@ class _RenderSurface:
         self._chat().mount(Vertical(md, classes="card assistant"))
         return md
 
+    # ---------- 通知 ----------
+
+    def _notify(self, message: str, title: str = "", severity: str = "information") -> None:
+        """即时 toast（后台任务结果之外的提示统一入口）：正文按纯文本渲染，
+        避免工具输出 / 异常文本里的方括号被 Rich 解析；App.notify 线程安全，worker 线程可直接调。"""
+        self.notify(message, title=title, severity=severity, markup=False)
+
     # ---------- 流式回复 ----------
 
     def _run_stream_task(self, coro: Any, what: str) -> None:

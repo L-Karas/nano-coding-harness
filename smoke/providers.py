@@ -12,7 +12,7 @@ async def run(app, pilot) -> None:
 
     # /provider：ProviderScreen（OptionList 弹窗，同会话弹窗组件）行 = 后端 provider
     # 原名 + 配置状态，未配置灰 / 已配置暗绿；遮罩半透明 → 窗外透出主界面（不整屏盖死）；
-    # Esc 关闭；实际取数失败（演示环境无 openai）时提示卡而非崩溃
+    # Esc 关闭；实际取数失败（演示环境无 openai）时 toast 提示而非崩溃
     app.push_screen(ProviderScreen([("deepseek", False), ("qwen", True)]))
     await settle(pilot)
     assert isinstance(app.screen_stack[-1], ProviderScreen)
@@ -148,7 +148,7 @@ async def run(app, pilot) -> None:
     if isinstance(app.screen_stack[-1], ProviderScreen):  # 真实数据源可用：能打开弹窗
         await pilot.press("escape")
         await settle(pilot)
-    else:  # 数据源不可用（演示环境）：应给出 Provider List 提示卡
-        bodies = [str(w.render()) for w in app.query(".card-body")]
-        assert any("Provider List" in b for b in bodies), bodies
+    else:  # 数据源不可用（演示环境）：应给出 Provider List toast 提示
+        toasts = [n.message for n in app._notifications]
+        assert any("Provider List" in message for message in toasts), toasts
     print("[smoke] /provider OK: backend provider name + colored config status in OptionList")

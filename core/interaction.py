@@ -13,7 +13,8 @@ _stream_assistant_response: Callable[[str], None] | None = None
 _render_tool_call: Callable[[str, Any], None] | None = None
 _render_tool_result: Callable[[str, bool], None] | None = None
 _render_tool_result_diff: Callable[[list], None] | None = None
-_render_background_notification: Callable[[str, str], None] | None = None
+_render_background_notification: Callable[[str], None] | None = None
+_notify: Callable[[str, str, str], None] | None = None
 _render_thinking_status: Callable[[str], ContextManager] | None = None
 _render_working_status: Callable[[str], ContextManager] | None = None
 _render_scope: Callable[[], ContextManager] | None = None
@@ -35,14 +36,15 @@ def register_render(
     render_tool_call: Callable[[str, Any], None] | None = None,
     render_tool_result: Callable[[str, bool], None] | None = None,
     render_tool_result_diff: Callable[[list], None] | None = None,
-    render_background_notification: Callable[[str, str], None] | None = None,
+    render_background_notification: Callable[[str], None] | None = None,
+    notify: Callable[[str, str, str], None] | None = None,
     render_thinking_status: Callable[[str], ContextManager] | None = None,
     render_working_status: Callable[[str], ContextManager] | None = None,
     render_scope: Callable[[], ContextManager] | None = None,
 ) -> None:
     """TUI 注入渲染实现；只覆盖传入的项，重复注册幂等。"""
     global _stream_assistant_response, _render_tool_call, _render_tool_result, _render_tool_result_diff
-    global _render_background_notification, _render_thinking_status, _render_working_status, _render_scope
+    global _render_background_notification, _notify, _render_thinking_status, _render_working_status, _render_scope
     if stream_assistant_response is not None:
         _stream_assistant_response = stream_assistant_response
     if render_tool_call is not None:
@@ -53,6 +55,8 @@ def register_render(
         _render_tool_result_diff = render_tool_result_diff
     if render_background_notification is not None:
         _render_background_notification = render_background_notification
+    if notify is not None:
+        _notify = notify
     if render_thinking_status is not None:
         _render_thinking_status = render_thinking_status
     if render_working_status is not None:
@@ -98,9 +102,18 @@ def render_tool_result_diff(rows: list) -> None:
         _render_tool_result_diff(rows)
 
 
-def render_background_notification(message: str, title: str = "🔔 Background Task") -> None:
+def render_background_notification(message: str) -> None:
+    """后台任务结果通知卡片：只允许后台任务结果回流使用，其它提示统一走 notify。"""
     if _render_background_notification is not None:
-        _render_background_notification(message, title)
+        _render_background_notification(message)
+
+
+def notify(message: str, title: str = "", severity: str = "information") -> None:
+    """即时通知（toast）：后台任务结果之外的提示统一走这里。
+    未注册适配器时静默；适配器已注册但 App 未启动时抛 RuntimeError（与其它渲染事件一致）。
+    severity 取 Textual 的三档：information / warning / error。"""
+    if _notify is not None:
+        _notify(message, title, severity)
 
 
 def render_thinking_status(message: str = "Thinking...") -> ContextManager:

@@ -103,7 +103,7 @@ class AgentRuntime:
                         "role": "user",
                         "content": INJECTION_MESSAGES_TEMPLATE.format(content=f"[Scheduled cron] {cron.prompt}")
                     })
-                    interaction.render_background_notification(f"Cron prompt: {cron.prompt}", title="⏰ Cron Injected")
+                    interaction.notify(f"Cron prompt: {cron.prompt}", title="⏰ Cron Injected")
 
                 ctx.raise_if_cancelled()
                 inject_background_notifications()
@@ -129,13 +129,13 @@ class AgentRuntime:
                 except Exception as e:
                     # 模型调用错误信息与任务执行无关，不再作为消息历史的一部分
                     error_text = f"[Error] {type(e).__name__}: {e}"
-                    interaction.render_background_notification(error_text, title="⚠️ Agent Error")
+                    interaction.notify(error_text, title="⚠️ Agent Error", severity="error")
                     return
 
                 if outcome.aborted:
                     abort_text = f"[Extension aborted] {outcome.abort_reason}"
                     SESSION_MANAGER.add_message({"role": "assistant", "content": abort_text})
-                    interaction.render_background_notification(abort_text, title="⛔ Extension Abort")
+                    interaction.notify(abort_text, title="⛔ Extension Abort")
                     return
 
                 if outcome.finish_reason == "length":
@@ -157,8 +157,8 @@ class AgentRuntime:
                         })
                         state.recovery_count += 1
                         continue
-                    interaction.render_background_notification("Agent exceeded maximum retry limits",
-                                                               title="⚠️ Agent Error")
+                    interaction.notify("Agent exceeded maximum retry limits",
+                                       title="⚠️ Agent Error", severity="error")
                     return
 
                 max_tokens = CONFIGMANAGER.config.default_max_tokens
@@ -209,13 +209,13 @@ def auto_loop(agent: AgentRuntime):
                     "role": "user",
                     "content": INJECTION_MESSAGES_TEMPLATE.format(content=f"[Scheduled Cron]\n{job.prompt}")
                 })
-                interaction.render_background_notification(f"Cron Auto Prompt: {job.prompt}", title="⏰ Cron Triggered")
+                interaction.notify(f"Cron Auto Prompt: {job.prompt}", title="⏰ Cron Triggered")
 
             notes = inject_background_notifications()
             if not fired and not notes:  # 等锁期间已被运行中的回合消费
                 return False
             for note in notes:
-                interaction.render_background_notification(note, title="🔔 Background Task")
+                interaction.render_background_notification(note)
             return True
 
         try:

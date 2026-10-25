@@ -5,7 +5,6 @@ import pytest
 from textual.widgets import Input, OptionList, Static
 
 import core.extension.registry as registry
-import core.tui.render as _render
 from core.extension import list_extensions
 from core.tui.screens import ExtensionsScreen
 from core.tui.ui_textual import ChatApp
@@ -154,14 +153,10 @@ def test_empty_registry_notifies_instead_of_opening():
     async def main():
         registry.reset()
         app = ChatApp(handle_query=lambda query: None)
-        _render._APP = app
-        try:
-            async with app.run_test() as pilot:
-                app._open_extensions()
-                await pilot.pause()
-                assert not isinstance(app.screen_stack[-1], ExtensionsScreen)
-                bodies = [str(w.render()) for w in app.query(".card-body")]
-                assert any("No extensions found" in body for body in bodies), bodies
-        finally:
-            _render._APP = None
+        async with app.run_test() as pilot:
+            app._open_extensions()
+            await pilot.pause()
+            assert not isinstance(app.screen_stack[-1], ExtensionsScreen)
+            note = next(n for n in app._notifications if n.message == "No extensions found")
+            assert note.markup is False, "toast 正文按纯文本渲染，不做 Rich 标记解析"
     asyncio.run(main())

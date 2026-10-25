@@ -4,7 +4,7 @@
 
 accepted
 
-`core/interaction.py` 是域层 → UI 的端口（叶子 module）：除现有的 `ask_permission` / `ask_clarify` 外，新增渲染事件 `stream_assistant_response` / `render_tool_call` / `render_tool_result` / `render_tool_result_diff` / `render_background_notification` 与状态槽 `render_thinking_status` / `render_working_status` / `render_scope`，默认全部 no-op。`core/tui/render.py` 导入时经 `register_render(...)` 注册实现；`StepRenderer` 仍由主循环从端口函数组装并注入 Agent step，step 不依赖端口。
+`core/interaction.py` 是域层 → UI 的端口（叶子 module）：除现有的 `ask_permission` / `ask_clarify` 外，新增渲染事件 `stream_assistant_response` / `render_tool_call` / `render_tool_result` / `render_tool_result_diff` / `render_background_notification`（仅后台任务结果）/ `notify`（其它提示统一走 toast）与状态槽 `render_thinking_status` / `render_working_status` / `render_scope`，默认全部 no-op。`notify` 的正文固定 `markup=False`（纯文本，避免方括号被解析），只有真正的失败分支用 `severity="error"`，其余保持默认 `information`。`core/tui/render.py` 导入时经 `register_render(...)` 注册实现；`StepRenderer` 仍由主循环从端口函数组装并注入 Agent step，step 不依赖端口。
 
 ## Considered Options
 

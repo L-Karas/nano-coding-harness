@@ -18,10 +18,10 @@ class _Runtime:  # 模拟 AgentRuntime：run_compact 在内部锁与事件循环
 
 def _app(monkeypatch, events):
     """不跑事件循环的 ChatApp：渲染与线程收尾打桩，只留被测分支。"""
-    monkeypatch.setattr(commands, "render_background_notification",
-                        lambda body, title="": events.append(("notice", title, body)))
     monkeypatch.setattr(commands, "render_session_history", lambda session: events.append(("render", session)))
     app = ChatApp(handle_query=lambda query: None, on_interrupt=lambda: None)
+    app.notify = lambda message, title="", severity="information", **kw: events.append(
+        ("notice", title, message, severity))
     app.call_from_thread = lambda fn, *a, **kw: fn()  # 测试线程内直接执行（App 未运行）
     app._set_idle = lambda: events.append(("idle",))
     app._clear_cards = lambda: events.append(("clear",))
@@ -61,8 +61,8 @@ def test_compact_worker_reports_noop_without_rerender(monkeypatch):
     assert "Nothing to compact" in events[0][2], events
 
 
-def test_compact_worker_reports_interrupt_without_error_card(monkeypatch):
-    """压缩中 Esc：submit 抛 AgentInterrupted → 提示已中断（非错误卡），且收尾复位忙碌态。"""
+def test_compact_worker_reports_interrupt_as_info_notification(monkeypatch):
+    """压缩中 Esc：submit 抛 AgentInterrupted → info 级提示已中断（非错误），且收尾复位忙碌态。"""
     events = []
 
     class _Interrupting:
@@ -73,6 +73,7 @@ def test_compact_worker_reports_interrupt_without_error_card(monkeypatch):
     app._spawn_worker(lambda: app._compact_worker(_Interrupting()), "agent-compact", "⚠️ Compact Error").join()
     notices = [e for e in events if e[0] == "notice"]
     assert notices and notices[0][1] == "⏹ Compact" and "interrupted" in notices[0][2], events
+    assert notices[0][3] == "information", "中断不是错误，保持默认 info 级"
     assert events[-1] == ("idle",), events
 
 
@@ -87,4 +88,4 @@ def test_compact_command_guards(monkeypatch):
     app._chat = lambda: SimpleNamespace(anchor=lambda: None)
     app._run_compact = lambda: events.append(("ran",))
     app.on_input_submitted(SimpleNamespace(value="/compact"))
-    assert events == [("notice", "⏳ Busy", "Previous turn is still running, please wait…")], events
+    assert events == [("notice", "⏳ Busy", "Previous turn is still running, please wait…", "information")], events

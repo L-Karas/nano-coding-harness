@@ -100,8 +100,7 @@ async def run(app, pilot) -> None:
     assert list(app.query("#chat .card"))[-1].has_class("result"), "普通工具输出误判为 error"
     print("[smoke] tool error card OK: [Tool Error]: prefix renders dark-red card")
     # 后台通知卡：标题固定常驻，正文超 10 行折叠 + 点击展开/收回（与工具结果卡同款机制）
-    render_background_notification("\n".join(f"notice {i}" for i in range(15)),
-                                   title="🔔 Background Task")
+    render_background_notification("\n".join(f"notice {i}" for i in range(15)))
     await settle(pilot, 10, 0.05)
     notice = app.query("#chat .card.notice .card-body").last()
     assert isinstance(notice, _CappedCardBody) and notice.has_class("-expandable"), \
@@ -216,8 +215,9 @@ async def run(app, pilot) -> None:
     await pilot.press("enter")  # Enter 应用高亮项（首项 /sessions）并提交
     await settle(pilot, 20)
     assert not app._busy, "Enter 应提交补全后的 /sessions（走会话分支，不起 agent 回合）"
-    bodies = [str(w.render()) for w in app.query(".card-body")]
-    assert any("SessionManager not connected" in b for b in bodies), "Enter 未提交 /sessions"
+    toasts = [n.message for n in app._notifications]
+    assert any("SessionManager not connected" in message for message in toasts), \
+        "Enter 未提交 /sessions"
     prompt.text = "/q"  # /quit 别名前缀 → 命中 /exit 行
     await settle(pilot)
     assert prompt._candidates == ["/exit"], prompt._candidates

@@ -84,7 +84,7 @@ def _prepare_runtime(
     execute,
 ):
     """responses 为 (content, reasoning, tool_calls, finish_reason, usage) 列表。"""
-    calls = {"llm": [], "tools": []}
+    calls = {"llm": [], "tools": [], "notify": []}
 
     monkeypatch.setattr(lwi, "consume_cron_queue", lambda: [])
     monkeypatch.setattr(lwi, "inject_background_notifications", lambda: None)
@@ -96,7 +96,7 @@ def _prepare_runtime(
     monkeypatch.setattr(interaction, "render_tool_call", lambda *a, **k: None)
     monkeypatch.setattr(interaction, "render_tool_result", lambda *a, **k: None)
     monkeypatch.setattr(interaction, "render_tool_result_diff", lambda *a, **k: None)
-    monkeypatch.setattr(interaction, "render_background_notification", lambda *a, **k: None)
+    monkeypatch.setattr(interaction, "notify", lambda *a, **k: calls["notify"].append((a, k)))
     monkeypatch.setattr(interaction, "render_working_status", contextlib.nullcontext)
     monkeypatch.setattr(interaction, "render_thinking_status", lambda *a, **k: contextlib.nullcontext())
     monkeypatch.setattr(interaction, "render_scope", contextlib.nullcontext)
@@ -119,6 +119,8 @@ def test_before_llm_abort_ends_turn_without_model_call(monkeypatch):
     runtime.run_turn()
     assert calls["llm"] == []
     assert mgr.messages[-1]["content"] == "[Extension aborted] policy"
+    assert calls["notify"] == [(("[Extension aborted] policy",),
+                                 {"title": "⛔ Extension Abort"})]
 
 
 def test_before_llm_mutation_reaches_model(monkeypatch):

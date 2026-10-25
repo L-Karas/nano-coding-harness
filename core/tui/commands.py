@@ -14,7 +14,6 @@ from core.extension import list_extensions as _list_extensions
 from core.runtime_context import AgentInterrupted
 from core.skill import skills as _skills
 from core.tui.render import (
-    render_background_notification,
     render_session_history,
     render_sessions,
     render_user_input,
@@ -48,18 +47,18 @@ class _CommandFlow:
     # ---------- / 弹窗指令 ----------
 
     def _client_call(self, getter: str, title: str) -> Any:
-        """懒加载调用 core.client.<getter>()；缺依赖（演示/冒烟环境）时提示卡并返回 None。"""
+        """懒加载调用 core.client.<getter>()；缺依赖（演示/冒烟环境）时 toast 提示并返回 None。"""
         try:
             import core.client as client
             return getattr(client, getter)()
         except Exception as exc:
-            render_background_notification(str(exc), title=title)
+            self._notify(str(exc), title=title, severity="error")
             return None
 
     def _open_sessions(self) -> None:
         if self._manager is None:
-            render_background_notification("SessionManager not connected — /sessions unavailable",
-                                           title="⚠️ Sessions")
+            self._notify("SessionManager not connected — /sessions unavailable",
+                         title="⚠️ Sessions")
             return
         if not self._manager.load_session_list():
             render_sessions()  # 空列表提示卡片
@@ -70,15 +69,14 @@ class _CommandFlow:
     def _open_fork(self) -> None:
         """/fork：列出非合成用户消息，选中后从该消息前分叉新会话，原文填回输入栏。"""
         if self._manager is None:
-            render_background_notification("SessionManager not connected — /fork unavailable",
-                                           title="⚠️ Fork")
+            self._notify("SessionManager not connected — /fork unavailable", title="⚠️ Fork")
             return
         if self._busy:  # 分叉会换当前会话，进行中的回合必须拒绝
             self._reject_busy()
             return
         messages = self._manager.load_user_messages()
         if not messages:
-            render_background_notification("No user messages to fork from", title="⚠️ Fork")
+            self._notify("No user messages to fork from", title="⚠️ Fork")
             return
         self.push_screen(ForkScreen(messages),
                          callback=lambda message_id: self._on_fork_picked(message_id, messages))
@@ -90,7 +88,7 @@ class _CommandFlow:
             return
         forked = self._manager.fork_session(message_id)
         if forked is None:
-            render_background_notification("Fork failed: message not found", title="⚠️ Fork")
+            self._notify("Fork failed: message not found", title="⚠️ Fork", severity="error")
             return
         if forked.messages:
             self._reload_history()
@@ -106,7 +104,7 @@ class _CommandFlow:
         """/skills：core.skill 扫描到的技能列表。"""
         rows = list(_skills.SKILL_REGISTRY.values())
         if not rows:
-            render_background_notification(
+            self._notify(
                 "No skills found: add SKILL.md manifests under the global (~/.agents/skills), "
                 "user (.harness/skills) or project (.agents/skills) skills directory",
                 title="⚠️ Skills")
@@ -128,7 +126,7 @@ class _CommandFlow:
         """/extensions：全部扩展（含未启用）与来源标签；只读，Esc 关闭。"""
         rows = _list_extensions()
         if not rows:
-            render_background_notification("No extensions found", title="⚠️ Extensions")
+            self._notify("No extensions found", title="⚠️ Extensions")
             return
         self.push_screen(ExtensionsScreen(rows))
 
@@ -138,7 +136,7 @@ class _CommandFlow:
             from core.mcp.mcp_client import get_mcp_server_list
             servers = get_mcp_server_list()
         except Exception as exc:
-            render_background_notification(str(exc), title="⚠️ MCP Servers")
+            self._notify(str(exc), title="⚠️ MCP Servers", severity="error")
             return
         self.push_screen(MCPServersScreen(servers))
 
@@ -154,8 +152,8 @@ class _CommandFlow:
         if rows is None:
             return
         if not rows:
-            render_background_notification("No models available: configure a provider via /provider first",
-                                           title="⚠️ Model List")
+            self._notify("No models available: configure a provider via /provider first",
+                         title="⚠️ Model List")
             return
         self.push_screen(ModelPickerScreen(rows), callback=lambda _: self._refresh_footer())
 
@@ -217,7 +215,7 @@ class _CommandFlow:
             self._send_user_query(query)
 
     def _reject_busy(self) -> None:
-        render_background_notification("Previous turn is still running, please wait…", title="⏳ Busy")
+        self._notify("Previous turn is still running, please wait…", title="⏳ Busy")
 
     def _send_user_query(self, query: str) -> None:
         """把一条文本作为用户消息发出（输入条回车与 /skills 选中技能共用）。"""
@@ -234,7 +232,7 @@ class _CommandFlow:
             try:
                 self._manager.add_message({"role": "user", "content": query})
             except Exception as exc:
-                render_background_notification(f"保存会话消息失败：{exc}", title="⚠️ Session Error")
+                self._notify(f"保存会话消息失败：{exc}", title="⚠️ Session Error", severity="error")
         self._handle(query)
 
     def _spawn_worker(
@@ -249,7 +247,7 @@ class _CommandFlow:
             try:
                 work()
             except Exception as exc:
-                render_background_notification(f"{type(exc).__name__}: {exc}", title=title)
+                self._notify(f"{type(exc).__name__}: {exc}", title=title, severity="error")
             finally:
                 try:
                     self.call_from_thread(self._set_idle)
@@ -276,12 +274,12 @@ class _CommandFlow:
     def _run_compact(self) -> None:
         """后台线程调 AgentRuntime.run_compact（与 agent 回合串行）。"""
         if self._runtime is None:
-            render_background_notification("AgentRuntime not connected — /compact unavailable",
-                                           title="⚠️ Compact")
+            self._notify("AgentRuntime not connected — /compact unavailable",
+                         title="⚠️ Compact")
             return
         if self._manager and not self._manager.current_session:
-            render_background_notification("Current session is empty — /compact unavailable",
-                                           title="⚠️ Compact")
+            self._notify("Current session is empty — /compact unavailable",
+                         title="⚠️ Compact")
             return
         self._busy = True
         self._prompt().disabled = True
@@ -296,12 +294,11 @@ class _CommandFlow:
         try:
             compacted = runtime.run_compact()
         except AgentInterrupted:  # 取消统一成 AgentInterrupted
-            render_background_notification("Compaction interrupted — history unchanged.",
-                                           title="⏹ Compact")
+            self._notify("Compaction interrupted — history unchanged.", title="⏹ Compact")
             return
         if not compacted:
-            render_background_notification("Nothing to compact — session is below the compaction "
-                                           "threshold (or no model is selected).", title="🗜 Compact")
+            self._notify("Nothing to compact — session is below the compaction "
+                         "threshold (or no model is selected).", title="🗜 Compact")
             return
         self.call_from_thread(self._reload_history)
-        render_background_notification("Context compacted — history re-rendered.", title="🗜 Compact")
+        self._notify("Context compacted — history re-rendered.", title="🗜 Compact")

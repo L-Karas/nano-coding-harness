@@ -13,7 +13,7 @@ async def run(app, pilot) -> None:
 
     # /model：ModelPickerScreen（OptionList 弹窗，同会话弹窗组件）行 = 模型名 + 暗灰
     # [Provider Name]；Enter 经 shared_model_client().set_model_client 切换当前模型并关窗
-    # （thinking_level 不参与，走默认）；Esc 取消不触发切换；取数失败（无 openai）提示卡
+    # （thinking_level 不参与，走默认）；Esc 取消不触发切换；取数失败（无 openai）走 toast 提示
     app.push_screen(ModelPickerScreen([("deepseek-chat", "deepseek"),
                                        ("qwen-max", "qwen")]))
     await settle(pilot)
@@ -126,15 +126,15 @@ async def run(app, pilot) -> None:
     if isinstance(app.screen_stack[-1], ModelPickerScreen):  # 真实数据源可用：能打开弹窗
         await pilot.press("escape")
         await settle(pilot)
-    else:  # 数据源不可用（演示环境）/无已配置提供商：应给出 Model List 提示卡
-        bodies = [str(w.render()) for w in app.query(".card-body")]
-        assert any("Model List" in b for b in bodies), bodies
+    else:  # 数据源不可用（演示环境）/无已配置提供商：应给出 Model List toast 提示
+        toasts = [n.message for n in app._notifications]
+        assert any("Model List" in message for message in toasts), toasts
     print("[smoke] /model OK: model + dim [Provider] rows in OptionList, Enter switches")
 
     # /effort：EffortScreen（Tabs 弹窗）标签从左到右 minimal/low/medium/high/max；
     # 当前档位标签点亮（active）；←/→ 切换（原生循环）；Enter 经
     # shared_model_client().set_thinking_level 生效并关窗；Esc 取消不生效；
-    # core.model 不可用（无 openai）时提示卡而非崩溃
+    # core.model 不可用（无 openai）时 toast 提示而非崩溃
     app.push_screen(EffortScreen("medium"))
     await settle(pilot)
     assert isinstance(app.screen_stack[-1], EffortScreen)
@@ -234,7 +234,7 @@ async def run(app, pilot) -> None:
     if isinstance(app.screen_stack[-1], EffortScreen):  # 真实数据源可用：能打开弹窗
         await pilot.press("escape")
         await settle(pilot)
-    else:  # 数据源不可用（演示环境无 openai）：应给出 Effort 提示卡
-        bodies = [str(w.render()) for w in app.query(".card-body")]
-        assert any("Effort" in b for b in bodies), bodies
+    else:  # 数据源不可用（演示环境无 openai）：应给出 Effort toast 提示
+        toasts = [n.message for n in app._notifications]
+        assert any("Effort" in message for message in toasts), toasts
     print("[smoke] /effort OK: tabs minimal→max, Enter applies via set_thinking_level")
