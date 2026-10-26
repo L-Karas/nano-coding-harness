@@ -1,4 +1,5 @@
-"""冒烟自检 · /skills：技能列表行格式 / 首尾循环 / Enter 发送 Invoke skill / 空注册表提示。"""
+"""冒烟自检 · /skills：技能列表行格式 / 首尾循环 / Enter 发送 [Invoke skill] /
+Tab 填入调用信息并附带补充消息 / 空注册表提示。"""
 from __future__ import annotations
 
 from textual.widgets import Input, OptionList
@@ -82,7 +83,7 @@ async def run(app, pilot) -> None:
     await pilot.press("escape")
     await settle(pilot)
     assert not isinstance(app.screen_stack[-1], SkillsScreen), "Esc 未关闭 SkillsScreen"
-    # Enter 选中技能：填入 "Invoke skill '<name>'" 并以用户消息发出（弹窗关闭、
+    # Enter 选中技能：填入 "[Invoke skill '<name>']" 并以用户消息发出（弹窗关闭、
     # 进入回合）；Esc（dismiss None）不发送
     prompt.focus()
     prompt.text = "/skills"
@@ -98,13 +99,49 @@ async def run(app, pilot) -> None:
     assert not isinstance(app.screen_stack[-1], SkillsScreen), "Enter 选中技能后弹窗应关闭"
     assert app._busy, "技能调用应以用户回合发出"
     bodies = [str(w.render()) for w in app.query(".card-body")]
-    assert any("Invoke skill 'smoke-skill-a'" in b for b in bodies), bodies
+    assert any("[Invoke skill 'smoke-skill-a']" in b for b in bodies), bodies
     for _ in range(200):  # 等回合结束（demo agent 流式回复）
         if not app._busy:
             break
         await pilot.pause(0.05)
     assert not app._busy, "技能回合未结束"
-    print("[smoke] /skills Enter OK: fills & sends Invoke skill '<name>'")
+    print("[smoke] /skills Enter OK: fills & sends [Invoke skill '<name>']")
+    # Tab：不发送；把 "[Invoke skill '<name>'] " 填入输入栏并聚焦、光标置尾，
+    # 用户可继续写补充消息后一起发送（提示行文案为 invoke with message）
+    prompt.focus()
+    prompt.text = "/skills"
+    await pilot.press("enter")
+    await settle(pilot, 10)
+    assert isinstance(app.screen_stack[-1], SkillsScreen)
+    assert app.screen_stack[-1].HINT == \
+        "  ↑/↓ browse    Enter/click invoke    Tab invoke with message    Esc close", \
+        app.screen_stack[-1].HINT
+    sk_lst = app.screen_stack[-1].query_one("#skills-list", OptionList)
+    sk_idx = next(i for i in range(sk_lst.option_count)
+                  if sk_lst.get_option_at_index(i).prompt.plain.startswith("● smoke-skill-a"))
+    sk_lst.highlighted = sk_idx
+    await pilot.press("tab")
+    await settle(pilot, 5)
+    assert not isinstance(app.screen_stack[-1], SkillsScreen), "Tab 选中技能后弹窗应关闭"
+    assert not app._busy, "Tab 不应触发回合"
+    assert prompt.has_focus, "Tab 后应聚焦输入栏"
+    assert prompt.text == "[Invoke skill 'smoke-skill-a'] ", repr(prompt.text)
+    assert prompt.cursor_location == prompt.document.end, \
+        f"光标应在填入文本末尾: {prompt.cursor_location} / {prompt.document.end}"
+    await pilot.press("e", "x", "t", "r", "a")  # 继续输入补充消息
+    await settle(pilot, 3)
+    assert prompt.text == "[Invoke skill 'smoke-skill-a'] extra", repr(prompt.text)
+    await pilot.press("enter")
+    await settle(pilot, 5)
+    assert app._busy, "补充消息应随技能调用一起发出"
+    bodies = [str(w.render()) for w in app.query(".card-body")]
+    assert any("[Invoke skill 'smoke-skill-a'] extra" in b for b in bodies), bodies
+    for _ in range(200):  # 等回合结束（demo agent 流式回复）
+        if not app._busy:
+            break
+        await pilot.pause(0.05)
+    assert not app._busy, "技能补充消息回合未结束"
+    print("[smoke] /skills Tab OK: fills invoke message into prompt, extra message sent together")
     _skills_mod.SKILL_REGISTRY.clear()  # 无技能场景：应给 toast 提示而非空弹窗
     prompt.focus()
     prompt.text = "/skills"

@@ -49,6 +49,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | `Enter` | 无候选时发送消息；有 `/` 指令候选时先补全再发送 |
 | `Shift+Enter` / `Ctrl+J` / `Ctrl+Enter` | 输入换行（`Tab` 不缩进，直接被吞掉） |
 | `/` | 弹出指令候选，`Tab`/`Enter` 补全，`↑`/`↓` 选择 |
+| `/skills` 窗口 `Tab` | 把选中技能的调用信息填入输入栏（不发送），可继续写补充消息后一起发送 |
 | `@` | 弹出项目文件候选（左列文件名 / 文件夹名，右列相对路径；补进输入，不发送） |
 | `Esc` | 收起候选；权限确认挂起时「拒绝」；否则中断当前回合或压缩 |
 | `Ctrl+C` | 不退出（有选中文本时复制）；退出用 `/exit` 或 `Ctrl+Q` |
@@ -57,7 +58,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 
 内置指令：`/new`（新会话）、`/sessions`（会话选择）、`/compact`（压缩当前上下文，可被 Esc 中断）、
 `/fork`（列出当前会话的用户消息，选中后从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改）、
-`/skills`（技能列表，选中即作为一轮对话发出）、`/extensions`（扩展列表，含未启用项与
+`/skills`（技能列表，Enter/点击把技能作为一轮对话发出；Tab 把调用信息填入输入栏，可继续写补充消息后一起发送）、`/extensions`（扩展列表，含未启用项与
 可选 `description`；`[user]` / `[builtin]` 标注来源）、`/mcp`（MCP server 名列表，Enter 查看该 server
 的工具列表，`Insert` 弹出 JSON 配置窗、`Ctrl+S` 落盘，`Delete` 删除 server）、
 `/provider`、`/model`、`/effort`、`/settings`（编辑 AgentConfig 运行参数）、

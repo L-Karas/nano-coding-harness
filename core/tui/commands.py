@@ -13,6 +13,7 @@ from core.context.message import content_text
 from core.extension import list_extensions as _list_extensions
 from core.runtime_context import AgentInterrupted
 from core.skill import skills as _skills
+from core.template import SKILL_INVOCATION_TEMPLATE
 from core.tui.render import (
     render_session_history,
     render_sessions,
@@ -111,15 +112,27 @@ class _CommandFlow:
             return
         self.push_screen(SkillsScreen(rows), callback=self._on_skill_picked)
 
-    def _on_skill_picked(self, skill_name: Optional[str]) -> None:
-        """SkillsScreen 回调：选中技能作为用户消息发出（busy 时拒绝）。"""
+    def _on_skill_picked(self, picked: Optional[tuple[str, bool]]) -> None:
+        """SkillsScreen 回调：(技能名, 是否附带补充消息)；None = Esc 取消，busy 时拒绝。
+
+        False → 立即作为用户消息发出；True → 只填入输入栏并聚焦，用户可继续写补充消息。
+        """
+        if picked is None:
+            return
+        skill_name, with_message = picked
         if not skill_name:
             return
         if self._busy:
             self._reject_busy()
             return
-        query = f"Invoke skill '{skill_name}'"
-        self._prompt().text = query  # 填入后随发送清空（效果同手打回车）
+        query = SKILL_INVOCATION_TEMPLATE.format(name=skill_name)
+        prompt = self._prompt()
+        if with_message:
+            prompt.text = query + " "
+            prompt.cursor_location = prompt.document.end  # text setter 把光标归位开头，置于末尾
+            prompt.focus()
+            return
+        prompt.text = query  # 填入后随发送清空（效果同手打回车）
         self._send_user_query(query)
 
     def _open_extensions(self) -> None:

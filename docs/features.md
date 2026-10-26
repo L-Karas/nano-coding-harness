@@ -31,7 +31,10 @@ description: 一句话说明这个技能做什么
 技能正文；`load_skill` 把它与 `SKILL.md` 路径一起包进 `<skill>` 标签返回给模型。
 ```
 
-扫描在启动阶段（`core/bootstrap.py` 的 `bootstrap()`）执行一次，技能摘要进入系统提示词的 Available skills 段，`/skills` 弹窗可直接选中触发一轮对话。
+扫描在启动阶段（`core/bootstrap.py` 的 `bootstrap()`）执行一次，技能摘要进入系统提示词的 Available skills 段。
+`/skills` 弹窗中 Enter/点击直接把技能作为一轮对话发出；Tab 把 `[Invoke skill '<name>']` 填入输入栏
+并聚焦，用户可继续写补充消息后一起发送。方括号只包住调用本身，其后内容即补充信息；
+技能调用视为用户消息，可作为会话标题并参与 `/fork`。
 
 ## Memory
 

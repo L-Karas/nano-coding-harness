@@ -7,7 +7,11 @@ from core.context.message import (
     to_llm_messages,
 )
 from core.context.token import IMAGE_TOKEN_ESTIMATE, estimate_size, estimate_token
-from core.template import IMAGE_OMITTED_MESSAGE, INJECTION_MESSAGES_TEMPLATE
+from core.template import (
+    IMAGE_OMITTED_MESSAGE,
+    INJECTION_MESSAGES_TEMPLATE,
+    SKILL_INVOCATION_TEMPLATE,
+)
 
 
 def _image_content(text="images"):
@@ -35,6 +39,14 @@ def test_injected_and_synthetic_detection():
     assert is_synthetic_content("[Fork] x")
     assert not is_injected_content("hello")
     assert not is_synthetic_content([{"type": "text", "text": "hello"}])
+
+
+def test_skill_invocation_is_user_content_not_synthetic():
+    invocation = SKILL_INVOCATION_TEMPLATE.format(name="review")
+    assert invocation == "[Invoke skill 'review']"
+    assert not is_synthetic_content(invocation)
+    assert not is_synthetic_content(invocation + " check auth"), "补充信息不应改变技能调用的用户消息身份"
+    assert not is_synthetic_content("\n" + invocation)
 
 
 def test_llm_view_passes_arrays_through():

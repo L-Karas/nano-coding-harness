@@ -297,7 +297,8 @@ class _NamedItem:
 
 
 class _NamedListScreen(_ListPickerScreen):
-    """「● 名称 + [tag] + 描述」列表弹窗：Enter/点击关窗回传名称（/skills 与 /mcp 工具列表共用）。"""
+    """「● 名称 + [tag] + 描述」列表弹窗：Enter/点击关窗回传名称（/mcp 工具列表使用；
+    /skills 覆写选择结果，以区分立即调用与带补充消息）。"""
 
     def __init__(self, items: list[_NamedItem]) -> None:
         super().__init__()

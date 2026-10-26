@@ -5,7 +5,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from core.template import IMAGE_OMITTED_MESSAGE, INJECTION_MESSAGES_PREFIX, INJECTION_MESSAGES_SUFFIX
+from core.template import (
+    IMAGE_OMITTED_MESSAGE,
+    INJECTION_MESSAGES_PREFIX,
+    INJECTION_MESSAGES_SUFFIX,
+    SKILL_INVOCATION_PREFIX,
+)
 
 
 def _get_message_id() -> str:
@@ -76,8 +81,13 @@ def is_injected_content(content: Any) -> bool:
 
 
 def is_synthetic_content(content: Any) -> bool:
-    """是否为 harness 生成的合成用户消息（标题 / fork 列表都跳过）：以 < 或 [ 开头。"""
-    return content_text(content).lstrip().startswith(("<", "["))
+    """是否为 harness 生成的合成用户消息（标题 / fork 列表都跳过）：以 < 或 [ 开头。
+
+    `/skills` 产生的技能调用（[Invoke skill '<name>']，可附补充信息）是用户主动发起的
+    消息，不算合成：它可作会话标题，也保留在 fork 列表中。其余 < / [ 开头内容仍跳过。
+    """
+    text = content_text(content).lstrip()
+    return text.startswith(("<", "[")) and not text.startswith(SKILL_INVOCATION_PREFIX)
 
 
 def _has_image_part(content: Any) -> bool:

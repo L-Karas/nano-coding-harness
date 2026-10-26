@@ -53,6 +53,18 @@ def test_fork_list_excludes_synthetic_user_messages(manager):
     assert [m.content for m in manager.load_user_messages()] == ["real request"]
 
 
+def test_skill_invocation_sets_title_and_is_forkable(manager):
+    manager.new_session()
+    manager.add_message({"role": "user", "content": "[Invoke skill 'review']"})
+    manager.add_message({"role": "user", "content": "[Invoke skill 'review'] auth"})
+
+    assert manager.session_map[manager.current_session].title == "[Invoke skill 'review'] auth"
+    assert [m.content for m in manager.load_user_messages()] == [
+        "[Invoke skill 'review']",
+        "[Invoke skill 'review'] auth",
+    ]
+
+
 def test_fork_title_flattens_array_content(manager):
     manager.new_session()
     manager.add_message({"role": "user", "content": "first"})
