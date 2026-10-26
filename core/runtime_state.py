@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from core.tools import ToolResult
 
 
+DEFAULT_SUBAGENT_ROLE = "subagent"  # 直接调用方未给 role 时的兜底展示标签
+
+
 @dataclass(frozen=True)
 class TodoEntry:
     content: str
@@ -37,6 +40,7 @@ class SubagentEntry:
     detail: str
     description: str
     goal: str = ""
+    role: str = DEFAULT_SUBAGENT_ROLE
     cancellable: bool = False
 
 
@@ -160,7 +164,9 @@ class RuntimeState:
             self._subagent_counter += 1
             return f"sa-{self._subagent_counter:04d}"
 
-    def register_subagent(self, agent_id: str, description: str, goal: str = "") -> None:
+    def register_subagent(self, agent_id: str, description: str, goal: str = "",
+                          *, role: str = DEFAULT_SUBAGENT_ROLE) -> None:
+        clean_role = " ".join((role or "").split()) or DEFAULT_SUBAGENT_ROLE
         with self._lock:
             self._subagents[agent_id] = SubagentEntry(
                 id=agent_id,
@@ -168,6 +174,7 @@ class RuntimeState:
                 detail="",
                 description=description,
                 goal=goal,
+                role=clean_role,
             )
 
     def update_subagent(

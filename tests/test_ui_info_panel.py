@@ -380,6 +380,31 @@ def test_running_cancellable_row_stop_click_cancels():
     asyncio.run(main())
 
 
+def test_running_cancellable_subagent_row_stop_click_cancels():
+    """子代理行尾 ■ 按内部 sa id 指名停止；role 只影响展示，不参与取消。"""
+    state = RuntimeState()
+    calls = []
+    state.register_subagent("sa-99", "explore", "find the entry point", role="reviewer")
+    state.attach_cancel("sa-99", lambda: calls.append("sa-99"))
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            _refresh(app)
+            await pilot.pause()
+            label = app.query_one("#subagents-list").query(".-info-text")[0]
+            assert "reviewer" in str(label.content) and "sa-99" not in str(label.content)
+            row_stops = app.query_one("#subagents-list").query(".-stop")
+            assert len(row_stops) == 1
+            await pilot.click(row_stops[0])
+            assert calls == ["sa-99"], "取消应使用内部 id，而不是 role"
+            assert state.snapshot().subagents[0].cancellable is False
+            assert str(label.content)[:1] == "▸", "点 ■ 不应顺带展开"
+            assert "reviewer" in str(label.content) and "sa-99" not in str(label.content)
+
+    asyncio.run(main())
+
+
 def test_row_text_click_still_toggles_expand():
     state = RuntimeState()
     bg_id = state.allocate_background_id()
@@ -431,17 +456,20 @@ def test_running_non_cancellable_row_has_no_stop_control():
 
 
 def test_subagent_row_expands_to_goal_not_description():
-    """折叠只显示阶段；展开补上 goal，description 不在右栏展示。"""
+    """折叠只显示 role 与阶段；展开补上 goal，description 不在右栏展示。"""
     state = RuntimeState()
 
     async def main() -> None:
         app = _app(state)
         async with app.run_test() as pilot:
-            state.register_subagent("sa-1", "explore the whole repo", "find the entry point")
+            state.register_subagent("sa-1", "explore the whole repo", "find the entry point",
+                                    role="reviewer")
             _refresh(app)
             await pilot.pause()  # 等 Textual 处理行 mount
             label = app.query_one("#subagents-list").query(".-info-text")[0]
             collapsed = str(label.content)
+            assert "reviewer" in collapsed
+            assert "sa-1" not in collapsed
             assert "[thinking]" in collapsed
             assert "find the entry point" not in collapsed
             assert "explore the whole repo" not in collapsed
@@ -449,8 +477,68 @@ def test_subagent_row_expands_to_goal_not_description():
             await pilot.click(label)
             await pilot.pause()
             expanded = str(app.query_one("#subagents-list").query(".-info-text")[0].content)
+            assert "reviewer" in expanded
+            assert "sa-1" not in expanded
             assert "find the entry point" in expanded
             assert "explore the whole repo" not in expanded
+
+    asyncio.run(main())
+
+
+def test_subagent_row_shows_role_instead_of_id():
+    """role 替代内部 id；阶段从 thinking 切到 tool 后 role 仍在。"""
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            state.register_subagent("sa-42", "explore", "find the entry point", role="researcher")
+            _refresh(app)
+            await pilot.pause()
+            text = str(app.query_one("#subagents-list").query(".-info-text")[0].content)
+            assert "researcher" in text and "[thinking]" in text
+            assert "sa-42" not in text
+
+            state.update_subagent("sa-42", "tool", "read_file")
+            _refresh(app)
+            await pilot.pause()
+            text = str(app.query_one("#subagents-list").query(".-info-text")[0].content)
+            assert "researcher" in text and "[tool: read_file]" in text
+            assert "sa-42" not in text
+
+    asyncio.run(main())
+
+
+def test_subagent_row_uses_generic_role_when_none_supplied():
+    """直接调用方未给 role 时用 subagent 兜底，仍不展示内部 id。"""
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            state.register_subagent("sa-7", "explore")
+            _refresh(app)
+            await pilot.pause()
+            text = str(app.query_one("#subagents-list").query(".-info-text")[0].content)
+            assert "subagent" in text
+            assert "sa-7" not in text
+
+    asyncio.run(main())
+
+
+def test_subagent_role_keycaps_are_downgraded():
+    """role 与 text / expand_text 一样经过键帽降级（右栏统一约定）。"""
+    state = RuntimeState()
+
+    async def main() -> None:
+        app = _app(state)
+        async with app.run_test() as pilot:
+            state.register_subagent("sa-1", "explore", role="reviewer1️⃣")
+            _refresh(app)
+            await pilot.pause()
+            text = str(app.query_one("#subagents-list").query(".-info-text")[0].content)
+            assert "reviewer1" in text
+            assert "1️⃣" not in text
 
     asyncio.run(main())
 

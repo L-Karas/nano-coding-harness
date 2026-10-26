@@ -28,6 +28,11 @@ _Avoid_: 回合（turn）、loop
 harness 运行期的展示状态：todo 列表、后台任务、子代理；由 RuntimeState 单例持有，经类型化快照读取。
 _Avoid_: 全局变量、面板数据源
 
+**Subagent role**:
+子代理的展示角色标签（如 reviewer / researcher），在右栏 Subagents 条目中替代内部 id；仅影响展示，
+不改变提示词、工具池或模型。
+_Avoid_: roler、agent type
+
 **Turn runner**:
 驱动一次 turn 的线程契约：私有事件循环、串行锁与当前回合的上下文 / 任务登记都在一个 implementation 内，调用方只提「跑回合 / 压缩 / 中断」。
 _Avoid_: AGENT_LOCK、submit 阻塞、直接操作 loop

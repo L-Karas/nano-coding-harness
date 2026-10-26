@@ -35,7 +35,8 @@ async def run(app, pilot) -> None:
                              TodoEntry("hook up the real agent", "completed")])
     RUNTIME_STATE.register_background(
         "bg-7777", "terminal(command='pip install textual', cwd='/very/long/remote/path')")
-    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc", "explore asyncio docs")
+    RUNTIME_STATE.register_subagent("sa-0001", "summarize the asyncio doc", "explore asyncio docs",
+                                    role="researcher")
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
     for _section in (todos_section, bg_section, sub_section):
         assert not _section.has_class("-collapsed"), f"有内容的分区应展开: {_section.id}"
@@ -64,13 +65,14 @@ async def run(app, pilot) -> None:
     bg_animated = _rows_text("#bg-list .info-row")
     assert bg_animated != bg_str, "running 后台任务应呈动态加载效果（帧未推进）"
     sub_str = _rows_text("#subagents-list .info-row")
-    assert "sa-0001" in sub_str and "[thinking]" in sub_str, sub_str
+    assert "researcher" in sub_str and "[thinking]" in sub_str, sub_str
+    assert "sa-0001" not in sub_str, "子代理 id 不应在右栏展示"
     assert "explore asyncio docs" not in sub_str, "折叠态不应展示 goal"
     assert "summarize the asyncio doc" not in sub_str, "折叠态不应展示 description"
     assert any(g in sub_str for g in _SPINNER_FRAMES), f"运行中子代理应有轮播字形: {sub_str}"
     # goal 默认不展示，点行展开后以灰色补上；description 不在右栏展示
     sub_row = next(r for r in app.query("#subagents-list .info-row.-expandable")
-                   if "sa-0001" in _row_text(r))
+                   if "researcher" in _row_text(r))
     sub_row.scroll_visible(animate=False, top=True, immediate=True)
     await pilot.pause(0.1)
     await pilot.click(sub_row, offset=(2, 0))
@@ -84,6 +86,7 @@ async def run(app, pilot) -> None:
     await pilot.pause(1.3)
     sub_str = _rows_text("#subagents-list .info-row")
     assert "[tool: terminal]" in sub_str, f"子代理阶段切换未上屏: {sub_str}"
+    assert "researcher" in sub_str, "阶段切换后仍应显示 role"
     RUNTIME_STATE.remove_subagent("sa-0001")
     await pilot.pause(1.3)
     assert sub_section.has_class("-collapsed"), "子代理结束后分区应自动收起"
@@ -201,7 +204,8 @@ async def run(app, pilot) -> None:
     # 临时清空再还原）
     saved = RUNTIME_STATE.snapshot()
     # subagents 分区此前被手动收起；先补一个临时子代理触发自动展开，清空后才能验证自动折叠
-    RUNTIME_STATE.register_subagent("sa-empty-check", "temporary empty-state check", "temporary")
+    RUNTIME_STATE.register_subagent("sa-empty-check", "temporary empty-state check", "temporary",
+                                    role="reviewer")
     await pilot.pause(1.3)  # 覆盖 ≥1 次 1s 轮询
     assert not sub_section.has_class("-collapsed"), "临时子代理应触发 subagents 分区自动展开"
     RUNTIME_STATE.clear()  # 空态检查（仅冒烟进程内生效）
@@ -219,7 +223,7 @@ async def run(app, pilot) -> None:
         if _bg.status == "completed":
             RUNTIME_STATE.complete_background(_bg.id, ToolResult(content=""))
     for _sa in saved.subagents:
-        RUNTIME_STATE.register_subagent(_sa.id, _sa.description, _sa.goal)
+        RUNTIME_STATE.register_subagent(_sa.id, _sa.description, _sa.goal, role=_sa.role)
         RUNTIME_STATE.update_subagent(_sa.id, _sa.phase, _sa.detail)
     await pilot.pause(1.3)  # 还原后让有内容的分区重新自动展开
     print("[smoke] right info sections OK: todos/bg/subagents lists live-sync + content-driven collapse")

@@ -16,7 +16,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
-from core.runtime_state import RUNTIME_STATE, RuntimeSnapshot, RuntimeState
+from core.runtime_state import DEFAULT_SUBAGENT_ROLE, RUNTIME_STATE, RuntimeSnapshot, RuntimeState
 from core.tui.surface import _strip_keycaps
 from core.tui.theme import SECONDARY_TEXT, _SPINNER_FRAMES
 
@@ -26,7 +26,7 @@ _RUNNING_STATUSES = ("in_progress", "running")  # 需要轮播字形的状态
 class _InfoRow(Horizontal):
     """右栏条目行：点击在单行摘要（超限截断附 …）与多行缩进全文间切换。
 
-    in_progress / running 行首为轮播帧；bg / subagents 行折叠时只显示工具名 / 阶段，
+    in_progress / running 行首为轮播帧；bg 行折叠时只显示工具名，subagents 行显示 role 与阶段，
     展开后灰色补上参数 / goal。运行中且带取消句柄的行尾给 ■（点它指名停止）。"""
 
     _CLIP = {"todos": 72, "bg": 48, "subagents": 48}  # 折叠摘要单行字符上限
@@ -46,7 +46,8 @@ class _InfoRow(Horizontal):
 
     @property
     def work_id(self) -> str:
-        """本条工作的 id（bg-XXXX / sa-XXXX）：■ 点击时交给 RuntimeState.cancel_work。"""
+        """本条工作的内部 id（bg-XXXX / sa-XXXX）：■ 点击时交给 RuntimeState.cancel_work；
+        子代理 id 不再展示。"""
         return self._data["id"]
 
     def compose(self) -> ComposeResult:
@@ -86,7 +87,13 @@ class _InfoRow(Horizontal):
         clip = self._CLIP[self._kind]
         row = Text()
         row.append("▾ " if self._expanded else "▸ ", style=SECONDARY_TEXT)
-        row.append(f"{glyph} {it['id']} " if self._kind != "todos" else f"{glyph} ", style=color)
+        if self._kind == "todos":
+            row.append(f"{glyph} ", style=color)
+        elif self._kind == "subagents":
+            role = _strip_keycaps(it.get("role") or DEFAULT_SUBAGENT_ROLE)
+            row.append(f"{glyph} {role} ", style=color)
+        else:
+            row.append(f"{glyph} {it['id']} ", style=color)
         row.append(lines[0] if self._expanded else lines[0][:clip], style=text_style)
         if self._expanded:
             for line in lines[1:]:
@@ -173,17 +180,18 @@ class _InfoPanel(Vertical):
             self._on_sections_changed(non_empty)
 
     def _items(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
-        """分区条目快照 [{id, status, text}]；展示文案与签名逻辑留在面板。"""
+        """分区条目快照 [{id, status, text, role?}]；展示文案与签名逻辑留在面板。"""
         if kind == "todos":
             return [{"id": t.content, "status": t.status, "text": t.content, "cancellable": False}
                     for t in snap.todos]
         if kind == "subagents":
-            # 条目只在子代理运行期间存在（finally 移除）；阶段拼进 text 以触发签名重建；
-            # 展开只补 goal（description 不在右栏展示）
+            # 条目只在子代理运行期间存在（finally 移除）；role 替换内部 id 作为展示标签，
+            # 阶段拼进 text 以触发签名重建；展开只补 goal（description 不在右栏展示）
             items = []
             for sa in snap.subagents:
                 label = f"tool: {sa.detail}" if sa.phase == "tool" else "thinking"
                 items.append({"id": sa.id, "status": "running", "phase": sa.phase,
+                              "role": sa.role or DEFAULT_SUBAGENT_ROLE,
                               "text": f"[{label}]", "expand_text": sa.goal,
                               "cancellable": sa.cancellable})
             return items
@@ -199,7 +207,8 @@ class _InfoPanel(Vertical):
     def _sync_rows(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
         """按最新条目重建 #kind-list（签名未变则跳过，避免 1s 轮询反复重建）；返回本次快照。"""
         items = self._items(kind, snap)
-        sig = tuple((it["id"], it["status"], it["text"], it["cancellable"]) for it in items)
+        sig = tuple((it["id"], it["status"], it.get("role"), it["text"], it["cancellable"])
+                    for it in items)
         if sig == self._sig.get(kind):
             return items
         self._sig[kind] = sig

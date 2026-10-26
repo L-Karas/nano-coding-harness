@@ -56,7 +56,7 @@ def test_subagent_lifecycle():
     state = RuntimeState()
     sa_id = state.allocate_subagent_id()
     assert sa_id == "sa-0001"
-    state.register_subagent(sa_id, "explore", "find the entry point")
+    state.register_subagent(sa_id, "explore", "find the entry point", role="reviewer")
     state.update_subagent(sa_id, "tool", "read_file")
     assert state.snapshot().subagents == [
         SubagentEntry(
@@ -65,9 +65,19 @@ def test_subagent_lifecycle():
             detail="read_file",
             description="explore",
             goal="find the entry point",
+            role="reviewer",
         )]
     state.remove_subagent(sa_id)
     assert state.snapshot().subagents == []
+
+
+def test_subagent_role_defaults_and_normalizes():
+    """role 缺省/空白回退为 subagent；直接调用方传入的换行与多余空白归一为单行标签。"""
+    state = RuntimeState()
+    state.register_subagent("sa-1", "explore")
+    state.register_subagent("sa-2", "explore", role="  code\nreviewer  ")
+    state.register_subagent("sa-3", "explore", role="   ")
+    assert [sa.role for sa in state.snapshot().subagents] == ["subagent", "code reviewer", "subagent"]
 
 
 def test_snapshot_has_running_background_only_for_live_work():

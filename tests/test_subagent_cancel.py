@@ -60,7 +60,7 @@ class _SpawnCall:
 
     class function:
         name = "spawn_subagent"
-        arguments = '{"description": "explore", "goal": "explore"}'
+        arguments = '{"description": "explore", "goal": "explore", "role": "researcher"}'
 
 
 def test_cancel_work_reports_cancelled_notification(monkeypatch):
@@ -81,6 +81,7 @@ def test_cancel_work_reports_cancelled_notification(monkeypatch):
         await asyncio.sleep(0.05)
         subs = state.snapshot().subagents
         assert len(subs) == 1 and subs[0].cancellable
+        assert subs[0].role == "researcher"
 
         assert state.cancel_work(subs[0].id) is True
         for _ in range(200):  # 等 bg 任务收尾、结果入队
