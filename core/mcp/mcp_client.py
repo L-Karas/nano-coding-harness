@@ -7,22 +7,45 @@ tools are merged into the normal tool pool with mcp__server__tool names.
 import asyncio
 import base64
 import json
+import os
 import re
 import threading
 import time
 from concurrent.futures import Future
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 
+import mcp
 from mcp import StdioServerParameters, ClientSessionGroup, ClientSession
+from mcp.client import stdio as _mcp_stdio
 from mcp.client.session_group import SseServerParameters, StreamableHttpParameters
 from mcp_types import ImageContent, TextContent
 
-from core.config import MCP_CONFIG_FILE
+from core.config import LOG_DIR, MCP_CONFIG_FILE
 from core.shared.logger import get_logger
 from core.tools import vision
 from core.tools.tool_result import ImageAttachment, ToolResult
 
 _LOGGER = get_logger(__name__)
+
+
+@asynccontextmanager
+async def _stdio_client(server: StdioServerParameters):
+    """stdio 会话的 stderr 显式落盘：mcp 的 `errlog` 默认值是 import 时绑定的 sys.stderr，
+    而 Textual 运行期把 sys.stderr 换成 fileno() == -1 的捕获对象 —— 建子进程直接
+    OSError(9, 'Bad file descriptor')（Windows 的 get_osfhandle 与 POSIX 的 open_process 同样中招），
+    所有 stdio server 都连不上（HTTP 传输不受影响）。"""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        errlog = open(LOG_DIR / "mcp-stderr.log", "a", encoding="utf-8", errors="replace")
+    except OSError as e:  # 落盘失败不能拖累建连：宁丢服务端 stderr，也要连得上
+        _LOGGER.warning(f"[MCP] stdio stderr log unavailable, discarding server stderr: {e!r}")
+        errlog = open(os.devnull, "w", encoding="utf-8")
+    with errlog:
+        async with _mcp_stdio.stdio_client(server, errlog=errlog) as streams:
+            yield streams
+
+
+mcp.stdio_client = _stdio_client  # ClientSessionGroup 建 stdio 会话时调的就是它
 
 _DISALLOWED_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
 
