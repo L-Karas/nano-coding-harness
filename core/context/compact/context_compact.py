@@ -3,7 +3,8 @@ Context Compaction
 
 # Compaction is layered: first shrink oversized tool results, then trim old
 # message ranges, and call the model for a summary only when the context is
-# still over the trigger threshold (automatic turns and /compact alike).
+# still over the trigger threshold. Manual /compact (auto_compact=False) skips
+# the threshold check and always summarizes.
 """
 import inspect
 import uuid
@@ -194,6 +195,9 @@ async def compact_history(
 ) -> tuple[list, bool]:
     """压缩历史消息；阈值/保留预算按当前模型（主代理或子代理）窗口解析，阈值封顶到窗口 80%。
 
+    auto_compact=False（手动 /compact）跳过 token 阈值判断，直接压缩；未选择模型
+    （无可用上下文窗口）仍然无法压缩。
+
     Returns:
         (messages, compacted)：未触发压缩（低于阈值 / 无可用上下文窗口）时返回原 list 且
         compacted=False；触发时返回新 list 且 compacted=True。
@@ -201,20 +205,23 @@ async def compact_history(
     if not messages:
         return [], False
     client = shared_sub_model_client() if sub_model else shared_model_client()
-    # threshold <= 0：当前模型没有可用上下文窗口（未选择模型）→ 无法压缩，原样返回
+    # 未选择模型 / 上下文未知 → 无法压缩，原样返回
     threshold = client.compact_trigger_tokens()
-    if threshold <= 0 or estimate_size(messages) < threshold:
+    if threshold <= 0:
+        return messages, False
+    # 自动压缩只在历史超过阈值时触发；手动 /compact（auto_compact=False）跳过阈值判断
+    if auto_compact and estimate_size(messages) < threshold:
         return messages, False
 
-    split_index = -1
     if auto_compact:
         split_index = find_index_to_split(messages, client.compact_reserve_tokens())
-        summary = await summarize_history(messages[:split_index], ctx, sub_model)
+        to_summarize, tail = messages[:split_index], messages[split_index:]
     else:
-        summary = await summarize_history(messages, ctx, sub_model)
+        to_summarize, tail = messages, []
+    summary = await summarize_history(to_summarize, ctx, sub_model)
     compacted_messages = [
         Message(role="user", content=f"<compacted_messages>\n{summary}\n</compacted_messages>")
-    ] + (messages[split_index:] if auto_compact else [])
+    ] + tail
     return compacted_messages, True
 
 

@@ -86,7 +86,8 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 2. `compact_history`：估算 token > 有效压缩阈值时，按 user 消息切分轮次，从后往前保留
    ≤ `compact_reserve_tokens`（默认 50_000，封顶有效压缩阈值）的历史，其余交给模型总结成
    `<compacted_messages>` 摘要。有效阈值按当前模型窗口解析（规则见
-   [`context-compaction.md`](context-compaction.md)）。
+   [`context-compaction.md`](context-compaction.md)）。手动 `/compact` 用 `auto_compact=False`
+   跳过阈值判断，直接做全量摘要。
 
 阈值来自 `AgentConfig`（默认值见 `core/config.py`），并在运行中按当前模型窗口解析，
 切换模型（`/model`）后立即生效；具体规则见 [`context-compaction.md`](context-compaction.md)，
@@ -94,7 +95,7 @@ length 时延迟执行工具）经 `StepPolicy` 显式化（见 ADR-0003）。
 [`configuration.md`](configuration.md#上下文压缩参数)。
 
 `/compact` 走 `AgentRuntime.run_compact()`：对整个会话做一次全量摘要后替换（中断则不落盘；
-低于压缩阈值 / 未选择模型时不压缩，UI 提示 Nothing to compact）。
+跳过阈值判断，未选择模型时不压缩，UI 提示 Nothing to compact）。
 
 触发 / 预算解析、切分规则、落盘格式与模型切换行为等细节见
 [`context-compaction.md`](context-compaction.md)。

@@ -303,15 +303,14 @@ class _CommandFlow:
     def _compact_worker(self, runtime: Any) -> None:
         """压缩线程主体：run_compact() 在锁内提交并在 runtime 事件循环上跑完（阻塞）。
         Esc 可中断：中断则不落会话，历史保持原样。
-        compact 返回 False（低于阈值 / 未选模型）时只提示未压缩，不重放历史。"""
+        compact 返回 False（未选模型）时只提示未压缩，不重放历史。"""
         try:
             compacted = runtime.run_compact()
         except AgentInterrupted:  # 取消统一成 AgentInterrupted
             self._notify("Compaction interrupted — history unchanged.", title="⏹ Compact")
             return
         if not compacted:
-            self._notify("Nothing to compact — session is below the compaction "
-                         "threshold (or no model is selected).", title="🗜 Compact")
+            self._notify("Nothing to compact — no model is selected.", title="🗜 Compact")
             return
         self.call_from_thread(self._reload_history)
         self._notify("Context compacted — history re-rendered.", title="🗜 Compact")

@@ -79,7 +79,7 @@ class AgentRuntime:
 
     async def compact(self, ctx: AgentRunContext) -> bool:
         """压缩当前会话上下文（UI 的 /compact）：ctx 由 TurnRunner 提供，压缩期间 Esc 可中断；
-        中断不落会话。返回是否实际压缩；未触发（低于阈值 / 未选模型）时不回写会话。"""
+        中断不落会话。返回是否实际压缩；未选模型（无法压缩）时不回写会话。"""
         try:
             messages, compacted = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
             if compacted:
