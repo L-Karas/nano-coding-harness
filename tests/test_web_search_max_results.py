@@ -1,13 +1,12 @@
 """WebSearch 新增 max_results：schema 默认 10、4 个 provider 负载、arun 透传。"""
 import asyncio
-import sys
-import types
 
 import pytest
 from pydantic import ValidationError
 
 import core.tools.web_search.web_search as web_search
 from core.tools.web_search.web_search import WebSearch
+from tests.support import install_fake_ddgs
 
 
 def test_web_search_defaults_max_results_to_10():
@@ -82,25 +81,12 @@ def test_exa_search_sends_max_results_as_numresults(monkeypatch):
 
 
 def test_ddgs_search_sends_max_results(monkeypatch):
-    captured = {}
-
-    class _FakeDDGS:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def text(self, **kwargs):
-            captured.update(kwargs)
-            return [{"title": "t", "href": "http://example.com", "body": "b"}]
-
-    monkeypatch.setitem(sys.modules, "ddgs", types.SimpleNamespace(DDGS=_FakeDDGS))
+    fake = install_fake_ddgs(monkeypatch)
 
     ok, _ = asyncio.run(web_search.ddgs_search("q", max_results=6))
 
     assert ok is True
-    assert captured["max_results"] == 6
+    assert fake.captured["max_results"] == 6
 
 
 def test_run_web_search_async_passes_max_results_to_provider(monkeypatch):

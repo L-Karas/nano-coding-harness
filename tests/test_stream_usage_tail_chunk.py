@@ -11,31 +11,9 @@ from openai.types import CompletionUsage
 from openai.types.completion_usage import CompletionTokensDetails
 
 from core.streaming import streaming_message
+from tests.support import FakeStream, text_chunk
 
 EXPECTED = {"prompt_tokens": 11, "completion_tokens": 7, "reasoning_tokens": 3, "total_tokens": 18}
-
-
-def _chunk(text="", finish_reason=None, usage=None):
-    choice = NS(delta=NS(content=text or None, tool_calls=None, reasoning_content=None),
-                finish_reason=finish_reason)
-    return NS(choices=[choice], usage=usage)
-
-
-class _FakeStream:
-    """stream() 退出时会 await close()，生成器没有异步 close"""
-
-    def __init__(self, chunks):
-        self._chunks = list(chunks)
-
-    def __aiter__(self):
-        async def gen():
-            for chunk in self._chunks:
-                yield chunk
-
-        return gen()
-
-    async def close(self):
-        pass
 
 
 def _usage(details=True):
@@ -49,22 +27,22 @@ def _usage(details=True):
 
 
 def _case_a():
-    yield _chunk("你好")
-    yield _chunk("，世界", finish_reason="stop", usage=_usage())  # usage 与正文同块
+    yield text_chunk("你好")
+    yield text_chunk("，世界", finish_reason="stop", usage=_usage())  # usage 与正文同块
 
 
 def _case_b():
-    yield _chunk("你好")
-    yield _chunk("，世界", finish_reason="stop")
+    yield text_chunk("你好")
+    yield text_chunk("，世界", finish_reason="stop")
     yield NS(choices=[], usage=_usage())  # 独立 usage-only 尾块
 
 
 def _case_c():
-    yield _chunk("你好", finish_reason="stop", usage=_usage(details=False))
+    yield text_chunk("你好", finish_reason="stop", usage=_usage(details=False))
 
 
 def _stream(chunks):
-    return asyncio.run(streaming_message(_FakeStream(chunks)))
+    return asyncio.run(streaming_message(FakeStream(chunks)))
 
 
 def test_usage_recorded_on_both_delivery_shapes():

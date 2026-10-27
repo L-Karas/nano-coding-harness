@@ -6,53 +6,14 @@ import pytest
 import core.agent_step as step_mod
 import core.agent_loop as lwi
 from core import interaction
-from core.extension import reset_extensions
-from core.extension.builtin import register_builtin_extensions
-from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.tools import ToolPool
 from core.tools.tool_base import BaseTool
+from tests.support import MemorySession, StubModelClient, stream_replies
+pytestmark = pytest.mark.usefixtures("full_extension_registry")
 
 TOOL_CALL = {"id": "t1", "type": "function",
              "function": {"name": "terminal", "arguments": '{"command": "ls"}'}}
-
-
-@pytest.fixture(autouse=True)
-def _clean_extensions():
-    reset_extensions()
-    register_builtin_extensions(rules=Rules())
-    yield
-    reset_extensions()
-
-
-class _Mgr:
-    def __init__(self):
-        self.messages = []
-
-    def load_messages(self):
-        return list(self.messages)
-
-    def update_messages(self, messages):
-        self.messages = list(messages)
-
-    def add_message(self, message):
-        self.messages.append(message)
-
-
-class _Client:
-    current_provider = "test"
-
-    def __init__(self, calls):
-        self._calls = calls
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-    def get_model_client(self):
-        async def create(**kwargs):
-            self._calls["llm"].append(kwargs)
-            return object()
-        return create
 
 
 def _terminal_pool(calls, output):
@@ -70,13 +31,6 @@ async def _identity(messages, ctx):
     return messages
 
 
-def _streamer(responses):
-    async def fake_stream(stream, on_text=None):
-        return responses.pop(0)
-
-    return fake_stream
-
-
 def _prepare_runtime(
     monkeypatch,
     mgr,
@@ -84,13 +38,14 @@ def _prepare_runtime(
     execute,
 ):
     """responses 为 (content, reasoning, tool_calls, finish_reason, usage) 列表。"""
-    calls = {"llm": [], "tools": [], "notify": []}
+    client = StubModelClient()
+    calls = {"llm": client.calls, "tools": [], "notify": []}
 
     monkeypatch.setattr(lwi, "consume_cron_queue", lambda: [])
     monkeypatch.setattr(lwi, "inject_background_notifications", lambda: None)
     monkeypatch.setattr(lwi, "SESSION_MANAGER", mgr)
     monkeypatch.setattr(lwi, "assemble_tool_pool", lambda *a, **k: _terminal_pool(calls, execute))
-    monkeypatch.setattr(lwi, "shared_model_client", lambda: _Client(calls))
+    monkeypatch.setattr(lwi, "shared_model_client", lambda: client)
     monkeypatch.setattr(lwi, "prepare_messages", _identity)
     monkeypatch.setattr(interaction, "stream_assistant_response", lambda *a, **k: None)
     monkeypatch.setattr(interaction, "render_tool_call", lambda *a, **k: None)
@@ -100,7 +55,7 @@ def _prepare_runtime(
     monkeypatch.setattr(interaction, "render_working_status", contextlib.nullcontext)
     monkeypatch.setattr(interaction, "render_thinking_status", lambda *a, **k: contextlib.nullcontext())
     monkeypatch.setattr(interaction, "render_scope", contextlib.nullcontext)
-    monkeypatch.setattr(step_mod, "streaming_message", _streamer(responses))
+    monkeypatch.setattr(step_mod, "streaming_message", stream_replies(responses))
     monkeypatch.setattr(step_mod, "should_run_background", lambda *a: False)
 
     runtime = lwi.AgentRuntime()
@@ -108,7 +63,7 @@ def _prepare_runtime(
 
 
 def test_before_llm_abort_ends_turn_without_model_call(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, calls = _prepare_runtime(
         monkeypatch,
         mgr,
@@ -124,7 +79,7 @@ def test_before_llm_abort_ends_turn_without_model_call(monkeypatch):
 
 
 def test_before_llm_mutation_reaches_model(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, calls = _prepare_runtime(
         monkeypatch,
         mgr,
@@ -137,7 +92,7 @@ def test_before_llm_mutation_reaches_model(monkeypatch):
 
 
 def test_after_llm_rewrites_content_and_injects(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, _ = _prepare_runtime(
         monkeypatch,
         mgr,
@@ -156,7 +111,7 @@ def test_after_llm_rewrites_content_and_injects(monkeypatch):
 
 
 def test_before_tool_block_writes_result_and_skips_execution(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, calls = _prepare_runtime(
         monkeypatch,
         mgr,
@@ -172,7 +127,7 @@ def test_before_tool_block_writes_result_and_skips_execution(monkeypatch):
 
 
 def test_before_tool_args_mutation_reaches_executor(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, calls = _prepare_runtime(
         monkeypatch,
         mgr,
@@ -186,7 +141,7 @@ def test_before_tool_args_mutation_reaches_executor(monkeypatch):
 
 
 def test_after_tool_result_rewrite_and_inject(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, _ = _prepare_runtime(
         monkeypatch,
         mgr,
@@ -208,7 +163,7 @@ def test_after_tool_result_rewrite_and_inject(monkeypatch):
 
 
 def test_after_llm_clear_tool_calls_ends_turn(monkeypatch):
-    mgr = _Mgr()
+    mgr = MemorySession()
     runtime, calls = _prepare_runtime(
         monkeypatch,
         mgr,

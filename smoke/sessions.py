@@ -4,7 +4,7 @@ from __future__ import annotations
 from textual.widgets import Input, OptionList, Static
 
 from core.tui.screens import SessionPickerScreen
-from smoke._util import prompt_of, settle
+from smoke._util import option_ids, prompt_of, settle
 
 
 async def run(app, pilot) -> None:
@@ -104,7 +104,7 @@ async def run(app, pilot) -> None:
     assert str(scr.query_one("#search-prompt").render()) == "❯", "搜索栏缺 ❯ 标记"
     s_search.value = "SESSION 149"  # 大写：验证忽略大小写
     await settle(pilot)
-    filtered = [olist.get_option_at_index(i).id for i in range(olist.option_count)]
+    filtered = option_ids(olist)
     assert filtered == ["session-000149.jsonl"], filtered
     s_search.value = ""
     await settle(pilot)
@@ -131,7 +131,7 @@ async def run(app, pilot) -> None:
     # （_sessions 下标已不对应过滤后的列表位置，旧实现会删错会话）
     s_search.value = "SESSION 148"
     await settle(pilot)
-    filtered = [olist.get_option_at_index(i).id for i in range(olist.option_count)]
+    filtered = option_ids(olist)
     assert filtered == ["session-000148.jsonl"], filtered
     await pilot.press("delete")
     await settle(pilot)

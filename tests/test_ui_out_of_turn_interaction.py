@@ -8,10 +8,7 @@ from concurrent.futures import Future
 
 from core.runtime_state import RuntimeState
 from core.tui.ui_textual import ChatApp
-
-
-def _app() -> ChatApp:
-    return ChatApp(handle_query=lambda _query: None, runtime_state=RuntimeState())
+from tests.support import chat_app
 
 
 def _status_text(app: ChatApp) -> str:
@@ -21,8 +18,7 @@ def _status_text(app: ChatApp) -> str:
 def test_out_of_turn_permission_answer_restores_idle_ui():
     """子代理 / cron 的权限询问作答后：输入条恢复、状态行清空、可继续键入。"""
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32), runtime_state=RuntimeState()) as (app, pilot):
             app._begin_permission("Allow?", [], Future())
             await pilot.pause()
             assert app.query_one("#prompt").disabled, "询问挂起时输入条禁用"
@@ -41,8 +37,7 @@ def test_out_of_turn_permission_answer_restores_idle_ui():
 def test_out_of_turn_clarify_answer_restores_idle_ui():
     """子代理的 clarify 作答后：输入条恢复、状态行清空。"""
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32), runtime_state=RuntimeState()) as (app, pilot):
             app._begin_clarify(["Which one?"], False, Future())
             await pilot.pause()
             assert app.query_one("#prompt").disabled
@@ -58,8 +53,7 @@ def test_out_of_turn_clarify_answer_restores_idle_ui():
 def test_in_turn_answer_keeps_prompt_disabled_until_idle():
     """前台回合内的询问：作答后回合仍在跑，输入条由 _set_idle 收尾再恢复。"""
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32), runtime_state=RuntimeState()) as (app, pilot):
             app._busy = True
             app._begin_permission("Allow?", [], Future())
             app._answer_permission("yes")
@@ -77,8 +71,7 @@ def test_in_turn_answer_keeps_prompt_disabled_until_idle():
 def test_turn_end_resolves_pending_ask_so_asker_is_not_left_blocked():
     """回合结束兜底清理挂起询问时，必须给等待线程一个回答（否则子代理 / 工具线程永久阻塞）。"""
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)):
+        async with chat_app(size=(100, 32), runtime_state=RuntimeState()) as (app, _):
             app._busy = True
             perm_future: Future[str] = Future()
             app._begin_permission("Allow?", [], perm_future)

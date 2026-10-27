@@ -10,7 +10,7 @@ from core.tui.screens import (
     UnregisterModelScreen,
     UnregisterProviderScreen,
 )
-from smoke._util import prompt_of, settle, type_query
+from smoke._util import assert_scrollbar_style, option_ids, option_texts, prompt_of, settle, type_query
 
 
 async def run(app, pilot) -> None:
@@ -29,7 +29,7 @@ async def run(app, pilot) -> None:
     await settle(pilot, 10)
     assert isinstance(app.screen_stack[-1], LoginScreen), "Enter /login 未打开 LoginScreen"
     lg = app.screen_stack[-1].query_one("#login-list", OptionList)
-    assert [lg.get_option_at_index(i).prompt.plain for i in range(lg.option_count)] == [
+    assert option_texts(lg) == [
         "1. Register custom provider",
         "2. Register custom model",
         "3. Unregister custom provider",
@@ -120,8 +120,7 @@ async def run(app, pilot) -> None:
     assert msel.expanded, "Enter 应展开提供方下拉"
     # 浮层滑块同 /sessions 列表（app.css 同一组规则）：1 列宽 + 暗灰滑块 #475569
     ov = msel.query_one("SelectOverlay")
-    assert ov.styles.scrollbar_size_vertical == 1 and ov.styles.scrollbar_color.hex.lower() == "#475569", \
-        (ov.styles.scrollbar_size_vertical, ov.styles.scrollbar_color)
+    assert_scrollbar_style(ov, "提供方下拉浮层")
     await pilot.press("escape")
     await settle(pilot)
     assert not msel.expanded and msel.selection is None and app.screen_stack[-1] is mform, \
@@ -220,7 +219,7 @@ async def run(app, pilot) -> None:
     assert isinstance(app.screen_stack[-1], UnregisterProviderScreen), \
         "选项 3 未弹出提供方注销列表"
     ulist = app.screen_stack[-1].query_one("#unreg-provider-list", OptionList)
-    assert [ulist.get_option_at_index(i).id for i in range(ulist.option_count)] == \
+    assert option_ids(ulist) == \
         ["smoke-a", "smoke-b"], "注销列表未来自 get_provider_list(custom_provider=True)"
     await pilot.press("enter")  # Enter 不再直接注销（统一 Delete 键）
     await settle(pilot)
@@ -251,7 +250,7 @@ async def run(app, pilot) -> None:
     assert _calls7 == ["smoke-a"], f"Enter 未调用 logout_provider: {_calls7}"
     assert isinstance(app.screen_stack[-1], UnregisterProviderScreen), \
         "注销后不应关闭注销窗口"
-    assert [ulist.get_option_at_index(i).id for i in range(ulist.option_count)] == \
+    assert option_ids(ulist) == \
         ["smoke-b"], "注销后列表应刷新"
     await pilot.press("escape")  # 手动关窗回菜单
     await settle(pilot)
@@ -278,7 +277,7 @@ async def run(app, pilot) -> None:
     assert isinstance(app.screen_stack[-1], UnregisterModelScreen), \
         "选项 4 未弹出模型注销列表"
     mlist = app.screen_stack[-1].query_one("#unreg-model-list", OptionList)
-    assert [mlist.get_option_at_index(i).prompt.plain for i in range(mlist.option_count)] == \
+    assert option_texts(mlist) == \
         ["smoke-model [smoke-provider]", "other-model [other-provider]"], \
         "注销列表未来自 get_model_list(custom_model=True)"
     await pilot.press("enter")  # Enter 不再直接注销（统一 Delete 键）
@@ -311,7 +310,7 @@ async def run(app, pilot) -> None:
         f"Enter 未按行内容调用 logout_model: {_calls8}"
     assert isinstance(app.screen_stack[-1], UnregisterModelScreen), \
         "注销后不应关闭注销窗口"
-    assert [mlist.get_option_at_index(i).prompt.plain for i in range(mlist.option_count)] == \
+    assert option_texts(mlist) == \
         ["other-model [other-provider]"], "注销后列表应刷新"
     await pilot.press("escape")  # 手动关窗回菜单
     await settle(pilot)

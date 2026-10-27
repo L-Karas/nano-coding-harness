@@ -19,6 +19,9 @@ init_harness()
 
 from core.client.model import load_model_registry  # noqa: E402
 from core.config import AgentConfig  # noqa: E402
+import core.context.session.session as session_module  # noqa: E402
+from core.context.session.session import SessionManager  # noqa: E402
+from core.extension import reset_extensions  # noqa: E402
 from core.extension.builtin import permission, register_builtin_extensions  # noqa: E402
 from core.extension.builtin.permission import Rules  # noqa: E402
 import core.skill.skills as skills_mod  # noqa: E402
@@ -31,6 +34,31 @@ skills_mod.scan_skills()
 skills_mod._DISABLED = set()
 skills_mod._STATE_ERROR = None
 load_model_registry()
+
+
+@pytest.fixture
+def session_manager(tmp_path, monkeypatch):
+    """SessionManager 及落盘目录全部隔离到 tmp_path（会话测试共用）。"""
+    monkeypatch.setattr(session_module, "SESSION_DIR", tmp_path)
+    monkeypatch.setattr(session_module, "SESSION_INDEX_FILE", tmp_path / "session_index.jsonl")
+    return SessionManager()
+
+
+@pytest.fixture
+def empty_extension_registry():
+    """需要自行登记扩展的测试：每个用例从空 registry 开始，结束后清空。"""
+    reset_extensions()
+    yield
+    reset_extensions()
+
+
+@pytest.fixture
+def full_extension_registry():
+    """扩展接线测试的干净起点：内置扩展注册后运行，结束时清空。"""
+    reset_extensions()
+    register_builtin_extensions(rules=Rules())
+    yield
+    reset_extensions()
 
 
 @pytest.fixture(autouse=True)

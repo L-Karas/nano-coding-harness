@@ -17,7 +17,7 @@ from core.tui.screens import (
     UnregisterModelScreen,
     UnregisterProviderScreen,
 )
-from core.tui.ui_textual import ChatApp
+from tests.support import chat_app
 
 # 单击行立即执行与 Enter 相同的动作
 _CLICK_ACTION_SCREENS = (ForkScreen, LoginScreen, MCPServersScreen, MCPToolsScreen, ModelPickerScreen,
@@ -37,8 +37,7 @@ def test_list_picker_hints_mention_click():
 
 def test_login_click_row_equals_enter():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app.push_screen(LoginScreen())
             await pilot.pause()
             assert isinstance(app.screen_stack[-1], LoginScreen)
@@ -51,8 +50,7 @@ def test_login_click_row_equals_enter():
 
 def test_form_tab_and_arrows_switch_fields():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app.push_screen(RegisterProviderScreen())
             await pilot.pause()
             form = app.screen_stack[-1]

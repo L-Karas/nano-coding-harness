@@ -4,9 +4,8 @@ import asyncio
 import pytest
 
 import core.tui.screens.skills as skills_screen
-from core.skill.skills import Skill
 from core.tui.screens import MCPToolsScreen, SkillsScreen
-from core.tui.ui_textual import ChatApp
+from tests.support import chat_app, make_skill
 
 _HINT = ("  ↑/↓ browse    Enter/click invoke    Tab invoke with message"
          "    Ctrl+E enable/disable    Esc close")
@@ -19,19 +18,13 @@ def _skills_enabled_and_state_ok(monkeypatch):
     monkeypatch.setattr(skills_screen, "skill_state_error", lambda: None)
 
 
-def _skill() -> Skill:
-    return Skill(name="review", description="Review code", content="",
-                 location="/skills/review", skill_type="project")
-
-
 def _push(app, results: list) -> None:
-    app.push_screen(SkillsScreen([_skill()]), callback=results.append)
+    app.push_screen(SkillsScreen([make_skill()]), callback=results.append)
 
 
 def test_tab_returns_with_message_and_enter_returns_invoke():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             results: list = []
             _push(app, results)
             await pilot.pause()
@@ -53,8 +46,7 @@ def test_tab_returns_with_message_and_enter_returns_invoke():
 
 def test_tab_fills_prompt_instead_of_sending():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             prompt = app.query_one("#prompt")
             prompt.text = "draft text"
             app._on_skill_picked(("review", True))
@@ -68,8 +60,7 @@ def test_tab_fills_prompt_instead_of_sending():
 
 def test_skill_pick_rejected_while_busy():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             prompt = app.query_one("#prompt")
             app._busy = True
             app._on_skill_picked(("review", True))
@@ -82,8 +73,7 @@ def test_skill_pick_rejected_while_busy():
 
 def test_empty_skill_name_is_ignored():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             prompt = app.query_one("#prompt")
             prompt.text = "draft"
             app._on_skill_picked(("", False))
@@ -95,8 +85,7 @@ def test_empty_skill_name_is_ignored():
 
 def test_tab_with_no_matching_skill_is_noop():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             results: list = []
             _push(app, results)
             await pilot.pause()
@@ -113,8 +102,7 @@ def test_tab_with_no_matching_skill_is_noop():
 
 def test_mcp_tools_picker_keeps_tab_focus_navigation():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             results: list = []
             screen = MCPToolsScreen("demo", [{"tool_name": "read_file", "tool_description": "Read"}])
             app.push_screen(screen, callback=results.append)

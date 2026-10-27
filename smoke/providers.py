@@ -4,7 +4,7 @@ from __future__ import annotations
 from textual.widgets import Input, OptionList, Static
 
 from core.tui.screens import ApiKeyScreen, ProviderScreen
-from smoke._util import prompt_of, settle
+from smoke._util import option_texts, prompt_of, settle
 
 
 async def run(app, pilot) -> None:
@@ -19,7 +19,7 @@ async def run(app, pilot) -> None:
     # 遮罩半透明：弹窗打开时主界面（screen 栈底层）仍参与合成，窗外可见主界面内容
     assert app.screen.styles.background.a < 1, "弹窗遮罩应半透明（窗外透出主界面）"
     pv = app.screen_stack[-1].query_one("#provider-list", OptionList)
-    pv_rows = [pv.get_option_at_index(i).prompt.plain for i in range(pv.option_count)]
+    pv_rows = option_texts(pv)
     assert pv_rows == ["deepseek [○ unconfigured]", "qwen [● configured]"], pv_rows
     # 行末 span = 配置状态段（Option prompt 直接持原始 hex 色：灰 #94a3b8 / 暗绿 #16a34a）
     for i, marker in ((0, "#94a3b8"), (1, "#16a34a")):
@@ -38,7 +38,7 @@ async def run(app, pilot) -> None:
     assert not p_row.styles.border_top[0] and p_row.styles.border_bottom[0] == "solid"
     p_search.value = "QWE"
     await settle(pilot)
-    assert [pv.get_option_at_index(i).prompt.plain for i in range(pv.option_count)] == \
+    assert option_texts(pv) == \
         ["qwen [● configured]"], "搜索应忽略大小写并只留匹配行"
     p_search.value = ""
     await settle(pilot)

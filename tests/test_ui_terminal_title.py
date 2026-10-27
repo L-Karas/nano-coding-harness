@@ -7,30 +7,20 @@ import asyncio
 from textual.drivers.headless_driver import HeadlessDriver
 
 import core.tui.ui_textual as ui_textual
-from core.tui.ui_textual import ChatApp
+from tests.support import RecordingDriver, chat_app
 
 _TITLE_SEQ = "\x1b]2;nano-harness\x07"
 _CLEAR_SEQ = "\x1b]2;\x07"
 
 
-class _RecordingDriver:
-    """driver.write 边界替身：只记录写出的底层序列。"""
-
-    def __init__(self) -> None:
-        self.writes: list[str] = []
-
-    def write(self, data: str) -> None:
-        self.writes.append(data)
-
-
 def test_set_terminal_title_writes_osc2_sequence():
-    driver = _RecordingDriver()
+    driver = RecordingDriver()
     ui_textual._set_terminal_title(driver, "nano-harness")
     assert driver.writes == [_TITLE_SEQ]
 
 
 def test_set_terminal_title_empty_string_clears():
-    driver = _RecordingDriver()
+    driver = RecordingDriver()
     ui_textual._set_terminal_title(driver, "")
     assert driver.writes == [_CLEAR_SEQ]
 
@@ -44,8 +34,7 @@ def test_app_sets_title_on_mount_and_clears_on_unmount(monkeypatch):
     monkeypatch.setattr(HeadlessDriver, "write", lambda self, data: writes.append(data))
 
     async def run_once() -> None:
-        app = ChatApp(handle_query=lambda _query: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             await asyncio.sleep(0)
             assert _TITLE_SEQ in writes  # 运行期间标题已生效
 

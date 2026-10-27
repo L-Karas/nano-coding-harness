@@ -5,25 +5,12 @@ import pytest
 
 import core.agent_step as step_mod
 from core.agent_step import StepPolicy, StepRenderer, run_agent_step
-from core.extension import reset_extensions
-from core.extension.builtin import register_builtin_extensions
-from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool
 from core.tools.tool_base import BaseTool
-
-
-class _Client:
-    current_provider = "test"
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-    def get_model_client(self):
-        async def create(**kwargs):
-            return object()
-        return create
+from tests.support import StubModelClient
+pytestmark = pytest.mark.usefixtures("full_extension_registry")
 
 
 def _pool(calls):
@@ -57,21 +44,13 @@ def _run(monkeypatch, tool_call, calls, *, policy=None, renderer=None):
     return asyncio.run(run_agent_step(
         [],
         "sys",
-        client=_Client(),
+        client=StubModelClient(),
         pool=_pool(calls),
         tctx=ToolContext(agent_run=AgentRunContext()),
         max_tokens=100,
         policy=policy or StepPolicy(use_extensions=True),
         renderer=renderer or StepRenderer(),
     ))
-
-
-@pytest.fixture(autouse=True)
-def _clean_extensions():
-    reset_extensions()
-    register_builtin_extensions(rules=Rules())
-    yield
-    reset_extensions()
 
 
 def test_handle_replaces_builtin_and_after_tool_sees_result(monkeypatch):

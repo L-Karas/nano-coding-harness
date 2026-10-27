@@ -12,20 +12,11 @@ import core.tui.render as _render
 from core.runtime_state import RuntimeState, TodoEntry
 from core.tools import ToolResult
 from core.tui.ui_textual import ChatApp
+from tests.support import RecordingDriver, chat_app
 
 _WORKING = "\x1b]9;4;3\x07"
 _WAITING = "\x1b]9;4;4;100\x07"
 _CLEAR = "\x1b]9;4;0\x07"
-
-
-class _RecordingDriver:
-    """driver.write 边界替身：只记录写出的底层序列。"""
-
-    def __init__(self) -> None:
-        self.writes: list[str] = []
-
-    def write(self, data: str) -> None:
-        self.writes.append(data)
 
 
 def _progress_seqs(writes: list[str]) -> list[str]:
@@ -38,9 +29,9 @@ def _record_writes(monkeypatch) -> list[str]:
     return writes
 
 
-def _app_with_driver(state: RuntimeState | None = None) -> tuple[ChatApp, _RecordingDriver]:
+def _app_with_driver(state: RuntimeState | None = None) -> tuple[ChatApp, RecordingDriver]:
     app = ChatApp(handle_query=lambda _query: None, runtime_state=state or RuntimeState())
-    driver = _RecordingDriver()
+    driver = RecordingDriver()
     app._driver = driver
     return app, driver
 
@@ -121,7 +112,7 @@ def test_runtime_turn_sets_running_without_ui_busy():
     runtime = _FakeRuntime()
     app = ChatApp(handle_query=lambda _query: None, runtime=runtime,
                   runtime_state=RuntimeState())
-    driver = _RecordingDriver()
+    driver = RecordingDriver()
     app._driver = driver
     runtime.running = True
     app._progress_sync()
@@ -167,8 +158,7 @@ def test_idle_tick_picks_up_background_task(monkeypatch):
     state = RuntimeState()
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None, runtime_state=state)
-        async with app.run_test():
+        async with chat_app(runtime_state=state) as (app, _):
             state.register_background("bg-1", "terminal(pytest)")
             _drive_ticks(ticks)
             assert _progress_seqs(writes) == [_WORKING]
@@ -229,8 +219,7 @@ def test_permission_pauses_progress_and_answer_restores_working(monkeypatch):
     writes = _record_writes(monkeypatch)
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._busy = True  # 前景回合仍在跑
             app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]  # 等待用户：黄色暂停
@@ -246,8 +235,7 @@ def test_permission_answered_outside_turn_clears_progress(monkeypatch):
     writes = _record_writes(monkeypatch)
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]
             app._answer_permission("yes")
@@ -261,8 +249,7 @@ def test_clarify_pauses_progress_and_answer_restores_working(monkeypatch):
     writes = _record_writes(monkeypatch)
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._busy = True  # 前景回合仍在跑
             app._begin_clarify(["Which one?"], False, Future())
             assert _progress_seqs(writes) == [_WAITING]  # 等待用户：黄色暂停
@@ -278,8 +265,7 @@ def test_clarify_answered_outside_turn_clears_progress(monkeypatch):
     writes = _record_writes(monkeypatch)
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._begin_clarify(["Which one?"], False, Future())
             assert _progress_seqs(writes) == [_WAITING]
             app._answer_clarify("Which one?")
@@ -295,8 +281,7 @@ def test_turn_end_keeps_running_while_background_active(monkeypatch):
     state = RuntimeState()
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None, runtime_state=state)
-        async with app.run_test():
+        async with chat_app(runtime_state=state) as (app, _):
             state.register_background("bg-1", "terminal(pytest)")
             app._busy = True
             app._progress_sync()
@@ -334,8 +319,7 @@ def test_permission_answer_resumes_running_while_background_active(monkeypatch):
     state = RuntimeState()
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _query: None, runtime_state=state)
-        async with app.run_test():
+        async with chat_app(runtime_state=state) as (app, _):
             state.register_background("bg-1", "terminal(pytest)")
             app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]

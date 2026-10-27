@@ -7,8 +7,8 @@ from textual.widgets import Input, OptionList, Static
 import core.extension.registry as registry
 from core.extension import list_extensions
 from core.tui.screens import ExtensionsScreen
-from core.tui.ui_textual import ChatApp
 from core.tui.utils import SLASH_COMMANDS
+from tests.support import chat_app, option_texts
 
 
 @pytest.fixture(autouse=True)
@@ -31,13 +31,12 @@ def _extensions():
 def _rows(app):
     screen = app.screen_stack[-1]
     lst = screen.query_one("#extensions-list", OptionList)
-    return screen, lst, [lst.get_option_at_index(i).prompt.plain for i in range(lst.option_count)]
+    return screen, lst, option_texts(lst)
 
 
 def test_extensions_command_is_completable_and_opens_read_only_screen():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             assert "/extensions" in SLASH_COMMANDS
             prompt = app.query_one("#prompt")
             prompt.focus()
@@ -63,23 +62,22 @@ def test_extensions_command_is_completable_and_opens_read_only_screen():
 
 def test_search_filters_by_name_and_enter_does_not_close():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             screen, lst, _rows_before = _rows(app)
             search = screen.query_one("#search-input", Input)
             search.value = "ZETA"
             await pilot.pause()
-            assert [lst.get_option_at_index(i).prompt.plain for i in range(lst.option_count)] == [
+            assert option_texts(lst) == [
                 "● zeta [user]\nZeta extension\nhooks: before_llm, after_tool",
             ]
             search.value = "Zeta extension"
             await pilot.pause()
-            assert lst.option_count == 0, "搜索只匹配名称，不匹配描述"
+            assert option_texts(lst) == [], "搜索只匹配名称，不匹配描述"
             search.value = ""
             await pilot.pause()
-            assert lst.option_count == 4
+            assert len(option_texts(lst)) == 4
             await pilot.click("#extensions-list", offset=(2, 0))
             await pilot.pause()
             assert isinstance(app.screen_stack[-1], ExtensionsScreen), "单击行不应关窗"
@@ -94,8 +92,7 @@ def test_search_filters_by_name_and_enter_does_not_close():
 
 def test_list_is_transparent_and_hint_is_pinned_to_window_bottom():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             screen = app.screen_stack[-1]
@@ -111,8 +108,7 @@ def test_list_is_transparent_and_hint_is_pinned_to_window_bottom():
 
 def test_disabled_extension_uses_failed_mcp_server_style():
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             _screen, lst, _ = _rows(app)
@@ -128,8 +124,7 @@ def test_disabled_extension_shows_description_before_reason():
     async def main():
         registry.record("off", "user", enabled=False, detail="disabled",
                         description="Disabled but described")
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             _screen, _lst, rows = _rows(app)
@@ -140,8 +135,7 @@ def test_disabled_extension_shows_description_before_reason():
 def test_enabled_extension_without_events_shows_no_hooks():
     async def main():
         registry.record("silent", "user", enabled=True)
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             _screen, _lst, rows = _rows(app)
@@ -152,8 +146,7 @@ def test_enabled_extension_without_events_shows_no_hooks():
 def test_empty_registry_notifies_instead_of_opening():
     async def main():
         registry.reset()
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             assert not isinstance(app.screen_stack[-1], ExtensionsScreen)

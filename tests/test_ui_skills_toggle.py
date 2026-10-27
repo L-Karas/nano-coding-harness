@@ -4,9 +4,8 @@ import asyncio
 import pytest
 
 import core.tui.screens.skills as skills_screen
-from core.skill.skills import Skill
 from core.tui.screens import SkillsScreen
-from core.tui.ui_textual import ChatApp
+from tests.support import chat_app, make_skill, option_texts
 
 
 @pytest.fixture
@@ -29,19 +28,13 @@ def state(monkeypatch):
     return enabled, calls
 
 
-def _skill() -> Skill:
-    return Skill(name="review", description="Review code", content="",
-                 location="/skills/review", skill_type="project")
-
-
 def test_ctrl_e_toggles_and_disabled_blocks_invoke(state):
     enabled, calls = state
 
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             results: list = []
-            app.push_screen(SkillsScreen([_skill()]), callback=results.append)
+            app.push_screen(SkillsScreen([make_skill()]), callback=results.append)
             await pilot.pause()
 
             await pilot.press("ctrl+e")
@@ -75,15 +68,13 @@ def test_state_error_row_is_shown_but_skills_stay_enabled(monkeypatch):
     monkeypatch.setattr(skills_screen, "skill_state_error", lambda: "failed to read .skills.json")
 
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             results: list = []
-            app.push_screen(SkillsScreen([_skill()]), callback=results.append)
+            app.push_screen(SkillsScreen([make_skill()]), callback=results.append)
             await pilot.pause()
             screen = app.screen_stack[-1]
             olist = screen.query_one("#skills-list")
-            rows = [olist.get_option_at_index(i).prompt.plain
-                    for i in range(olist.option_count)]
+            rows = option_texts(olist)
             assert rows[0].startswith("○ .skills.json"), rows
             assert rows[1].startswith("● review"), rows
             assert olist.highlighted == 1, "故障行不应抢占高亮"

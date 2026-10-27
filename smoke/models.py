@@ -5,7 +5,7 @@ from textual.containers import Vertical
 from textual.widgets import Input, OptionList, Tab, Tabs
 
 from core.tui.screens import EffortScreen, ModelPickerScreen
-from smoke._util import prompt_of, settle
+from smoke._util import option_texts, prompt_of, settle
 
 
 async def run(app, pilot) -> None:
@@ -19,7 +19,7 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert isinstance(app.screen_stack[-1], ModelPickerScreen)
     ml = app.screen_stack[-1].query_one("#model-list", OptionList)
-    ml_rows = [ml.get_option_at_index(i).prompt.plain for i in range(ml.option_count)]
+    ml_rows = option_texts(ml)
     assert ml_rows == ["deepseek-chat [deepseek]", "qwen-max [qwen]"], ml_rows
     # 行内两段 span：模型名亮色 #f8fafc、[Provider] 段次级灰 #94a3b8（原始 hex）
     for i in range(ml.option_count):
@@ -39,7 +39,7 @@ async def run(app, pilot) -> None:
     assert not m_row.styles.border_top[0] and m_row.styles.border_bottom[0] == "solid"
     m_search.value = "QWEN"
     await settle(pilot)
-    assert [ml.get_option_at_index(i).prompt.plain for i in range(ml.option_count)] == \
+    assert option_texts(ml) == \
         ["qwen-max [qwen]"], "搜索应忽略大小写并只留匹配行"
     m_search.value = ""
     await settle(pilot)

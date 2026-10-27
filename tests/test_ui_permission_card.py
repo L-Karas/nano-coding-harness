@@ -10,13 +10,10 @@ from textual.widgets import Static
 import core.tui.render as _render
 from core.tui.render import _DIM
 from core.tui.ui_textual import ChatApp
+from tests.support import chat_app
 
 _REASON = "Destructive command detected"
 _DETAIL = "command: rm old.txt"
-
-
-def _app() -> ChatApp:
-    return ChatApp(handle_query=lambda _query: None)
 
 
 def _body(app: ChatApp) -> Text:
@@ -27,8 +24,7 @@ def _body(app: ChatApp) -> Text:
 
 def test_permission_card_renders_reason_and_command_detail():
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32)) as (app, pilot):
             app._begin_permission(_REASON, [_DETAIL], Future())
             await pilot.pause()
             assert _body(app).plain == f"{_REASON}\n\n{_DETAIL}"
@@ -37,8 +33,7 @@ def test_permission_card_renders_reason_and_command_detail():
 
 def test_permission_card_detail_uses_tool_card_body_style():
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32)) as (app, pilot):
             app._begin_permission(_REASON, [_DETAIL], Future())
             await pilot.pause()
             body, console = _body(app), app.console
@@ -50,8 +45,7 @@ def test_permission_card_detail_uses_tool_card_body_style():
 
 def test_permission_card_without_detail_keeps_reason_only():
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32)) as (app, pilot):
             app._begin_permission(_REASON, [], Future())
             await pilot.pause()
             assert _body(app).plain == _REASON
@@ -63,8 +57,7 @@ def test_permission_card_styles_multiline_details_like_tool_card():
     details = ["- ../secret.txt", "command: cat ../secret.txt"]
 
     async def main() -> None:
-        app = _app()
-        async with app.run_test(size=(100, 32)) as pilot:
+        async with chat_app(size=(100, 32)) as (app, pilot):
             app._begin_permission("Access outside working directory:", details, Future())
             await pilot.pause()
             body, console = _body(app), app.console
@@ -80,7 +73,7 @@ def test_permission_card_styles_multiline_details_like_tool_card():
 def test_render_bridge_passes_details_into_card():
     """render.ask_permission（后台线程）→ _begin_permission 的桥接不丢 details。"""
     async def main() -> None:
-        app = _app()
+        app = ChatApp(handle_query=lambda _query: None)
         _render._APP = app  # run_test 不经 run()：照 smoke 手动挂渲染桥接
         try:
             async with app.run_test(size=(100, 32)):

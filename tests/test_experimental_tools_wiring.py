@@ -13,32 +13,7 @@ import core.agent_loop as lwi
 import core.sub_agent as sa
 import core.tools as tools_mod
 from core.tools import ToolPool
-
-
-class _Mgr:
-    def __init__(self):
-        self.messages = [{"role": "user", "content": "hi"}]
-
-    def load_messages(self):
-        return list(self.messages)
-
-    def update_messages(self, messages):
-        self.messages = list(messages)
-
-    def add_message(self, message):
-        self.messages.append(message)
-
-
-class _Client:
-    current_provider = "test"
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-    def get_model_client(self, **_):
-        async def create(**kwargs):
-            return object()
-        return create
+from tests.support import MemorySession, StubModelClient
 
 
 def _config_with(monkeypatch, module, **overrides):
@@ -77,8 +52,8 @@ def test_main_loop_passes_configured_flag_to_pool(monkeypatch):
     _config_with(monkeypatch, lwi, enable_experimental_tools=True)
     monkeypatch.setattr(lwi, "consume_cron_queue", lambda: [])
     monkeypatch.setattr(lwi, "inject_background_notifications", lambda: None)
-    monkeypatch.setattr(lwi, "SESSION_MANAGER", _Mgr())
-    monkeypatch.setattr(lwi, "shared_model_client", lambda: _Client())
+    monkeypatch.setattr(lwi, "SESSION_MANAGER", MemorySession([{"role": "user", "content": "hi"}]))
+    monkeypatch.setattr(lwi, "shared_model_client", StubModelClient)
     monkeypatch.setattr(lwi, "assemble_tool_pool", _capture_pool(seen))
 
     async def identity(messages, ctx):
@@ -95,7 +70,7 @@ def test_subagent_passes_configured_flag_to_pool(monkeypatch):
     seen = {}
     _silence_step(monkeypatch)
     _config_with(monkeypatch, sa, enable_experimental_tools=True)
-    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: _Client())
+    monkeypatch.setattr(sa, "shared_sub_model_client", StubModelClient)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(tools_mod, "assemble_tool_pool", _capture_pool(seen))
 

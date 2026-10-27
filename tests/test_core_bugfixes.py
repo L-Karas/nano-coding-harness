@@ -2,12 +2,10 @@
 cron 未知 job KeyError / 会话索引写失败 NameError / ddgs extract 返回类型不匹配）。"""
 import asyncio
 import shutil
-import sys
-import types
-
 import pytest
 
 from core.runtime_context import ToolContext
+from tests.support import install_fake_ddgs
 
 
 def test_glob_async_with_ripgrep_lists_matches(monkeypatch, tmp_path):
@@ -71,21 +69,10 @@ def test_session_index_write_failure_returns_false(monkeypatch, tmp_path):
     assert manager._update_session_index() is False
 
 
-class _FakeDDGS:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def extract(self, url):
-        return {"url": url, "content": "page text"}
-
-
 def test_ddgs_extract_returns_ok_and_content(monkeypatch):
     import core.tools.web_search.web_extract as web_extract
 
-    monkeypatch.setitem(sys.modules, "ddgs", types.SimpleNamespace(DDGS=_FakeDDGS))
+    install_fake_ddgs(monkeypatch)
 
     ok, content = asyncio.run(web_extract.ddgs_extract("http://example.com"))
 

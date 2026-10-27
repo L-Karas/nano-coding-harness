@@ -8,63 +8,35 @@ import core.tools
 from core.agent_step import StepPolicy, run_agent_step
 from core.runtime_context import ToolContext
 from core.tools import ToolPool
+from tests.support import StubModelClient, stream_replies
 
 
 def _stream(monkeypatch, response=("done", "", [], "stop", None)):
-    async def fake(stream, on_text=None):
-        return response
-
-    monkeypatch.setattr(step_mod, "streaming_message", fake)
+    monkeypatch.setattr(step_mod, "streaming_message", stream_replies([response]))
 
 
 def test_step_clamps_max_tokens_to_current_model(monkeypatch):
-    captured = {}
-
-    class _Client:
-        current_provider = "test"
-
-        def clamp_max_tokens(self, requested):
-            return min(requested, 8_000)
-
-        def get_model_client(self):
-            async def create(**kwargs):  # async client 的 create 与真实 AsyncOpenAI 一样可 await
-                captured.update(kwargs)
-                return object()
-            return create
-
+    client = StubModelClient(max_output=8_000)
     _stream(monkeypatch)
     asyncio.run(run_agent_step(
         [],
         "sys",
-        client=_Client(),
+        client=client,
         pool=ToolPool({}),
         tctx=ToolContext(),
         max_tokens=24_000,
         policy=StepPolicy(use_extensions=False),
     ))
-    assert captured["max_tokens"] == 8_000
+    assert client.calls[0]["max_tokens"] == 8_000
 
 
 def test_subagent_clamps_max_tokens_to_sub_model(monkeypatch):
-    captured = {}
-
-    class _Client:
-        current_provider = "test"
-
-        def clamp_max_tokens(self, requested):
-            captured["requested"] = requested
-            return 7_777
-
-        def get_model_client(self, **_):
-            async def create(**kwargs):
-                captured.update(kwargs)
-                return object()
-            return create
+    client = StubModelClient(clamp_to=7_777)
 
     async def identity(messages, ctx=None, sub_model=False):
         return messages
 
-    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: _Client())
+    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: client)
     monkeypatch.setattr(sa, "prepare_messages", identity)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(sa, "CONFIGMANAGER", SimpleNamespace(
@@ -73,5 +45,5 @@ def test_subagent_clamps_max_tokens_to_sub_model(monkeypatch):
     _stream(monkeypatch)
 
     assert asyncio.run(sa.spawn_subagent("do it")) == "done"
-    assert captured["requested"] == 12_000
-    assert captured["max_tokens"] == 7_777
+    assert client.requested == 12_000
+    assert client.calls[0]["max_tokens"] == 7_777

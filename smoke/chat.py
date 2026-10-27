@@ -12,14 +12,13 @@ from core.tui.render import (
     render_user_input,
 )
 from core.tui.cards import _CappedCardBody
-from smoke._util import settle
-from core.tui.widgets import _CommandInput
+from smoke._util import option_texts, prompt_of, settle, wait_idle
 
 
 async def run(app, pilot) -> None:
 
     await pilot.pause(0.2)
-    prompt = app.query_one("#prompt", _CommandInput)
+    prompt = prompt_of(app)
     left_w = app.query_one("#left").region.width  # 左栏宽（4:1 分栏后为终端 80%）
     # 空聊板欢迎标题：figlet 大字标题（small，绿色）+ 小字副标题，无动画
     welcome = app.query_one("#welcome", Static)
@@ -38,11 +37,7 @@ async def run(app, pilot) -> None:
     assert prompt.size.height >= 4, f"长文本未多行加高: {prompt.size.height}"
     prompt.text = "hello textual"
     await pilot.press("enter")
-    for _ in range(300):  # 最多 ~15s 等演示回合结束
-        await pilot.pause(0.05)
-        if not app._busy:
-            break
-    assert not app._busy, "回合未结束"
+    await wait_idle(app, pilot)
     assert welcome.styles.display == "none", "首卡上屏后欢迎标题应隐藏"
     render_tool_result("line\n" * 15)  # 触发截断提示（含方括号），回归渲染期 MissingStyle
     render_tool_call("terminal", list(range(15)))  # 17 行参数 JSON → 同样折叠为 10 行 + 1 行提示
@@ -181,8 +176,7 @@ async def run(app, pilot) -> None:
                                   "/settings", "/login", "/exit"], prompt._candidates
     # 候选行 = 指令名列（含别名括注）+ 空距 + 简短说明（选项 prompt 为分段 Text，
     # plain 即整行字符），各行说明左端对齐于同一列
-    assert [suggest.get_option_at_index(i).prompt.plain
-            for i in range(suggest.option_count)] == [
+    assert option_texts(suggest) == [
                "/new               Start a fresh session",
                "/sessions          Open the session picker",
                "/compact           Compact the conversation history",

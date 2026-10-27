@@ -6,11 +6,10 @@ import pytest
 import core.agent_step as step_mod
 import core.sub_agent as sa
 import core.tools
-from core.extension import reset_extensions
-from core.extension.builtin import register_builtin_extensions
-from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.tools import ToolResult
+from tests.support import StubModelClient, stream_replies
+pytestmark = pytest.mark.usefixtures("full_extension_registry")
 
 TOOL_ROUND = ("", "", [{"id": "t1", "type": "function",
                         "function": {"name": "terminal", "arguments": '{"command": "ls"}'}}],
@@ -22,32 +21,9 @@ TWO_TOOL_ROUND = ("", "", [
 ], "tool_calls", None)
 
 
-@pytest.fixture(autouse=True)
-def _clean_extensions():
-    reset_extensions()
-    register_builtin_extensions(rules=Rules())
-    yield
-    reset_extensions()
-
-
-class _FakeModelClient:
-    current_provider = "test"
-
-    def __init__(self, calls):
-        self.calls = calls
-
-    def get_model_client(self, **_):
-        async def create(**kwargs):
-            self.calls.setdefault("model_messages", []).append(kwargs["messages"])
-            return object()
-        return create
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-
 def _patch(monkeypatch, responses, execute):
-    calls = {"args": []}
+    client = StubModelClient()
+    calls = {"args": [], "model_messages": client.calls}
 
     class _Pool:
         def schemas(self):
@@ -68,15 +44,12 @@ def _patch(monkeypatch, responses, execute):
     async def _prepare(messages, ctx=None, sub_model=False):
         return messages
 
-    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: _FakeModelClient(calls))
+    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: client)
     monkeypatch.setattr(sa, "prepare_messages", _prepare)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(core.tools, "assemble_tool_pool", lambda *a, **k: _Pool())
 
-    async def fake_stream(stream, on_text=None):
-        return responses.pop(0)
-
-    monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
+    monkeypatch.setattr(step_mod, "streaming_message", stream_replies(responses))
     return calls
 
 
@@ -93,7 +66,7 @@ def test_before_llm_mutation_reaches_model(monkeypatch):
     calls = _patch(monkeypatch, responses, "unused")
     add_hook("before_llm", lambda ctx: ctx.messages.append({"role": "user", "content": "injected"}), "test")
     assert asyncio.run(sa.spawn_subagent("do it")) == "done"
-    assert any(m.get("content") == "injected" for m in calls["model_messages"][0])
+    assert any(m.get("content") == "injected" for m in calls["model_messages"][0]["messages"])
 
 
 def test_before_tool_args_mutation_reaches_executor(monkeypatch):
@@ -110,7 +83,7 @@ def test_before_tool_block_writes_result(monkeypatch):
     add_hook("before_tool", lambda ctx: ctx.block("no shell"), "test")
     assert asyncio.run(sa.spawn_subagent("do it")) == "done"
     assert calls["args"] == []
-    second_round = calls["model_messages"][1]
+    second_round = calls["model_messages"][1]["messages"]
     tool_message = next(m for m in second_round if m.get("role") == "tool")
     assert tool_message["content"] == "[Extension blocked] no shell"
 
@@ -120,7 +93,7 @@ def test_after_tool_rewrites_result(monkeypatch):
     calls = _patch(monkeypatch, responses, "raw")
     add_hook("after_tool", lambda ctx: setattr(ctx, "result", "processed"), "test")
     assert asyncio.run(sa.spawn_subagent("do it")) == "done"
-    second_round = calls["model_messages"][1]
+    second_round = calls["model_messages"][1]["messages"]
     tool_message = next(m for m in second_round if m.get("role") == "tool")
     assert tool_message["content"] == "processed"
 
@@ -134,7 +107,7 @@ def test_after_tool_inject_messages_batch_end_order(monkeypatch):
 
     add_hook("after_tool", hook, "test")
     assert asyncio.run(sa.spawn_subagent("do it")) == "done"
-    second_round = calls["model_messages"][1]
+    second_round = calls["model_messages"][1]["messages"]
     tool_indices = [i for i, m in enumerate(second_round) if m.get("role") == "tool"]
     note_indices = [i for i, m in enumerate(second_round)
                     if isinstance(m.get("content"), str) and m["content"].startswith("note-")]

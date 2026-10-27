@@ -6,19 +6,7 @@ import json
 from textual.widgets import Input, OptionList, Select, Static, TextArea
 
 from core.tui.screens import MCPConfigScreen, MCPServersScreen, MCPToolsScreen
-from smoke._util import prompt_of, settle
-
-
-def _assert_scrollbar_style(widget, what: str) -> None:
-    """滑块样式同 app.css 共用规则（/sessions 列表 / /settings 下拉同款）：1 列宽、透明轨道、
-    滑块 #475569，hover #94a3b8，拖动 #38bdf8。"""
-    styles = widget.styles
-    assert (styles.scrollbar_size_vertical == 1
-            and styles.scrollbar_background.is_transparent
-            and styles.scrollbar_color.hex.lower() == "#475569"
-            and styles.scrollbar_color_hover.hex.lower() == "#94a3b8"
-            and styles.scrollbar_color_active.hex.lower() == "#38bdf8"), \
-        f"{what} 滑块样式与 /sessions 不一致: {styles.scrollbar_size_vertical}, {styles.scrollbar_color}"
+from smoke._util import assert_scrollbar_style, option_texts, prompt_of, settle
 
 
 async def run(app, pilot) -> None:
@@ -44,7 +32,7 @@ async def run(app, pilot) -> None:
     assert app._exception is None, f"渲染异常: {app._exception}"
     assert isinstance(app.screen_stack[-1], MCPServersScreen), "/mcp 未打开 MCP 弹窗"
     mcp_lst = app.screen_stack[-1].query_one("#mcp-list", OptionList)
-    mcp_rows = [mcp_lst.get_option_at_index(i).prompt.plain for i in range(mcp_lst.option_count)]
+    mcp_rows = option_texts(mcp_lst)
     assert mcp_rows == ["● smoke-server-a", "● smoke-server-b"], mcp_rows
     # server 行整行绿色加粗：_server_row 用 Text(…, style=…) 基底色（非 spans，勿照搬 _entry_row 的检查）
     mcp_row0 = mcp_lst.get_option_at_index(0).prompt
@@ -56,7 +44,7 @@ async def run(app, pilot) -> None:
     assert not m_row.styles.border_top[0] and m_row.styles.border_bottom[0] == "solid"
     m_search.value = "SERVER-A"
     await settle(pilot)
-    mcp_rows = [mcp_lst.get_option_at_index(i).prompt.plain for i in range(mcp_lst.option_count)]
+    mcp_rows = option_texts(mcp_lst)
     assert mcp_rows == ["● smoke-server-a"], mcp_rows
     m_search.value = ""
     await settle(pilot)
@@ -67,7 +55,7 @@ async def run(app, pilot) -> None:
     assert isinstance(app.screen_stack[-1], MCPToolsScreen), "Enter 未打开工具列表窗"
     assert app.screen_stack[-1].TITLE == "smoke-server-a tools", app.screen_stack[-1].TITLE
     tool_lst = app.screen_stack[-1].query_one("#mcp-tools-list", OptionList)
-    tool_rows = [tool_lst.get_option_at_index(i).prompt.plain for i in range(tool_lst.option_count)]
+    tool_rows = option_texts(tool_lst)
     assert tool_rows == ["● echo\nEchoes input", "● add\nAdds numbers"], tool_rows
     tool_spans = tool_lst.get_option_at_index(0).prompt.spans
     assert "#4ade80" in str(tool_spans[0].style), f"工具名色错误: {tool_spans[0].style}"
@@ -79,7 +67,7 @@ async def run(app, pilot) -> None:
     assert not t_row.styles.border_top[0] and t_row.styles.border_bottom[0] == "solid"
     t_search.value = "ECHO"
     await settle(pilot)
-    tool_rows = [tool_lst.get_option_at_index(i).prompt.plain for i in range(tool_lst.option_count)]
+    tool_rows = option_texts(tool_lst)
     assert tool_rows == ["● echo\nEchoes input"], tool_rows
     t_search.value = ""
     await settle(pilot)
@@ -107,7 +95,7 @@ async def run(app, pilot) -> None:
     await pilot.press("enter")
     await settle(pilot, 10)
     assert removed == ["smoke-server-a"], removed
-    mcp_rows = [mcp_lst.get_option_at_index(i).prompt.plain for i in range(mcp_lst.option_count)]
+    mcp_rows = option_texts(mcp_lst)
     assert mcp_rows == ["● smoke-server-b"], mcp_rows
     # 窗口高度随 server 数收缩（不是通用 .picker 的 60% 固定高）
     assert app.screen_stack[-1].query_one("#mcp-picker").size.height < 12, "server 列表窗应随内容收缩"
@@ -152,7 +140,7 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert type_select.expanded, "Enter 应展开 type 下拉"
     # type 下拉滑块同 /settings default model 下拉（app.css 同一组共用规则）
-    _assert_scrollbar_style(type_select.query_one("SelectOverlay"), "type 下拉浮层")
+    assert_scrollbar_style(type_select.query_one("SelectOverlay"), "type 下拉浮层")
     await pilot.press("escape")
     await settle(pilot)
     assert not type_select.expanded and app.screen_stack[-1] is form, \
@@ -171,7 +159,7 @@ async def run(app, pilot) -> None:
         not form.query_one("#mcp-http-fields").display, "选 stdio 应只显示 stdio 组"
     args_area = form.query_one("#mcp-stdio-args", TextArea)
     assert args_area.styles.border_top[0] == "round", "args 输入区应有圆角边框"
-    _assert_scrollbar_style(args_area, "args 输入区")
+    assert_scrollbar_style(args_area, "args 输入区")
     args_area.focus()
     await pilot.press("up")
     await settle(pilot)
@@ -186,7 +174,7 @@ async def run(app, pilot) -> None:
         "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]}}}], saved_payloads
     assert not isinstance(app.screen_stack[-1], MCPConfigScreen), "保存成功应关闭配置窗"
     assert isinstance(app.screen_stack[-1], MCPServersScreen), "配置成功后应保留 server 列表窗"
-    mcp_rows = [mcp_lst.get_option_at_index(i).prompt.plain for i in range(mcp_lst.option_count)]
+    mcp_rows = option_texts(mcp_lst)
     assert mcp_rows == ["● smoke-server-b", "● smoke-form"], mcp_rows  # 就地刷新出新 server
     # 再配 streamable_http：url + headers（每行 KEY=VALUE）
     await pilot.press("insert")
@@ -200,7 +188,7 @@ async def run(app, pilot) -> None:
         form.query_one("#mcp-http-fields").display, "选 streamable_http 应只显示 http 组"
     form.query_one("#mcp-http-url", Input).value = "https://api.smoke.test/mcp"
     headers_area = form.query_one("#mcp-http-headers", TextArea)
-    _assert_scrollbar_style(headers_area, "headers 输入区")
+    assert_scrollbar_style(headers_area, "headers 输入区")
     headers_area.text = "Authorization=Bearer smoke"
     await pilot.press("ctrl+s")
     await settle(pilot, 10)
@@ -222,7 +210,7 @@ async def run(app, pilot) -> None:
     await settle(pilot, 10)
     assert saved_payloads[-1] == {"mcpServers": {"smoke-sse": {
         "type": "sse", "url": "https://api.smoke.test/sse"}}}, saved_payloads[-1]
-    mcp_rows = [mcp_lst.get_option_at_index(i).prompt.plain for i in range(mcp_lst.option_count)]
+    mcp_rows = option_texts(mcp_lst)
     assert mcp_rows == ["● smoke-server-b", "● smoke-form", "● smoke-http", "● smoke-sse"], mcp_rows
     # 表单校验：必填缺失 / headers 非法行都留在窗内提示，不调用 configure_mcp_server
     await pilot.press("insert")

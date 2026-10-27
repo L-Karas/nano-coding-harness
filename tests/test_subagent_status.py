@@ -10,28 +10,12 @@ import core.tools
 import core.tools.tool_pool
 from core.runtime_state import RuntimeState
 from core.tools import ToolResult
-
-
-class _FakeModelClient:
-    current_provider = "test"
-
-    def get_model_client(self, **_):
-        async def create(**_):
-            return object()  # 假 stream，真解析见 fake_streaming_message
-        return create
-
-    def compact_trigger_tokens(self) -> int:
-        return 10**9  # 测试消息量远小于此：预算管线不触发压缩
-
-    def compact_reserve_tokens(self) -> int:
-        return 0
-
-    def clamp_max_tokens(self, requested: int) -> int:
-        return requested
+from tests.support import StubModelClient
 
 
 def _patch(monkeypatch, rounds, execute_tool):
     state = RuntimeState()
+    client = StubModelClient()
     monkeypatch.setattr(sa, "RUNTIME_STATE", state)
     seen = []
 
@@ -69,8 +53,8 @@ def _patch(monkeypatch, rounds, execute_tool):
         prepared.append((len(messages), sub_model))
         return await original_prepare(messages, ctx, sub_model)
 
-    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: _FakeModelClient())
-    monkeypatch.setattr(compact_mod, "shared_sub_model_client", lambda: _FakeModelClient())
+    monkeypatch.setattr(sa, "shared_sub_model_client", lambda: client)
+    monkeypatch.setattr(compact_mod, "shared_sub_model_client", lambda: client)
     monkeypatch.setattr(sa, "prepare_messages", recording_prepare)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(step_mod, "streaming_message", fake_streaming_message)

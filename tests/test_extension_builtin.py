@@ -7,15 +7,11 @@ import pytest
 
 import core.extension.builtin as builtin_mod
 import core.extension.dispatcher as dispatcher
-from core.extension import ExtensionInfo, list_extensions, reset_extensions
+from core.extension import ExtensionInfo, list_extensions
 from core.extension.builtin import observers, register_builtin_extensions
 from core.extension.builtin.permission import Rules
 from core.extension.context import BeforeToolContext
-
-
-@pytest.fixture(autouse=True)
-def _clean():
-    reset_extensions(); yield; reset_extensions()
+pytestmark = pytest.mark.usefixtures("empty_extension_registry")
 
 
 def test_builtins_register_observers_before_gate():

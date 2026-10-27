@@ -5,30 +5,12 @@ import asyncio
 from types import SimpleNamespace
 
 import core.context.compact.context_compact as compact_mod
-
-
-class _FakeStream:
-    def __init__(self, chunks):
-        self._chunks = chunks
-
-    async def __aiter__(self):
-        for chunk in self._chunks:
-            yield chunk
-
-    async def close(self):
-        pass
-
-
-def _chunk(text):
-    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text))])
+from tests.support import FakeStream, StubModelClient, text_chunk
 
 
 def test_summarize_history_without_ctx(monkeypatch):
-    async def _create(**kwargs):  # 与 AsyncOpenAI 一致：create(...) 需 await 才拿到流
-        return _FakeStream([_chunk("Earlier context "), _chunk("summarized.")])
-
-    fake_client = SimpleNamespace(get_model_client=lambda: _create,
-                                  clamp_max_tokens=lambda requested: requested)
+    fake_client = StubModelClient(response=FakeStream([
+        text_chunk("Earlier context "), text_chunk("summarized.")]))
     monkeypatch.setattr(compact_mod, "shared_model_client", lambda: fake_client)
     messages = [{"role": "user", "content": "hi"}]
     assert asyncio.run(compact_mod.summarize_history(messages)) == "Earlier context summarized."
@@ -36,31 +18,16 @@ def test_summarize_history_without_ctx(monkeypatch):
 
 def test_summarize_history_clamps_max_tokens(monkeypatch):
     """总结调用同样受当前模型最大输出钳制。"""
-    captured = {}
-
-    async def _create(**kwargs):
-        captured.update(kwargs)
-        return _FakeStream([_chunk("summary")])
-
-    fake_client = SimpleNamespace(get_model_client=lambda: _create,
-                                  clamp_max_tokens=lambda requested: 7_777)
+    fake_client = StubModelClient(max_output=7_777, response=FakeStream([text_chunk("summary")]))
     monkeypatch.setattr(compact_mod, "shared_model_client", lambda: fake_client)
     asyncio.run(compact_mod.summarize_history([{"role": "user", "content": "hi"}]))
-    assert captured["max_tokens"] == 7_777
+    assert fake_client.calls[0]["max_tokens"] == 7_777
 
 
 def test_compact_history_uses_sub_model_client(monkeypatch):
     """子代理压缩（sub_model=True）必须用子代理 client 总结（与对话同模型，缓存命中），不得回退主 client；
     且触发阈值/保留预算使用该 client 当前模型解析出的预算。"""
-    async def _create(**kwargs):
-        return _FakeStream([_chunk("summary")])
-
-    fake_client = SimpleNamespace(
-        get_model_client=lambda: _create,
-        compact_trigger_tokens=lambda: 1,
-        compact_reserve_tokens=lambda: 0,
-        clamp_max_tokens=lambda requested: requested,
-    )
+    fake_client = StubModelClient(trigger_tokens=1, response=FakeStream([text_chunk("summary")]))
 
     def fail():
         raise AssertionError("应使用子代理 client，而非主 client")

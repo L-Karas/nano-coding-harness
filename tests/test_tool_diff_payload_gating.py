@@ -13,6 +13,7 @@ from core.agent_step import StepPolicy, StepRenderer, run_agent_step
 from core.runtime_context import AgentRunContext, ToolContext
 from core.tools import ToolPool
 from core.tools.tool_base import BaseTool
+from tests.support import StubModelClient
 
 
 @pytest.fixture
@@ -40,18 +41,6 @@ def _tool(output="", exc=None):
     return _Fake
 
 
-class _Client:
-    current_provider = "test"
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-    def get_model_client(self):
-        async def create(**kwargs):
-            return object()
-        return create
-
-
 def _run(
     monkeypatch,
     fixture,
@@ -74,7 +63,7 @@ def _run(
     outcome = asyncio.run(run_agent_step(
         [],
         "sys",
-        client=_Client(),
+        client=StubModelClient(),
         pool=pool,
         tctx=ToolContext(),
         max_tokens=100,
@@ -172,7 +161,7 @@ def test_cancelled_write_renders_no_diff_and_no_payload(ctx, monkeypatch):
         task = asyncio.create_task(run_agent_step(
             [],
             "sys",
-            client=_Client(),
+            client=StubModelClient(),
             pool=ToolPool({"write_file": _Hang}),
             tctx=tctx,
             max_tokens=100,
@@ -206,7 +195,7 @@ def test_failure_passes_error_flag_to_render(ctx, monkeypatch):
     asyncio.run(run_agent_step(
         [],
         "sys",
-        client=_Client(),
+        client=StubModelClient(),
         pool=ToolPool({"write_file": _tool(exc=RuntimeError("boom"))}),
         tctx=ToolContext(),
         max_tokens=100,

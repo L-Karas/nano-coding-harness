@@ -24,7 +24,7 @@ from core.tui.footer import (
     token_bar_text,
 )
 from core.tui.theme import APPROVAL_MODE_COLORS, COMPACT_HINT, SECONDARY_TEXT
-from core.tui.ui_textual import ChatApp
+from tests.support import chat_app
 
 
 def _fg(style) -> str:
@@ -70,8 +70,7 @@ def test_footer_shows_approval_mode_and_refreshes(monkeypatch):
     monkeypatch.setattr(footer, "current_model_state", lambda: ("", "", ""))  # 固定为无模型段
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             row = app.query_one("#approval-mode", Static)
             assert str(row.render()) == "Approval Mode: Manual"
             assert _widget_label_and_mode(row.render()) == (SECONDARY_TEXT, "Manual", "#e5c890")
@@ -195,8 +194,7 @@ def test_footer_puts_model_state_on_approval_row(monkeypatch):
     monkeypatch.setattr(footer, "current_compact_trigger_tokens", lambda: 0)
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._refresh_footer()
             bar = str(app.query_one("#token-bar", Static).render())
             row = app.query_one("#approval-mode", Static)
@@ -216,8 +214,7 @@ def test_footer_token_bar_includes_compact_threshold(monkeypatch):
     monkeypatch.setattr(footer, "current_auto_compact", lambda: True)
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._refresh_footer()
             bar = str(app.query_one("#token-bar", Static).render())
             assert bar.endswith("0.0% / 200.0K (compact at 160K)"), bar
@@ -235,8 +232,7 @@ def test_footer_shows_no_compaction_hint_when_auto_compact_is_off(monkeypatch):
     monkeypatch.setattr(footer, "current_model_state", lambda: ("", "", ""))
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test():
+        async with chat_app() as (app, _):
             app._refresh_footer()
             bar = str(app.query_one("#token-bar", Static).render())
             assert bar.endswith("0.0% / 200.0K (auto-compact off)"), bar

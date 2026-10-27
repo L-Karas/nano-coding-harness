@@ -10,7 +10,7 @@ import core.config as config_mod
 from textual.widgets import Input, Select, Static, Switch
 
 from core.tui.screens import SettingsScreen
-from smoke._util import prompt_of, settle, type_query
+from smoke._util import assert_scrollbar_style, prompt_of, settle, type_query
 
 
 async def run(app, pilot) -> None:
@@ -77,22 +77,16 @@ async def run(app, pilot) -> None:
             # 选中背景与 /model 窗口选中态一致（app.css 同一组规则：#334155）
             hl = msel.query_one("SelectOverlay").get_component_styles("option-list--option-highlighted")
             assert hl.background.hex.lower() == "#334155", hl.background
-            # 浮层滑块同 /sessions 列表：1 列宽、轨道透明、滑块 #475569（app.css 同一组规则）
+            # 浮层滑块同 /sessions 列表（app.css 同一组规则）
             ov = msel.query_one("SelectOverlay")
-            assert ov.styles.scrollbar_size_vertical == 1, ov.styles.scrollbar_size_vertical
-            assert ov.styles.scrollbar_color.hex.lower() == "#475569", ov.styles.scrollbar_color
-            assert ov.styles.scrollbar_background.is_transparent, ov.styles.scrollbar_background
+            assert_scrollbar_style(ov, "模型下拉浮层")
             # 窄终端下参数名吃掉整行，Select 仅剩几列；浮层须保底可用宽
             # （回归：宽度缩到内容宽 0 时 OptionList 在 rich divide_line 崩溃）
             assert ov.region.width >= 24, f"浮层过窄: {ov.region}"
             # 设置表单主体（超长时滚动）滑块同 /sessions 列表：共用同一组滑块规则
             body = form.query_one("#settings-form")
             assert body.show_vertical_scrollbar, "设置表单超长时应有纵向滑块"
-            assert body.styles.scrollbar_size_vertical == 1, body.styles.scrollbar_size_vertical
-            assert body.styles.scrollbar_color.hex.lower() == "#475569", body.styles.scrollbar_color
-            assert body.styles.scrollbar_background.is_transparent, body.styles.scrollbar_background
-            assert body.styles.scrollbar_color_hover.hex.lower() == "#94a3b8"
-            assert body.styles.scrollbar_color_active.hex.lower() == "#38bdf8"
+            assert_scrollbar_style(body, "设置表单")
             await pilot.press("escape")
             await settle(pilot)
             assert not msel.expanded and isinstance(app.screen_stack[-1], SettingsScreen), \

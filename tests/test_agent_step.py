@@ -6,9 +6,6 @@ import pytest
 
 import core.agent_step as step_mod
 from core.agent_step import StepPolicy, StepRenderer, group_parallel_tool_calls, run_agent_step
-from core.extension import reset_extensions
-from core.extension.builtin import register_builtin_extensions
-from core.extension.builtin.permission import Rules
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
 from core.template import IMAGE_OMITTED_MESSAGE
@@ -25,6 +22,8 @@ from core.tools.extra_tools.subagent import SpawnSubagent
 from core.tools.tool_base import BaseTool
 from core.tools.web_search.web_extract import WebExtract
 from core.tools.web_search.web_search import WebSearch
+from tests.support import StubModelClient
+pytestmark = pytest.mark.usefixtures("full_extension_registry")
 
 
 class Echo(BaseTool):
@@ -76,28 +75,6 @@ class ParallelProbe(BaseTool):
     parallel_safe: bool = True
 
 
-class _Client:
-    current_provider = "test"
-
-    def __init__(self, vision=True):
-        self.vision = vision
-        self.kwargs = None
-        self.requested = None
-
-    def supports_vision(self):
-        return self.vision
-
-    def clamp_max_tokens(self, requested):
-        self.requested = requested
-        return min(requested, 100)
-
-    def get_model_client(self):
-        async def create(**kwargs):
-            self.kwargs = kwargs
-            return object()
-        return create
-
-
 def _tool_call(name="echo", args='{"value": "x"}', call_id="t1"):
     return {"id": call_id, "type": "function", "function": {"name": name, "arguments": args}}
 
@@ -124,21 +101,13 @@ def _run(
     return asyncio.run(run_agent_step(
         history or [],
         "sys",
-        client=client or _Client(),
+        client=client or StubModelClient(max_output=100),
         pool=pool or ToolPool({"echo": Echo}),
         tctx=tctx or ToolContext(agent_run=AgentRunContext()),
         max_tokens=1000,
         policy=policy or StepPolicy(use_extensions=False),
         renderer=renderer or StepRenderer(),
     ))
-
-
-@pytest.fixture(autouse=True)
-def _clean_extensions():
-    reset_extensions()
-    register_builtin_extensions(rules=Rules())
-    yield
-    reset_extensions()
 
 
 def test_tool_round_returns_ordered_followups(monkeypatch):
@@ -166,7 +135,7 @@ def test_finish_reason_is_passed_through(monkeypatch):
 
 
 def test_request_view_and_max_tokens_clamped(monkeypatch):
-    client = _Client()
+    client = StubModelClient(max_output=100)
     _run(monkeypatch, [("ok", "", [], "stop", None)], client=client)
     assert client.kwargs["max_tokens"] == 100          # 1000 → clamp 100
     assert client.kwargs["messages"][0] == {"role": "system", "content": "sys"}
@@ -193,7 +162,7 @@ def test_after_llm_and_after_tool_injections_keep_order(monkeypatch):
 
 
 def test_before_llm_abort_returns_outcome_without_request(monkeypatch):
-    client = _Client()
+    client = StubModelClient(max_output=100)
     add_hook("before_llm", lambda ctx: ctx.abort("policy"), "test")
     outcome = _run(
         monkeypatch,
@@ -511,7 +480,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
         task = asyncio.create_task(run_agent_step(
             [],
             "sys",
-            client=_Client(),
+            client=StubModelClient(max_output=100),
             pool=ToolPool({"read_file": Probe, "grep": Probe}),
             tctx=ToolContext(agent_run=ctx),
             max_tokens=1000,
@@ -582,7 +551,7 @@ def test_images_not_attached_without_vision(monkeypatch):
     outcome = _run(monkeypatch, [("", "", [
         _tool_call("image_echo", '{"source": "/tmp/a.png"}', "t1"),
     ], "tool_calls", None)],
-        client=_Client(vision=False), pool=ToolPool({"image_echo": ImageEcho}))
+        client=StubModelClient(vision=False, max_output=100), pool=ToolPool({"image_echo": ImageEcho}))
 
     content = outcome.followup_messages[-1]["content"]
     assert isinstance(content, str)
@@ -599,7 +568,7 @@ def test_failed_image_tool_adds_no_image_followup(monkeypatch):
 
 
 def test_request_view_uses_placeholder_without_vision(monkeypatch):
-    client = _Client(vision=False)
+    client = StubModelClient(vision=False, max_output=100)
     history = [{"role": "user", "content": [
         {"type": "text", "text": "see image"},
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}},

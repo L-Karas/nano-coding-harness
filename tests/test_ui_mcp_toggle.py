@@ -5,7 +5,7 @@ import pytest
 
 import core.mcp.mcp_client as mcp_client
 from core.tui.screens import MCPServersScreen, MCPToolsScreen
-from core.tui.ui_textual import ChatApp
+from tests.support import chat_app, option_texts
 
 
 @pytest.fixture
@@ -35,8 +35,7 @@ def test_ctrl_e_toggles_and_disabled_enter_does_not_open_tools(state):
     servers, calls = state
 
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app.push_screen(MCPServersScreen(dict(servers)))
             await pilot.pause()
 
@@ -46,8 +45,7 @@ def test_ctrl_e_toggles_and_disabled_enter_does_not_open_tools(state):
             assert app.screen_stack[-1]._servers["demo"]["status"] == "disabled"
             assert isinstance(app.screen_stack[-1], MCPServersScreen)
             olist = app.screen_stack[-1]._list()
-            rows = [olist.get_option_at_index(i).prompt.plain
-                    for i in range(olist.option_count)]
+            rows = option_texts(olist)
             assert rows == ["○ demo (disabled)"], rows
 
             await pilot.press("enter")
@@ -59,8 +57,7 @@ def test_ctrl_e_toggles_and_disabled_enter_does_not_open_tools(state):
             await pilot.pause()
             assert calls[-1] == ("demo", True)
             assert app.screen_stack[-1]._servers["demo"]["status"] == "connected"
-            rows = [olist.get_option_at_index(i).prompt.plain
-                    for i in range(olist.option_count)]
+            rows = option_texts(olist)
             assert rows == ["● demo"], rows
     asyncio.run(main())
 
@@ -70,8 +67,7 @@ def test_failed_server_enter_does_not_open_tools(monkeypatch):
     monkeypatch.setattr(mcp_client, "get_mcp_server_list", lambda: servers)
 
     async def main():
-        app = ChatApp(handle_query=lambda query: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app.push_screen(MCPServersScreen(dict(servers)))
             await pilot.pause()
             await pilot.press("enter")

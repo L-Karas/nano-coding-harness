@@ -7,18 +7,12 @@ import pytest
 
 import core.extension.dispatcher as dispatcher
 import core.extension.loader as loader
-from core.extension import ExtensionInfo, list_extensions, reset_extensions
+from core.extension import ExtensionInfo, list_extensions
 from core.extension.loader import load_extensions
+pytestmark = pytest.mark.usefixtures("empty_extension_registry")
 
 REGISTER_LLM = "def register(api):\n    api.on('before_llm', lambda ctx: None)\n"
 _MISSING = object()
-
-
-@pytest.fixture(autouse=True)
-def _clean():
-    reset_extensions()
-    yield
-    reset_extensions()
 
 
 def _make_extension(

@@ -6,31 +6,11 @@ import time
 from types import SimpleNamespace
 
 import core.agent_loop as lwi
-
-
-class _StubClient:
-    """避免真实 shared_model_client 在测试中刷新全局单例（会污染后续测试的 provider）。"""
-    current_provider = "test"
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-    def get_model_client(self):
-        async def create(**kwargs):
-            return object()
-        return create
+from tests.support import MemorySession, StubModelClient
 
 
 def test_interrupt_stops_running_turn(monkeypatch):
-    class _Mgr:
-        def load_messages(self):
-            return []
-
-        def update_messages(self, _m):
-            pass
-
-        def add_message(self, _m):
-            pass
+    mgr = MemorySession()
 
     async def _hang(*_args, **_kwargs):
         await asyncio.sleep(30)
@@ -38,8 +18,8 @@ def test_interrupt_stops_running_turn(monkeypatch):
     monkeypatch.setattr(lwi, "consume_cron_queue", lambda: [])
     monkeypatch.setattr(lwi, "inject_background_notifications", lambda: None)
     monkeypatch.setattr(lwi, "assemble_tool_pool", lambda *a, **k: SimpleNamespace(schemas=lambda: []))
-    monkeypatch.setattr(lwi, "shared_model_client", lambda: _StubClient())
-    monkeypatch.setattr(lwi, "SESSION_MANAGER", _Mgr())
+    monkeypatch.setattr(lwi, "shared_model_client", StubModelClient)
+    monkeypatch.setattr(lwi, "SESSION_MANAGER", mgr)
 
     runtime = lwi.AgentRuntime()
     monkeypatch.setattr(lwi, "run_agent_step", _hang)
@@ -70,15 +50,7 @@ def test_interrupt_stops_running_turn(monkeypatch):
 
 def test_is_running_tracks_turn_lifecycle(monkeypatch):
     """UI 的 Esc 以 is_running() 识别外部回合（auto_loop 的 cron / 后台自动回合）：进行中 True，结束后 False。"""
-    class _Mgr:
-        def load_messages(self):
-            return []
-
-        def update_messages(self, _m):
-            pass
-
-        def add_message(self, _m):
-            pass
+    mgr = MemorySession()
 
     async def _hang(*_args, **_kwargs):
         await asyncio.sleep(30)
@@ -86,8 +58,8 @@ def test_is_running_tracks_turn_lifecycle(monkeypatch):
     monkeypatch.setattr(lwi, "consume_cron_queue", lambda: [])
     monkeypatch.setattr(lwi, "inject_background_notifications", lambda: None)
     monkeypatch.setattr(lwi, "assemble_tool_pool", lambda *a, **k: SimpleNamespace(schemas=lambda: []))
-    monkeypatch.setattr(lwi, "shared_model_client", lambda: _StubClient())
-    monkeypatch.setattr(lwi, "SESSION_MANAGER", _Mgr())
+    monkeypatch.setattr(lwi, "shared_model_client", StubModelClient)
+    monkeypatch.setattr(lwi, "SESSION_MANAGER", mgr)
 
     runtime = lwi.AgentRuntime()
     monkeypatch.setattr(lwi, "run_agent_step", _hang)

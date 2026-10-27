@@ -18,7 +18,6 @@ from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 
 import anyio
-import pytest
 
 import core.mcp.mcp_client as mcp_client
 

@@ -6,7 +6,7 @@ import asyncio
 from textual.widgets import Markdown
 
 from core.tui.surface import _strip_keycaps
-from core.tui.ui_textual import ChatApp
+from tests.support import chat_app
 
 
 def test_strip_keycaps_helper():
@@ -38,8 +38,7 @@ def test_info_panel_row_strips_keycaps():
 
 def test_static_markdown_card_sanitized():
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             md = app._add_markdown_card("## 2️⃣ 资本\n")
             await pilot.pause(0.2)
             assert md.source == "## 2 资本\n", repr(md.source)
@@ -49,8 +48,7 @@ def test_static_markdown_card_sanitized():
 
 def test_stream_sanitizes_inline_keycap():
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._stream_update("### 3️⃣ 竞品\n")
             await pilot.pause(0.2)
             app._stop_stream()
@@ -63,8 +61,7 @@ def test_stream_sanitizes_inline_keycap():
 
 def test_stream_keycap_split_across_chunks_and_tail_digit_kept():
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             for chunk in ("## 1", "\ufe0f", "\u20e3 最新\n", "end 42"):
                 app._stream_update(chunk)
                 await pilot.pause(0.05)
@@ -81,8 +78,7 @@ def test_whole_turn_is_bare_digit_prefix_not_lost():
     """整条流只有半截键帽前缀（未建卡）：停流时也要补出正文，不能吞掉。"""
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._stream_update("1")
             await pilot.pause(0.1)
             app._stop_stream()
@@ -97,8 +93,7 @@ def test_stop_stream_drops_split_vs16_tail():
     """流在「数字 + VS16」处截断：补发时去掉半截 VS16，只留基字符（不是 1️）。"""
 
     async def main() -> None:
-        app = ChatApp(handle_query=lambda _q: None)
-        async with app.run_test() as pilot:
+        async with chat_app() as (app, pilot):
             app._stream_update("count 1\ufe0f")
             await pilot.pause(0.1)
             app._stop_stream()

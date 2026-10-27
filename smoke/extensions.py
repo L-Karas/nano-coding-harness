@@ -7,12 +7,7 @@ from textual.widgets import Input, OptionList, Static
 
 from core.extension import list_extensions
 from core.tui.screens import ExtensionsScreen
-from smoke._util import prompt_of, settle, type_query
-
-
-def _rows(app) -> list[str]:
-    lst = app.screen_stack[-1].query_one("#extensions-list", OptionList)
-    return [lst.get_option_at_index(i).prompt.plain for i in range(lst.option_count)]
+from smoke._util import prompt_of, screen_option_texts, settle, type_query
 
 
 async def run(app, pilot) -> None:
@@ -44,23 +39,23 @@ async def run(app, pilot) -> None:
         assert lst.styles.background.is_transparent, lst.styles.background
         assert hint.region.bottom == picker.content_region.bottom, \
             f"提示行应钉在窗口最下方: {hint.region} / {picker.content_region}"
-        assert _rows(app) == [
+        assert screen_option_texts(app, "#extensions-list") == [
             "● smoke-builtin [builtin]\nhooks: before_tool",
             "○ smoke-missing [user]\nmissing extension.json",
             "○ smoke-off [user]\nSmoke disabled extension\ndisabled",
             "● smoke-on [user]\nSmoke enabled extension\nhooks: before_llm, after_tool",
-        ], _rows(app)
+        ], screen_option_texts(app, "#extensions-list")
         # 搜索栏过滤名称（忽略大小写）；清空恢复
         search = screen.query_one("#search-input", Input)
         assert search.placeholder == "Search extensions…" and search.has_focus
         search.value = "SMOKE-ON"
         await settle(pilot)
-        assert _rows(app) == [
+        assert screen_option_texts(app, "#extensions-list") == [
             "● smoke-on [user]\nSmoke enabled extension\nhooks: before_llm, after_tool"
-        ], _rows(app)
+        ], screen_option_texts(app, "#extensions-list")
         search.value = ""
         await settle(pilot)
-        assert len(_rows(app)) == 4, "清空搜索应恢复全部扩展"
+        assert len(screen_option_texts(app, "#extensions-list")) == 4, "清空搜索应恢复全部扩展"
         # 只读：单击 / Enter 都不关窗，Esc 关闭
         await pilot.click("#extensions-list", offset=(2, 0))
         await pilot.pause()

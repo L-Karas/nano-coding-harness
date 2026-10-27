@@ -4,35 +4,7 @@ import asyncio
 import core.context.compact.context_compact as compact_mod
 from core.context.message import Message
 from core.template import IMAGE_OMITTED_MESSAGE, INJECTION_MESSAGES_TEMPLATE
-
-
-class _Stream:
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        raise StopAsyncIteration
-
-    async def close(self):
-        pass
-
-
-class _Client:
-    def __init__(self, vision):
-        self.vision = vision
-        self.kwargs = None
-
-    def supports_vision(self):
-        return self.vision
-
-    def clamp_max_tokens(self, requested):
-        return requested
-
-    def get_model_client(self):
-        async def create(**kwargs):
-            self.kwargs = kwargs
-            return _Stream()
-        return create
+from tests.support import FakeStream, StubModelClient
 
 
 def _history():
@@ -43,10 +15,10 @@ def _history():
 
 
 def _summary_request(monkeypatch, vision):
-    client = _Client(vision)
+    client = StubModelClient(vision=vision, response=FakeStream())
     monkeypatch.setattr(compact_mod, "shared_model_client", lambda: client)
     asyncio.run(compact_mod.summarize_history(_history()))
-    return client.kwargs["messages"][0]
+    return client.calls[0]["messages"][0]
 
 
 def test_summary_replaces_image_message_without_vision(monkeypatch):
