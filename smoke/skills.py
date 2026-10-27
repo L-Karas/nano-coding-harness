@@ -14,8 +14,32 @@ async def run(app, pilot) -> None:
 
     # 注入两个模拟技能（真实磁盘技能同时在场）；段末原样放回，不影响进程内其它逻辑
     import core.skill.skills as _skills_mod
+    import core.tui.screens.skills as _skills_screen
 
     _skills_orig = dict(_skills_mod.SKILL_REGISTRY)
+    # 冒烟不读写真实 .skills.json：把启用状态替换为内存集合，段末恢复
+    _skills_is_enabled_orig = _skills_screen.is_skill_enabled
+    _skills_set_enabled_orig = _skills_screen.set_skill_enabled
+    _skills_state_error_orig = _skills_screen.skill_state_error
+    _smoke_disabled: set[str] = set()
+
+    def _smoke_is_enabled(name: str) -> bool:
+        return name not in _smoke_disabled
+
+    def _smoke_state_error():
+        return None
+
+    def _smoke_set_enabled(name: str, enabled: bool):
+        if enabled:
+            _smoke_disabled.discard(name)
+        else:
+            _smoke_disabled.add(name)
+        action = "Enabled" if enabled else "Disabled"
+        return True, f"{action} skill '{name}'"
+
+    _skills_screen.is_skill_enabled = _smoke_is_enabled
+    _skills_screen.set_skill_enabled = _smoke_set_enabled
+    _skills_screen.skill_state_error = _smoke_state_error
     _skills_mod.SKILL_REGISTRY.update({
         "smoke-skill-a": Skill(
             name="smoke-skill-a",
@@ -114,7 +138,8 @@ async def run(app, pilot) -> None:
     await settle(pilot, 10)
     assert isinstance(app.screen_stack[-1], SkillsScreen)
     assert app.screen_stack[-1].HINT == \
-        "  ↑/↓ browse    Enter/click invoke    Tab invoke with message    Esc close", \
+        "  ↑/↓ browse    Enter/click invoke    Tab invoke with message" \
+        "    Ctrl+E enable/disable    Esc close", \
         app.screen_stack[-1].HINT
     sk_lst = app.screen_stack[-1].query_one("#skills-list", OptionList)
     sk_idx = next(i for i in range(sk_lst.option_count)
@@ -142,6 +167,33 @@ async def run(app, pilot) -> None:
         await pilot.pause(0.05)
     assert not app._busy, "技能补充消息回合未结束"
     print("[smoke] /skills Tab OK: fills invoke message into prompt, extra message sent together")
+    # Ctrl+E：禁用当前技能（行变红 ○）→ Enter 只提示不关窗 → 再次 Ctrl+E 恢复
+    prompt.focus()
+    prompt.text = "/skills"
+    await pilot.press("enter")
+    await settle(pilot, 10)
+    assert isinstance(app.screen_stack[-1], SkillsScreen)
+    sk_lst = app.screen_stack[-1].query_one("#skills-list", OptionList)
+    sk_idx = next(i for i in range(sk_lst.option_count)
+                  if sk_lst.get_option_at_index(i).prompt.plain.startswith("● smoke-skill-a"))
+    sk_lst.highlighted = sk_idx
+    await pilot.press("ctrl+e")
+    await settle(pilot)
+    rows = [sk_lst.get_option_at_index(i).prompt.plain for i in range(sk_lst.option_count)]
+    assert any(r.startswith("○ smoke-skill-a") for r in rows), rows
+    assert "smoke-skill-a" in _smoke_disabled
+    await pilot.press("enter")
+    await settle(pilot, 5)
+    assert isinstance(app.screen_stack[-1], SkillsScreen), "禁用技能 Enter 不应关窗"
+    assert not app._busy, "禁用技能 Enter 不应触发回合"
+    await pilot.press("ctrl+e")
+    await settle(pilot)
+    rows = [sk_lst.get_option_at_index(i).prompt.plain for i in range(sk_lst.option_count)]
+    assert any(r.startswith("● smoke-skill-a") for r in rows), rows
+    assert "smoke-skill-a" not in _smoke_disabled
+    await pilot.press("escape")
+    await settle(pilot)
+    print("[smoke] /skills Ctrl+E OK: toggles enabled/disabled, disabled Enter is rejected")
     _skills_mod.SKILL_REGISTRY.clear()  # 无技能场景：应给 toast 提示而非空弹窗
     prompt.focus()
     prompt.text = "/skills"
@@ -152,4 +204,7 @@ async def run(app, pilot) -> None:
     toasts = [n.message for n in app._notifications]
     assert any("No skills found" in message for message in toasts), toasts
     _skills_mod.SKILL_REGISTRY.update(_skills_orig)  # 复原（原样放回，含磁盘扫描项）
+    _skills_screen.is_skill_enabled = _skills_is_enabled_orig
+    _skills_screen.set_skill_enabled = _skills_set_enabled_orig
+    _skills_screen.skill_state_error = _skills_state_error_orig
     print("[smoke] /skills OK: picker-style popup lists all skills, empty registry notifies")

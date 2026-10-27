@@ -27,40 +27,54 @@ from core.tui.theme import (
     ACTIVE_STYLE,
     INACTIVE_GLYPH,
     INACTIVE_STYLE,
+    SECONDARY_TEXT,
     _SPINNER_FRAMES,
 )
 
-# server 行按连接状态着色：connected 绿 ●；connecting 橙色 spinner（_cursor 轮播）；failed 红 ○
-_SERVER_STYLE = {"connected": ACTIVE_STYLE, "connecting": "#fb923c", "failed": INACTIVE_STYLE}
-_SERVER_GLYPH = {"connected": ACTIVE_GLYPH, "failed": INACTIVE_GLYPH}
+# server 行按连接状态着色：connected 绿 ●；connecting 橙色 spinner（_cursor 轮播）；failed 红 ○；
+# disabled 灰 ○（与 failed 区分：一个是连接失败，一个是用户主动关闭）
+_SERVER_STYLE = {"connected": ACTIVE_STYLE, "connecting": "#fb923c",
+                 "failed": INACTIVE_STYLE, "disabled": SECONDARY_TEXT}
+_SERVER_GLYPH = {"connected": ACTIVE_GLYPH, "failed": INACTIVE_GLYPH,
+                 "disabled": INACTIVE_GLYPH}
+_SERVER_STATUS_TEXT = {"failed": " (failed)", "disabled": " (disabled)"}
 
 _HTTP_TRANSPORTS = ("sse", "streamable_http")  # 走 url + headers 的传输类型
 
 
 def _server_row(name: str, info: dict, cursor: int = 0) -> Text:
-    """server 行 = 「状态字形 名称」；未识别状态按 connected 样式。"""
+    """server 行 = 「状态字形 名称」+ 失败/禁用状态词；未识别状态按 connected 样式。"""
     status = info.get("status", "")
     glyph = (_SPINNER_FRAMES[cursor % len(_SPINNER_FRAMES)] if status == "connecting"
              else _SERVER_GLYPH.get(status, ACTIVE_GLYPH))
-    return Text(f"{glyph} {name}", style=_SERVER_STYLE.get(status, _SERVER_STYLE["connected"]))
+    return Text(f"{glyph} {name}{_SERVER_STATUS_TEXT.get(status, '')}",
+                style=_SERVER_STYLE.get(status, _SERVER_STYLE["connected"]))
 
 
 class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
     """MCP 服务器列表弹窗（/mcp）。
 
-    数据由调用方从 get_mcp_server_list() 取值：{name: {"status": connecting|connected|failed,
-    "tools": [...]}}；Enter/点击 → 推入工具列表，Insert → 表单配置窗（保存后本窗就地刷新），
-    Delete → 原地确认后 unconfigure（删空也不关窗，空列表可继续 Insert），行按连接状态着色、
-    connecting 轮播。"""
+    数据由调用方从 get_mcp_server_list() 取值：{name: {"status":
+    connecting|connected|failed|disabled, "tools": [...]}}；Enter/点击 → 推入工具列表
+    （仅 connected / connecting 可进；failed / disabled 只 toast），Ctrl+E → 启用/禁用，
+    Insert → 表单配置窗（保存后本窗就地刷新），Delete → 原地确认后 unconfigure
+    （删空也不关窗，空列表可继续 Insert），行按连接状态着色、connecting 轮播。"""
 
     TITLE = "MCP Servers"
-    HINT = "  ↑/↓ browse    Enter/click tools    Insert configure    Delete remove    Esc close"
+    HINT = ("  ↑/↓ browse    Enter/click tools    Ctrl+E enable/disable"
+            "    Insert configure    Delete remove    Esc close")
     LIST_ID = "mcp-list"
     PICKER_ID = "mcp-picker"
     SEARCH_PLACEHOLDER = "Search servers…"
     CONFIRM = True
     # delete 加 priority：搜索栏聚焦时 Delete 仍是窗级删除（Input 默认把 delete 当删字符）
     BINDINGS = [("insert", "configure", "Configure"),
+                Binding(
+                    "ctrl+e",
+                    "toggle_selected",
+                    "Enable/Disable",
+                    priority=True,
+                ),
                 Binding(
                     "delete",
                     "remove_selected",
@@ -123,10 +137,42 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
                 olist.replace_option_prompt(server, _server_row(server, info, self._cursor))
 
     def _selected(self, option_id: str | None) -> None:
-        """Enter/点击 server：打开其工具列表；原地确认中由 _InlineConfirm 先行拦截。"""
-        if option_id:
-            tools = self._servers.get(option_id, {}).get("tools", [])
-            self.app.push_screen(MCPToolsScreen(option_id, tools))
+        """Enter/点击 server：仅已连接 / 连接中可查看工具；失败 / 禁用只提示。"""
+        if not option_id:
+            return
+        status = self._servers.get(option_id, {}).get("status")
+        if status == "disabled":
+            self.app.notify(f"MCP server '{option_id}' is disabled. Press Ctrl+E to enable it.",
+                            title="⛔ MCP")
+            return
+        if status == "failed":
+            self.app.notify(
+                f"MCP server '{option_id}' failed to connect. "
+                "Press Insert to reconfigure or Ctrl+E to disable it.",
+                title="⚠️ MCP", severity="error")
+            return
+        tools = self._servers.get(option_id, {}).get("tools", [])
+        self.app.push_screen(MCPToolsScreen(option_id, tools))
+
+    def action_toggle_selected(self) -> None:
+        """Ctrl+E：切换当前高亮 server 的启用状态；禁用项保留配置后再重新连接。"""
+        self._cancel_confirm()
+        olist = self._list()
+        if olist.highlighted is None:
+            return
+        server = str(olist.get_option_at_index(olist.highlighted).id)
+        enable = self._servers.get(server, {}).get("status") == "disabled"
+        try:
+            from core.mcp.mcp_client import set_mcp_server_enabled
+            ok, message = set_mcp_server_enabled(server, enable)
+        except Exception as exc:
+            self.app.notify(f"Failed to toggle: {_error_text(exc)}", title="⚠️ MCP", severity="error")
+            return
+        if not ok:
+            self.app.notify(message, title="⚠️ MCP", severity="error")
+            return
+        self.app.notify(message, title="✅ MCP")
+        self._refresh()
 
     def action_remove_selected(self) -> None:
         """Delete：窗内红字原地确认；Enter 才真删（确认目标 = 按下 Delete 时高亮的 server）。"""

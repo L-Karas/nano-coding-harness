@@ -56,3 +56,13 @@ _Avoid_: 会话文件、session_map
 **Compact trigger threshold**:
 按当前模型上下文窗口解析出的压缩触发阈值；优先级与兜底规则见 `docs/context-compaction.md`。
 _Avoid_: 固定压缩阈值、按 max_output 计算阈值
+
+**Skill state**:
+技能对模型的可见性开关，持久化在 `.harness/.skills.json`（只记禁用名，缺省启用）；
+关闭后从系统提示词移除，并让 `load_skill` 拒绝。
+_Avoid_: 技能配置、enabled 列表
+
+**Server enabled state**:
+MCP server 的用户开关，存在 `.mcp.json` 的 `enabled` 字段（缺省启用）；关闭 = 断开连接、
+工具下架，但配置保留，可重新启用。
+_Avoid_: disabled server、MCP 开关

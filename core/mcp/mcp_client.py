@@ -141,8 +141,8 @@ class ClientManager:
     """一个 MCP 后台 loop 上的会话集合。
 
     每个 server 有一个常驻 task（_manage_server）独占它的 connect / disconnect：anyio 的
-    cancel scope 要求进入与退出在同一 task。配置变更只把新配置排进该 server 的指令队列，
-    由常驻 task 自己断旧连新，调用方不等待建连。
+    cancel scope 要求进入与退出在同一 task。配置变更 / 启用 / 禁用只把指令排进该 server
+    的队列，由常驻 task 自己断旧连新（或退出），调用方不等待建连。
     """
 
     def __init__(self, server_configs: dict):
@@ -151,7 +151,8 @@ class ClientManager:
         self.session_group: ClientSessionGroup | None = None
         # config_server_name -> session
         self.session_map: dict[str, ClientSession] = {}
-        # config_server_name -> connecting / connected / failed（/mcp 展示用）
+        # config_server_name -> connecting / connected / failed；禁用或无 task 时不在此表
+        # （/mcp 的 disabled 状态由 get_mcp_server_list 按配置推导）
         self.status: dict[str, str] = {}
         # config_server_name -> [{tool_name, tool_description}]（/mcp 展示用）
         self.tools_by_server: dict[str, list[dict]] = {}
@@ -285,18 +286,24 @@ class ClientManager:
                 ready.set()
                 config = await commands.get()
                 await self._close_session(server_name)  # 收到新配置 / 停止：先断旧
+                # 等旧连接断开期间可能又排入新的禁用 / 启用 / 改配置（例如禁用后立刻
+                # 启用）。只保留最新一条，避免为同一个 server 起第二个并发连接。
+                while not commands.empty():
+                    config = commands.get_nowait()
                 if config is _STOP:
                     return
         finally:
             ready.set()  # 首个连接结果落地前就退出，也不能让 init 一直等
             if self._server_tasks.get(server_name) is task:
                 self._server_tasks.pop(server_name, None)  # 已被新 task 顶替时不删掉它的槽位
+            if self._server_commands.get(server_name) is commands:
+                self._server_commands.pop(server_name, None)
 
     def _start_server_task(self, server_name: str, config: dict) -> asyncio.Event:
         """为 server 建专属指令队列并启动常驻 task（只在 MCP loop 上调用）。
 
-        队列随创建一起传入 task：删掉 server 又立刻重加时，旧 task 读的是旧队列，
-        不会误收到新 task 的指令。
+        队列随创建一起传入 task；task 退出时按 identity 只清理自己的队列 / 槽位，
+        不会碰到后来接替它的 task。
         """
         commands: asyncio.Queue = asyncio.Queue()
         ready = asyncio.Event()
@@ -315,9 +322,13 @@ class ClientManager:
         self.session_group = await self.exit_stack.enter_async_context(
             ClientSessionGroup(component_name_hook=_component_name))
 
-        # 每个 server 一个常驻 task，首连彼此并发；等各自的首次尝试落地，init 即视为就绪
-        ready_events = [self._start_server_task(server_name, config)
-                        for server_name, config in self.server_configs["mcpServers"].items()]
+        # 每个启用的 server 一个常驻 task，首连彼此并发；禁用项不建连，等重新启用时再由
+        # _apply_config 启动。
+        ready_events = []
+        for server_name, config in self.server_configs["mcpServers"].items():
+            if not _is_enabled(config):
+                continue
+            ready_events.append(self._start_server_task(server_name, config))
         await asyncio.gather(*(event.wait() for event in ready_events))
 
     @staticmethod
@@ -349,29 +360,70 @@ class ClientManager:
         self._apply_config(configs)
 
     def _apply_config(self, new_server_configs: dict) -> None:
-        """对比新旧配置，把新增 / 改配置 / 删除交给各 server 的常驻 task（不等待建连）。"""
+        """对比新旧配置，把新增 / 改配置 / 启用 / 禁用 / 删除交给各 server 的常驻 task。
+
+        禁用项保留在 server_configs 里，但不持有 task / 连接；重新启用时再启动。
+        已有常驻 task 时只排队，不新建第二个 task：同一 server 的并发连接会互相覆盖
+        session_map 与共享工具表。
+        """
         old_configs = self.server_configs.get("mcpServers", {})
         new_configs = new_server_configs.get("mcpServers", {})
         if old_configs == new_configs:
             return
-        for server_name in new_configs.keys() - old_configs.keys():
-            _LOGGER.info(f"[MCP] connect {server_name}")
-            self._start_server_task(server_name, new_configs[server_name])
-        for server_name in old_configs.keys() & new_configs.keys():
-            if old_configs[server_name] == new_configs[server_name]:
+        old_names = set(old_configs)
+        new_names = set(new_configs)
+
+        for server_name in new_names - old_names:
+            if not _is_enabled(new_configs[server_name]):
                 continue
-            _LOGGER.info(f"[MCP] update {server_name} config")
-            self.status[server_name] = "connecting"  # 排队即置状态，UI 不显示旧连接的 connected
-            self._server_commands[server_name].put_nowait(new_configs[server_name])
-        for server_name in old_configs.keys() - new_configs.keys():
+            _LOGGER.info(f"[MCP] connect {server_name}")
+            self._start_or_queue(server_name, new_configs[server_name])
+
+        for server_name in old_names & new_names:
+            old_cfg, new_cfg = old_configs[server_name], new_configs[server_name]
+            if old_cfg == new_cfg:
+                continue
+            old_enabled, new_enabled = _is_enabled(old_cfg), _is_enabled(new_cfg)
+            if old_enabled and not new_enabled:
+                _LOGGER.info(f"[MCP] disable {server_name}")
+                self._send(server_name, _STOP)
+                self.status.pop(server_name, None)
+            elif new_enabled and not old_enabled:
+                _LOGGER.info(f"[MCP] enable {server_name}")
+                self._start_or_queue(server_name, new_cfg)
+            elif old_enabled and new_enabled:
+                _LOGGER.info(f"[MCP] update {server_name} config")
+                self._start_or_queue(server_name, new_cfg)
+            else:
+                self.status.pop(server_name, None)  # 两边都禁用：只更新配置
+
+        for server_name in old_names - new_names:
             _LOGGER.info(f"[MCP] disconnect {server_name}")
-            if commands := self._server_commands.pop(server_name, None):
-                commands.put_nowait(_STOP)
+            self._send(server_name, _STOP)
             self.status.pop(server_name, None)
         self.server_configs = new_server_configs
 
+    def _send(self, server_name: str, command) -> None:
+        """把指令排进该 server 的常驻 task；没有 task 时丢弃（禁用 / 删除无需启动）。"""
+        if commands := self._server_commands.get(server_name):
+            commands.put_nowait(command)
+
+    def _start_or_queue(self, server_name: str, config: dict) -> None:
+        """有常驻 task 就排队（由它串行重启），否则新建一个。
+
+        禁用后立刻启用时旧 task 可能仍在 connect / 退出；排队到同一队列可避免同一
+        server 出现两个并发连接（会互相覆盖 session_map 与共享工具表）。
+        """
+        if commands := self._server_commands.get(server_name):
+            self.status[server_name] = "connecting"  # 排队即置状态，UI 不显示旧连接的 connected
+            commands.put_nowait(config)
+        else:
+            self._start_server_task(server_name, config)
+
     async def aclose(self) -> None:
         for commands in self._server_commands.values():
+            while not commands.empty():  # 关停优先于已排队的重连配置
+                commands.get_nowait()
             commands.put_nowait(_STOP)
         if self._server_tasks:
             await asyncio.gather(*self._server_tasks.values(), return_exceptions=True)
@@ -407,21 +459,25 @@ def get_mcp_server_list() -> dict[str, dict]:
     MCP server snapshot for the /mcp UI (non-blocking).
 
     Returns:
-        dict: {server_name: {"status": "connecting|connected|failed", "tools": [
+        dict: {server_name: {"status": "connecting|connected|failed|disabled", "tools": [
               {"tool_name": "...", "tool_description": "..."}]}}
 
-    行以配置文件为准（增删立即反映），status / tools 来自后台 loop 维护的快照。
+    行以配置文件为准（增删立即反映）；disabled 由配置里的 enabled=false 判定，其余
+    status / tools 来自后台 loop 维护的快照。
     """
     manager = peek_client_manager()
     if manager is None:
         raise RuntimeError("MCP still connecting")
-    return {
-        server_name: {
-            "status": manager.status.get(server_name, "connecting"),
-            "tools": manager.tools_by_server.get(server_name, []),
-        }
-        for server_name in _read_config().get("mcpServers", {})
-    }
+    servers = {}
+    for server_name, config in _read_config().get("mcpServers", {}).items():
+        if isinstance(config, dict) and not _is_enabled(config):
+            servers[server_name] = {"status": "disabled", "tools": []}
+        else:
+            servers[server_name] = {
+                "status": manager.status.get(server_name, "connecting"),
+                "tools": manager.tools_by_server.get(server_name, []),
+            }
+    return servers
 
 
 # 每种传输：(必填键, 可选项)；可选项原样透传给底层传输参数类
@@ -440,6 +496,11 @@ def _transport_of(config) -> str | None:
     return transport if isinstance(transport, str) and transport in _TRANSPORT_KEYS else None
 
 
+def _is_enabled(config) -> bool:
+    """server 是否启用：缺省 True；只有显式 False 才视为禁用。"""
+    return not isinstance(config, dict) or config.get("enabled", True) is not False
+
+
 def _validate_config(configs: dict):
     """Validate mcp server config format"""
     if not configs:
@@ -452,9 +513,12 @@ def _validate_config(configs: dict):
         _LOGGER.warning(f"MCP server config type invalid: {type(servers)}")
         raise ValueError("MCP server config invalid")
     for server_name, config in servers.items():
-        # 与 _server_params 同源：必填键齐全且无多余键才算合法
+        # 与 _server_params 同源：必填键齐全、可选键 / enabled 之外无多余键才算合法
         required, optional = _TRANSPORT_KEYS.get(_transport_of(config), (set(), set()))
-        valid = bool(required) and required <= set(config) <= required | optional
+        keys = set(config) if isinstance(config, dict) else set()
+        valid = bool(required) and required <= keys <= required | optional | {"enabled"}
+        if valid and "enabled" in config and not isinstance(config["enabled"], bool):
+            valid = False
         if not valid:
             _LOGGER.warning(f"MCP server config type invalid: {server_name}={config}")
             raise ValueError("MCP server config invalid")
@@ -479,13 +543,48 @@ def configure_mcp_server(mcp_configs: str) -> tuple[bool, str]:
         new_servers = json.loads(mcp_configs)
         _validate_config(new_servers)
         configs = _read_config()
-        configs["mcpServers"] = configs.get("mcpServers", {}) | new_servers["mcpServers"]
+        servers = configs.get("mcpServers", {})
+        for server_name, server_config in new_servers["mcpServers"].items():
+            old_config = servers.get(server_name)
+            # 表单纯改连接参数时不应悄悄把禁用的 server 打开：新负载没带 enabled 就保留旧状态
+            if (isinstance(old_config, dict) and "enabled" not in server_config
+                    and "enabled" in old_config):
+                server_config = {**server_config, "enabled": old_config["enabled"]}
+            servers[server_name] = server_config
+        configs["mcpServers"] = servers
         MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
         _reload_config_in_background()  # 落盘即返回，连接在 MCP loop 后台完成
         return True, "Configured MCP Servers"
     except Exception as e:
         _LOGGER.warning(f"[MCP] server config invalid: {e}")
         return False, str(e)
+
+
+def set_mcp_server_enabled(mcp_server_name: str, enabled: bool) -> tuple[bool, str]:
+    """切换一个已有 server 的启用状态；配置条目保留，连接迁移交给 MCP loop。
+
+    Returns:
+        tuple[whether the state was persisted, message]
+    """
+    try:
+        configs = _read_config()
+        servers = configs.get("mcpServers", {})
+        if mcp_server_name not in servers:
+            return False, f"MCP server {mcp_server_name} not found"
+        server_config = dict(servers[mcp_server_name])
+        if enabled:
+            server_config.pop("enabled", None)  # 缺省即启用，不把 true 写进配置
+            action = "Enabled"
+        else:
+            server_config["enabled"] = False
+            action = "Disabled"
+        servers[mcp_server_name] = server_config
+        MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
+        _reload_config_in_background()  # 落盘即返回，断开 / 重连在 MCP loop 后台完成
+        return True, f"{action} MCP server '{mcp_server_name}'"
+    except Exception as e:
+        _LOGGER.warning(f"[MCP] set server enabled error: {e}")
+        return False, f"Set mcp server state error: {e}"
 
 
 def unconfigure_mcp_server(mcp_server_name: str) -> tuple[bool, str]:

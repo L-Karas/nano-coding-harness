@@ -46,7 +46,9 @@ def test_configure_accepts_optional_transport_keys(monkeypatch, tmp_path):
             ("sse-headers", {"type": "sse", "url": "http://x",
                              "headers": {"Authorization": "Bearer t"}, "timeout": 7.5}),
             ("http-headers", {"type": "streamable_http", "url": "http://x",
-                              "headers": {"Authorization": "Bearer t"}, "timeout": 12})):
+                              "headers": {"Authorization": "Bearer t"}, "timeout": 12}),
+            ("stdio-disabled", {"command": "npx", "enabled": False}),
+            ("sse-disabled", {"type": "sse", "url": "http://x", "enabled": False})):
         ok, message, written = _configure(
             monkeypatch,
             tmp_path,
@@ -57,9 +59,25 @@ def test_configure_accepts_optional_transport_keys(monkeypatch, tmp_path):
         assert written["mcpServers"][name] == config
 
 
+def test_configure_keeps_existing_enabled_state(monkeypatch, tmp_path):
+    config_file = tmp_path / ".mcp.json"
+    config_file.write_text(json.dumps(
+        {"mcpServers": {"s": {"command": "old", "enabled": False}}}), encoding="utf-8")
+    monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", config_file)
+    monkeypatch.setattr(mcp_client, "get_client_manager", lambda: None)
+
+    ok, message = mcp_client.configure_mcp_server(json.dumps(
+        {"mcpServers": {"s": {"command": "new"}}}))
+
+    assert ok, message
+    assert json.loads(config_file.read_text(encoding="utf-8"))["mcpServers"]["s"] == {
+        "command": "new", "enabled": False}
+
+
 def test_server_params_carry_optional_transport_keys():
     stdio = mcp_client.ClientManager._server_params("s", {
-        "command": "npx", "args": ["-y", "pkg"], "env": {"TOKEN": "t"}, "cwd": "/srv"})
+        "command": "npx", "args": ["-y", "pkg"], "env": {"TOKEN": "t"}, "cwd": "/srv",
+        "enabled": False})
     assert isinstance(stdio, StdioServerParameters)
     assert (stdio.command, stdio.args, stdio.env, stdio.cwd) == (
         "npx", ["-y", "pkg"], {"TOKEN": "t"}, "/srv")
@@ -80,6 +98,7 @@ def test_configure_rejects_invalid_shape_without_writing(monkeypatch, tmp_path):
                          ("missing-url", {"type": "sse"}),
                          ("bad-type", {"type": "stdio", "url": "http://x"}),
                          ("unhashable-type", {"type": [], "url": "http://x"}),
+                         ("enabled-not-bool", {"type": "sse", "url": "http://x", "enabled": "no"}),
                          ("extra-key", {"type": "sse", "url": "http://x", "x": 1})):
         ok, message, written = _configure(
             monkeypatch,

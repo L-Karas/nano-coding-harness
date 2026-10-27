@@ -46,6 +46,10 @@ def test_permission_file_is_bootstrapped():
     assert config.PERMISSION_FILE in bootstrap_mod._JSON_FILES
 
 
+def test_skill_state_file_is_bootstrapped():
+    assert config.SKILL_STATE_FILE in bootstrap_mod._JSON_FILES
+
+
 def test_bootstrap_initializes_once_across_threads(monkeypatch):
     """并发首次调用 bootstrap 只初始化一次（避免重复启动 cron 线程）。"""
     calls, gate = [], threading.Barrier(8)

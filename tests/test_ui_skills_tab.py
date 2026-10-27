@@ -1,11 +1,22 @@
 """`/skills` 窗口：Tab 把调用信息填入输入栏（不发送），Enter 仍立即发出。"""
 import asyncio
 
+import pytest
+
+import core.tui.screens.skills as skills_screen
 from core.skill.skills import Skill
 from core.tui.screens import MCPToolsScreen, SkillsScreen
 from core.tui.ui_textual import ChatApp
 
-_HINT = "  ↑/↓ browse    Enter/click invoke    Tab invoke with message    Esc close"
+_HINT = ("  ↑/↓ browse    Enter/click invoke    Tab invoke with message"
+         "    Ctrl+E enable/disable    Esc close")
+
+
+@pytest.fixture(autouse=True)
+def _skills_enabled_and_state_ok(monkeypatch):
+    """这些用例只测 Tab / Enter；固定技能启用且状态文件正常，避免本机状态干扰。"""
+    monkeypatch.setattr(skills_screen, "is_skill_enabled", lambda name: True)
+    monkeypatch.setattr(skills_screen, "skill_state_error", lambda: None)
 
 
 def _skill() -> Skill:

@@ -24,6 +24,7 @@ from core.config import (
     SESSION_DIR,
     SESSION_INDEX_FILE,
     SKILL_DIR,
+    SKILL_STATE_FILE,
     TOOL_RESULTS_DIR,
 )
 
@@ -31,6 +32,7 @@ _CONFIG_DIRS = (HARNESS_CONFIG_DIR, LOG_DIR, SKILL_DIR, EXTENSION_DIR, MEMORY_DI
                 SESSION_DIR, TOOL_RESULTS_DIR, MCP_DIR)
 _JSON_FILES = {
     HARNESS_SETTING_FILE: {},  # 默认值由 AgentConfig 提供，load_config 读取时补齐
+    SKILL_STATE_FILE: {"disabled": []},
     PROVIDER_AUTH_FILE: {},
     CUSTOM_PROVIDER_FILE: {},
     CUSTOM_MODEL_FILE: {},

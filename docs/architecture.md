@@ -31,8 +31,8 @@
 | `core/cron_scheduler.py` | 5 段式 cron 解析、队列、持久化 |
 | `core/extension/` | 外部扩展系统（事件、阶段、决定票）与内置扩展（权限门、观察者） |
 | `core/recovery/error_recovery.py` | 按 provider 分类错误、指数退避重试、恢复状态 |
-| `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环） |
-| `core/skill/skills.py` | 扫描 global（`~/.agents/skills`）/ user（`.harness/skills`）/ project（`.agents/skills`）三来源的 `SKILL.md`，同名 project > user > global |
+| `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环）；配置里的 `enabled=false` 控制运行时启停 |
+| `core/skill/skills.py` | 扫描 global（`~/.agents/skills`）/ user（`.harness/skills`）/ project（`.agents/skills`）三来源的 `SKILL.md`，同名 project > user > global；`.harness/.skills.json` 控制模型可见性 |
 | `core/context/memory/memory.py` | 长期记忆的增删查，注入系统提示词 |
 | `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 30 轮，只回传最终文本 |
 | `core/tui/` | Textual 界面：App 装配、卡片/流式渲染、指令与弹窗、左栏分区与右栏面板（详见 [`tui.md`](tui.md)） |

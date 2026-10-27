@@ -6,6 +6,8 @@
 """
 import io
 import os
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -19,10 +21,15 @@ from core.client.model import load_model_registry  # noqa: E402
 from core.config import AgentConfig  # noqa: E402
 from core.extension.builtin import permission, register_builtin_extensions  # noqa: E402
 from core.extension.builtin.permission import Rules  # noqa: E402
-from core.skill.skills import scan_skills  # noqa: E402
+import core.skill.skills as skills_mod  # noqa: E402
 
 register_builtin_extensions(rules=Rules())
-scan_skills()
+# 测试不读写开发者真实的 .harness/.skills.json；启动扫描后固定为全员启用
+skills_mod.SKILL_STATE_FILE = Path(
+    tempfile.mkdtemp(prefix="nano-harness-skills-")) / ".skills.json"
+skills_mod.scan_skills()
+skills_mod._DISABLED = set()
+skills_mod._STATE_ERROR = None
 load_model_registry()
 
 

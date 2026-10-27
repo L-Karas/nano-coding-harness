@@ -24,7 +24,8 @@
 | --- | --- |
 | `.harness/.settings.json` | `AgentConfig` 参数（默认模型与思考档位、压缩与运行参数）：由 `/settings` 写入；`/model` / `/effort` 只切换当前会话的内存 client，不写盘；注销 provider / model 会清空指向它的默认模型引用 |
 | `.harness/.auth.json` | 各 provider 的 `api_key` |
-| `.harness/.mcp/.mcp.json` | MCP Server 配置（`mcpServers`） |
+| `.harness/.mcp/.mcp.json` | MCP Server 配置（`mcpServers`）；每个 server 可选 `"enabled": false` 表示禁用（缺省启用） |
+| `.harness/.skills.json` | 技能启用状态（`{"disabled": [name, ...]}`，缺省全员启用；启动时读取，`/skills` 的 `Ctrl+E` 写入并即时生效） |
 | `.harness/.permissions.json` | 权限规则（terminal 命令正则与外部目录策略 / 文件工具 path 正则与越界策略，见 [`permissions.md`](permissions.md)）：启动时读取，修改后需重启；本期不设写保护 |
 | `~/.agents/skills/<name>/SKILL.md` / `.harness/skills/<name>/SKILL.md` / `.agents/skills/<name>/SKILL.md` | 技能清单三来源（global / user / project，同名 project > user > global；YAML frontmatter + 正文） |
 | `.harness/.memory/*.json` | 长期记忆条目 |
