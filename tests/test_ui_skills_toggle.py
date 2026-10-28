@@ -5,7 +5,7 @@ import pytest
 
 import core.tui.screens.skills as skills_screen
 from core.tui.screens import SkillsScreen
-from core.tui.theme import SECONDARY_TEXT
+from core.tui.theme import DISABLED_TEXT
 from tests.support import chat_app, make_skill, option_texts
 
 
@@ -47,7 +47,7 @@ def test_ctrl_e_toggles_and_disabled_blocks_invoke(state):
             row = olist.get_option_at_index(olist.highlighted).prompt
             head = next(span for span in row.spans
                         if row.plain[span.start:span.end] == "○ review")
-            assert SECONDARY_TEXT in str(head.style), "禁用技能应同 /extensions 的灰色"
+            assert DISABLED_TEXT in str(head.style), "禁用技能应同 /extensions 的灰紫色"
             assert "#f87171" not in str(head.style), "禁用技能不应再使用错误红"
 
             await pilot.press("enter")

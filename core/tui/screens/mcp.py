@@ -25,16 +25,16 @@ from core.tui.screens.base import (
 from core.tui.theme import (
     ACTIVE_GLYPH,
     ACTIVE_STYLE,
+    DISABLED_TEXT,
     INACTIVE_GLYPH,
     INACTIVE_STYLE,
-    SECONDARY_TEXT,
     _SPINNER_FRAMES,
 )
 
 # server 行按连接状态着色：connected 绿 ●；connecting 橙色 spinner（_cursor 轮播）；failed 红 ○；
-# disabled 灰 ○（与 failed 区分：一个是连接失败，一个是用户主动关闭）
+# disabled 灰紫 ○（与 failed 区分：一个是连接失败，一个是用户主动关闭）
 _SERVER_STYLE = {"connected": ACTIVE_STYLE, "connecting": "#fb923c",
-                 "failed": INACTIVE_STYLE, "disabled": SECONDARY_TEXT}
+                 "failed": INACTIVE_STYLE, "disabled": DISABLED_TEXT}
 _SERVER_GLYPH = {"connected": ACTIVE_GLYPH, "failed": INACTIVE_GLYPH,
                  "disabled": INACTIVE_GLYPH}
 _SERVER_STATUS_TEXT = {"failed": " (failed)", "disabled": " (disabled)"}

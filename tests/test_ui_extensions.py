@@ -8,7 +8,7 @@ import core.extension.registry as registry
 import core.tui.screens.extensions as extensions_screen
 from core.extension import ToggleResult, list_extensions
 from core.tui.screens import ExtensionsScreen
-from core.tui.theme import HOOK_TEXT, SECONDARY_TEXT
+from core.tui.theme import DISABLED_TEXT, HOOK_TEXT, SECONDARY_TEXT
 from core.tui.utils import SLASH_COMMANDS
 from tests.support import chat_app, option_texts
 
@@ -130,8 +130,8 @@ def test_extension_status_rows_use_status_specific_style():
             disabled_head = next(span for span in disabled_row.spans
                                  if disabled_row.plain[span.start:span.end]
                                  == "○ off")
-            assert SECONDARY_TEXT in str(disabled_head.style), \
-                "disabled 行应同 /mcp disabled server 的灰色"
+            assert DISABLED_TEXT in str(disabled_head.style), \
+                "disabled 行应同 /mcp disabled server 的灰紫色"
     asyncio.run(main())
 
 
