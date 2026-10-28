@@ -7,8 +7,9 @@ from core.extension.context import (
     BeforeToolContext,
     ToolExecuteContext,
 )
-from core.extension.dispatcher import add, dispatch, reset as reset_dispatcher
+from core.extension.dispatcher import dispatch, reset as reset_dispatcher
 from core.extension.loader import (
+    ToggleResult,
     load_extensions,
     toggle_extension,
     reset as reset_loader,
@@ -19,12 +20,12 @@ __all__ = [
     "EVENTS",
     "ExtensionAPI",
     "ExtensionInfo",
+    "ToggleResult",
     "BeforeLLMContext",
     "AfterLLMContext",
     "BeforeToolContext",
     "AfterToolContext",
     "ToolExecuteContext",
-    "add",
     "dispatch",
     "list_extensions",
     "load_extensions",

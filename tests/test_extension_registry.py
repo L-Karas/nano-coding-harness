@@ -68,7 +68,7 @@ def test_same_name_keeps_user_and_builtin_separate():
 def test_status_classifies_enabled_disabled_and_error():
     registry.record("on", "user", enabled=True)
     registry.record("off", "user", enabled=False)
-    registry.record("broken", "user", enabled=False, detail="load failed")
+    registry.record("broken", "user", enabled=False, detail="load failed", error=True)
 
     assert [(entry.name, entry.status) for entry in list_extensions()] == [
         ("broken", "error"),

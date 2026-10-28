@@ -85,17 +85,14 @@ class ExtensionsScreen(_ListPickerScreen):
             self.app.notify("Builtin extensions cannot be toggled.",
                             title="⛔ Extensions")
             return
-        ok, message, enabled = toggle_extension(entry.name)
-        if not ok:
-            self.app.notify(message, title="⚠️ Extensions", severity="error")
+        result = toggle_extension(entry.name)
+        if not result.ok:
+            self.app.notify(result.message, title="⚠️ Extensions", severity="error")
             return
         self._extensions = list_extensions()
         self._reload()
-        after = next((item for item in self._extensions
-                      if item.origin == entry.origin and item.name == entry.name), None)
-        warning = enabled is True and after is not None and not after.enabled
         self.app.notify(
-            message,
-            title="⚠️ Extensions" if warning else "✅ Extensions",
-            severity="warning" if warning else "information",
+            result.message,
+            title="⚠️ Extensions" if result.warning else "✅ Extensions",
+            severity="warning" if result.warning else "information",
         )

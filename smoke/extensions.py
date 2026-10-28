@@ -6,7 +6,7 @@ import core.extension.registry as registry
 import core.tui.screens.extensions as extensions_screen
 from textual.widgets import Input, OptionList, Static
 
-from core.extension import list_extensions
+from core.extension import ToggleResult, list_extensions
 from core.tui.screens import ExtensionsScreen
 from smoke._util import prompt_of, screen_option_texts, settle, type_query
 
@@ -16,7 +16,7 @@ async def run(app, pilot) -> None:
     original = list_extensions()
     registry.reset()
     registry.record("smoke-builtin", "builtin", enabled=True, events=["before_tool"])
-    registry.record("smoke-missing", "user", enabled=False, detail="missing extension.json")
+    registry.record("smoke-missing", "user", enabled=False, detail="missing extension.json", error=True)
     registry.record("smoke-off", "user", enabled=False,
                     events=["before_tool"], description="Smoke disabled extension")
     registry.record("smoke-on", "user", enabled=True, events=["before_llm", "after_tool"],
@@ -68,7 +68,7 @@ async def run(app, pilot) -> None:
             registry.record(name, "user", enabled=new_enabled,
                             events=entry.events, description=entry.description)
             action = "Enabled" if new_enabled else "Disabled"
-            return True, f"{action} extension '{name}'", new_enabled
+            return ToggleResult(True, f"{action} extension '{name}'")
 
         extensions_screen.toggle_extension = _fake_toggle
         try:
@@ -112,4 +112,4 @@ async def run(app, pilot) -> None:
         for entry in original:
             registry.record(entry.name, entry.origin, enabled=entry.enabled,
                             detail=entry.detail, events=entry.events,
-                            description=entry.description)
+                            description=entry.description, error=entry.error)

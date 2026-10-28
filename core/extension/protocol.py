@@ -1,8 +1,9 @@
-"""扩展注册协议：事件、阶段、决定动作，以及注册参数的共享校验。
+"""扩展注册协议：事件、阶段、决定动作、注册记录，以及注册参数的共享校验。
 
 这些常量与校验只在此定义一次；`ExtensionAPI.on()`（扩展缓冲入口）与
 `dispatcher.add()`（底层注册入口）共用同一层校验，避免两处各写一份导致契约漂移。
 """
+from dataclasses import dataclass
 from typing import Callable
 
 EVENTS: tuple[str, ...] = ("before_llm", "after_llm", "before_tool", "tool_execute", "after_tool")
@@ -11,6 +12,16 @@ ACTIONS: tuple[str, ...] = ("allow", "ask", "deny")
 
 # 阶段排序：声明顺序即派发顺序（user → observer → gate）
 STAGE_ORDER = {stage: index for index, stage in enumerate(STAGES)}
+
+
+@dataclass(frozen=True)
+class Registration:
+    """一次待提交的事件注册；loader / builtin 不再解包位置元组。"""
+
+    event: str
+    callback: Callable
+    stage: str = "user"
+    fail_closed: bool = False
 
 
 def validate_registration(

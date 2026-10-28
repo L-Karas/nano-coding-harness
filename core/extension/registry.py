@@ -16,9 +16,8 @@ class ExtensionInfo:
     """一条扩展登记：user = .harness/extensions 下的文件夹；builtin = 内置模块。
 
     enabled 是有效使用状态：清单 enabled 为 true 且加载成功才为 True；禁用但加载成功的
-    扩展仍保留 events，供 /extensions 展示 hooks。detail 为空表示已加载（启用或禁用）；
-    非空为未加载原因（如 load failed）或禁用 + 失败的组合文案。description 为清单里的
-    可选展示描述（空 = 不显示）。"""
+    扩展仍保留 events，供 /extensions 展示 hooks。error 标记加载 / 注册失败；detail 只是
+    失败或组合展示文案，不再承担状态判定。description 为清单里的可选展示描述（空 = 不显示）。"""
 
     name: str
     origin: Origin
@@ -26,16 +25,15 @@ class ExtensionInfo:
     detail: str = ""
     events: tuple[str, ...] = ()
     description: str = ""
+    error: bool = False
 
     @property
     def status(self) -> ExtensionStatus:
-        """展示状态：已启用 / 用户禁用 / 加载或注册失败。
+        """展示状态：已启用 / 用户禁用 / 加载或注册失败。"""
+        if self.error:
+            return "error"
+        return "enabled" if self.enabled else "disabled"
 
-        loader 保证 detail 非空只出现在加载 / 注册失败的记录上，故按非空判定 error。
-        """
-        if self.enabled:
-            return "enabled"
-        return "error" if self.detail else "disabled"
 
 
 _ENTRIES: list[ExtensionInfo] = []
@@ -49,6 +47,7 @@ def record(
         detail: str = "",
         events: Iterable[str] = (),
         description: str = "",
+        error: bool = False,
 ) -> None:
     """登记一条扩展；同名同源原地替换，不同来源同名各自保留。"""
     info = ExtensionInfo(
@@ -58,6 +57,7 @@ def record(
         detail=detail,
         events=_unique_events(events),
         description=description,
+        error=error,
     )
     for index, existing in enumerate(_ENTRIES):
         if (existing.origin, existing.name) == (origin, name):

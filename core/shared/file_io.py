@@ -93,3 +93,22 @@ async def atomic_write(path: Path, text: str, tctx: ToolContext | None = None) -
         if tmp is not None:
             with suppress(OSError):
                 tmp.unlink()
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """`atomic_write` 的同步版本，供启动 / UI 配置写回等无事件循环场景使用。"""
+    tmp = None
+    try:
+        tmp = _create_temp(path)
+        with open(tmp, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            _preserve_mode(path, tmp)
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError as e:
+        raise OSError(f"cannot write {path}: {e.strerror or e}") from e
+    finally:
+        if tmp is not None:
+            with suppress(OSError):
+                tmp.unlink()

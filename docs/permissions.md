@@ -139,11 +139,12 @@ def trust_git_status(ctx):
 ```
 
 - `ctx.decide(action, reason="")`：登记一票，`action ∈ {allow, ask, deny}`；非法值抛
-  `ValueError`（该回调按失败处理，票丢弃）。
+  `ValueError`（该回调按失败处理，票丢弃）。`ctx.decisions` 是受控票箱，直接追加非
+  `Decision` 对象会抛 `TypeError`，请只使用 `decide()` / `deny()`。
+- `ctx.deny(reason)` 登记一票拒绝；`ctx.block(reason)` 是它的旧别名。二者都**是拒绝表决，
+  不是硬拦截**：与 allow 规则/扩展票同时出现时改为弹确认卡，而不是直接拦死。
 - 同一回调多次 `decide` 以最后一次为准；票来源由派发器自动标注（外部扩展
   `nano_extension_<名字>`，内置 `builtin:permission`），用于冲突卡与日志。
-- `ctx.block(reason)` 保留，等价于 `ctx.decide("deny", reason)`——**是拒绝表决，不是硬拦截**：
-  与 allow 规则/扩展票同时出现时改为弹确认卡，而不是直接拦死。
 - **票与参数一致性**：回调结束时对参数做快照；若后续回调改写了参数，该票作废（记日志）并视为
   弃权。权限门永远按最终参数判定。
 - 决定票不短路事件派发；`blocked` 由权限门在裁决后写入，此后剩余回调不再执行。
@@ -157,9 +158,10 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 ```
 
 - 外部扩展只能注册 `user` 阶段，也不能声明 `fail_closed`（`api.on()` 抛错使整个扩展作废）；
-  `stage` / `fail_closed` 是内置扩展与内部接口的能力。
-- `gate` 最后执行，保证权限门看到所有回调改写后的最终参数、收齐所有票；外部扩展没有任何
-  公开注册点可以排到权限门之后。
+  `stage` / `fail_closed` 是内置扩展与 host 私有接口的能力。
+- `gate` 最后执行，保证权限门看到所有回调改写后的最终参数、收齐所有票；正常扩展缝
+  （`ExtensionAPI`）没有公开注册点可以排到权限门之后。扩展仍是进程内可信代码，
+  显式 import 内部模块不属于公开接口。
 - **外部扩展 fail-open**：单个回调抛异常只记日志（`dispatcher.log`）并视为弃权，后续回调与
   主流程继续。
 - **内置权限门 fail-closed**：权限门自身抛异常 → 拒绝，工具结果为

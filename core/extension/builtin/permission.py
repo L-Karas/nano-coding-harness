@@ -13,7 +13,7 @@ import re
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterable, Iterator
 from urllib.parse import urlsplit
 
 from core.config import CONFIGMANAGER, WORKDIR
@@ -348,7 +348,7 @@ def _card_details(details: list[str], summary: str) -> list[str]:
     return details
 
 
-def _apply_votes(ctx: BeforeToolContext, extension_votes: list[Decision],
+def _apply_votes(ctx: BeforeToolContext, extension_votes: Iterable[Decision],
                  rule_vote: RuleVote) -> None:
     """用户表态：动作唯一时采用；不唯一时弹冲突卡，拒绝统一收口为 Permission denied by user。
 
@@ -369,20 +369,18 @@ def _apply_votes(ctx: BeforeToolContext, extension_votes: list[Decision],
     if vote.action == "allow":
         return
     if vote.action == "deny":
-        ctx.blocked = True
         if vote is rule_vote.decision:
             reason = "\n".join([vote.reason, *rule_vote.details])
-            ctx.block_reason = f"Permission denied by rule: {reason}"
+            ctx._set_blocked(f"Permission denied by rule: {reason}")
         else:
-            ctx.block_reason = f"[Extension blocked] {vote.reason}"
+            ctx._set_blocked(f"[Extension blocked] {vote.reason}")
         return
     if not _confirm(vote.reason, _card_details(rule_vote.details, summary)):  # ask
         _block_by_user(ctx)
 
 
 def _block_by_user(ctx: BeforeToolContext) -> None:
-    ctx.blocked = True
-    ctx.block_reason = "Permission denied by user"
+    ctx._set_blocked("Permission denied by user")
 
 
 def _apply_defaults(ctx: BeforeToolContext) -> None:
@@ -422,8 +420,8 @@ def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
         if ctx.tool_name == "terminal":
             denial = floor_denial(ctx.args.get("command", ""))
             if denial is not None:
-                ctx.blocked = True
-                ctx.block_reason = f"Permission denied: '{denial}' is on the deny list."
+                ctx._set_blocked(
+                    f"Permission denied: '{denial}' is on the deny list.")
                 return
 
         # Yolo 相信 LLM 的输出结果：地板之外不再校验（规则 / 扩展票 / 默认层全跳过）

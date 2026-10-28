@@ -351,9 +351,9 @@ def test_loader_loads_enabled_extension(tmp_path, monkeypatch, jev):
     monkeypatch.setattr(jev.dotenv, "load_dotenv", lambda *args, **kwargs: None)
     try:
         load_extensions(tmp_path)
-        handlers = dispatcher._HANDLERS.get("before_tool", [])
+        handlers = dispatcher.describe_handlers("before_tool")
         assert len(handlers) == 1
         assert handlers[0].module_name == "nano_extension_jev-for-terminal"
-        assert handlers[0].callback.__name__ == "on_before_terminal"
+        assert handlers[0].callback_name == "on_before_terminal"
     finally:
         reset_extensions()

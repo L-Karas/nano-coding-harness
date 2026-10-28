@@ -49,8 +49,7 @@ def test_blocked_gate_short_circuits_remaining_hooks():
         calls.append("later")
 
     def gate(ctx):
-        ctx.blocked = True
-        ctx.block_reason = "denied"
+        ctx._set_blocked("denied")
 
     dispatcher.add("before_tool", gate, "builtin:permission", stage="gate", builtin=True)
     dispatcher.add("before_tool", later, "builtin:late", stage="gate", builtin=True)
@@ -175,15 +174,76 @@ def test_non_list_inject_messages_is_dropped(monkeypatch):
     assert logger.error.called
 
 
-def test_non_list_decisions_is_dropped(monkeypatch):
+def test_decisions_assignment_is_rejected_without_breaking_dispatch(monkeypatch):
     logger = MagicMock()
     monkeypatch.setattr(dispatcher, "_LOGGER", logger)
+    calls = []
 
     dispatcher.add("before_tool", lambda ctx: setattr(ctx, "decisions", "oops"), "ext_a")
+    dispatcher.add("before_tool", lambda ctx: calls.append("next"), "ext_b")
     ctx = BeforeToolContext(tool_name="terminal", args={})
     _run("before_tool", ctx)
     assert ctx.decisions == []
-    assert logger.error.called
+    assert calls == ["next"]
+    assert logger.exception.called
+
+
+def test_invalid_vote_element_is_discarded_without_crashing_dispatch(monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr(dispatcher, "_LOGGER", logger)
+    calls = []
+
+    def broken(ctx):
+        ctx.decisions.append("allow")
+
+    dispatcher.add("before_tool", broken, "ext_a")
+    dispatcher.add("before_tool", lambda ctx: calls.append("next"), "ext_b")
+    ctx = BeforeToolContext(tool_name="terminal", args={})
+    _run("before_tool", ctx)
+    assert ctx.decisions == []
+    assert calls == ["next"]
+    assert logger.exception.called
+
+
+def test_foreign_stop_field_cannot_skip_gate():
+    seen = []
+
+    def sneak(ctx):
+        ctx.aborted = True  # 外来字段：上下文没有这个字段，slots 会拒绝
+
+    def gate(ctx):
+        seen.append(ctx.tool_name)
+
+    dispatcher.add("before_tool", sneak, "ext_a")
+    dispatcher.add("before_tool", gate, "builtin:permission",
+                   stage="gate", builtin=True)
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "sudo ls"})
+    _run("before_tool", ctx)
+    assert seen == ["terminal"]
+
+
+def test_read_only_tool_fact_cannot_be_rewritten():
+    seen = []
+
+    def rewrite(ctx):
+        ctx.tool_name = "read_file"
+
+    def gate(ctx):
+        seen.append(ctx.tool_name)
+
+    dispatcher.add("before_tool", rewrite, "ext_a")
+    dispatcher.add("before_tool", gate, "builtin:permission",
+                   stage="gate", builtin=True)
+    _run("before_tool", BeforeToolContext(
+        tool_name="terminal", args={"command": "sudo ls"}))
+    assert seen == ["terminal"]
+
+
+def test_dispatch_rejects_unknown_event_and_wrong_context():
+    with pytest.raises(ValueError, match="未知扩展事件"):
+        _run("typo", BeforeToolContext(tool_name="terminal", args={}))
+    with pytest.raises(TypeError, match="需要 BeforeToolContext"):
+        _run("before_tool", AfterToolContext(tool_name="terminal", args={}, result="out"))
 
 
 def test_result_is_normalized_and_none_content_preserved():
@@ -306,13 +366,13 @@ def test_include_external_false_skips_external_but_runs_builtin():
 def test_disabled_module_is_skipped_until_reenabled():
     seen = []
     dispatcher.add("before_tool", lambda ctx: seen.append("ext"), "ext_a")
-    dispatcher.set_module_enabled("ext_a", False)
+    dispatcher._set_module_enabled("ext_a", False)
     assert dispatcher.is_module_enabled("ext_a") is False
 
     _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
     assert seen == []
 
-    dispatcher.set_module_enabled("ext_a", True)
+    dispatcher._set_module_enabled("ext_a", True)
     _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
     assert seen == ["ext"]
 
@@ -321,7 +381,7 @@ def test_disabled_module_skips_all_its_events():
     seen = []
     for event in ("before_llm", "after_tool"):
         dispatcher.add(event, lambda ctx, name=event: seen.append(name), "ext_a")
-    dispatcher.set_module_enabled("ext_a", False)
+    dispatcher._set_module_enabled("ext_a", False)
 
     _run("before_llm", BeforeLLMContext(messages=[], tools=[], max_tokens=1))
     _run("after_tool", AfterToolContext(tool_name="terminal", args={}, result="out"))
@@ -332,7 +392,7 @@ def test_builtin_runs_even_if_its_module_flag_is_disabled():
     seen = []
     dispatcher.add("before_tool", lambda ctx: seen.append("builtin"),
                    "builtin:permission", stage="gate", builtin=True)
-    dispatcher.set_module_enabled("builtin:permission", False)
+    dispatcher._set_module_enabled("builtin:permission", False)
 
     _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
 
@@ -341,10 +401,10 @@ def test_builtin_runs_even_if_its_module_flag_is_disabled():
 
 def test_reset_clears_module_flags():
     dispatcher.add("before_tool", lambda ctx: None, "ext_a")
-    dispatcher.set_module_enabled("ext_a", False)
+    dispatcher._set_module_enabled("ext_a", False)
     dispatcher.reset()
     assert dispatcher.is_module_enabled("ext_a") is True
-    assert dispatcher._HANDLERS["before_tool"] == []
+    assert dispatcher.describe_handlers("before_tool") == ()
 
 
 def test_fail_closed_blocks_on_exception():
@@ -362,3 +422,50 @@ def test_decide_rejects_unknown_action():
     ctx = BeforeToolContext(tool_name="terminal", args={})
     with pytest.raises(ValueError):
         ctx.decide("approve")
+
+
+def test_add_many_is_atomic_when_a_registration_is_invalid():
+    from core.extension.protocol import Registration
+
+    with pytest.raises(ValueError, match="未知扩展事件"):
+        dispatcher.add_many("ext_a", [
+            Registration("before_llm", lambda ctx: None),
+            Registration("never", lambda ctx: None),
+        ])
+    assert dispatcher.describe_handlers("before_llm") == ()
+
+
+def test_describe_handlers_exposes_metadata_without_callbacks():
+    dispatcher.add("before_llm", lambda ctx: None, "ext_a")
+
+    assert dispatcher.describe_handlers("before_llm") == (
+        dispatcher.HandlerInfo("ext_a", "<lambda>", "user", False, False),
+    )
+    with pytest.raises(ValueError, match="未知扩展事件"):
+        dispatcher.describe_handlers("never")
+
+
+def test_stale_votes_dropped_before_each_gate_handler():
+    dispatcher.add("before_tool", lambda ctx: ctx.decide("allow"), "ext_a")
+
+    def mutate(ctx):
+        ctx.args["command"] = "rm -rf build"
+
+    dispatcher.add("before_tool", mutate, "builtin:mutator", stage="gate", builtin=True)
+    seen = []
+    dispatcher.add("before_tool", lambda ctx: seen.append(list(ctx.decisions)),
+                   "builtin:second", stage="gate", builtin=True)
+
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "ls"})
+    _run("before_tool", ctx)
+    assert seen == [[]], "前一个 gate 回调改写参数后，后一个 gate 不应看到旧票"
+
+
+def test_deleted_writable_field_does_not_break_normalize():
+    def delete_result(ctx):
+        del ctx.result
+
+    dispatcher.add("after_tool", delete_result, "ext_a")
+    ctx = AfterToolContext(tool_name="terminal", args={}, result="out")
+    _run("after_tool", ctx)
+    assert not hasattr(ctx, "result")

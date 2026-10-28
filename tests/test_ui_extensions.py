@@ -6,7 +6,7 @@ from textual.widgets import Input, OptionList, Static
 
 import core.extension.registry as registry
 import core.tui.screens.extensions as extensions_screen
-from core.extension import list_extensions
+from core.extension import ToggleResult, list_extensions
 from core.tui.screens import ExtensionsScreen
 from core.tui.theme import HOOK_TEXT, SECONDARY_TEXT
 from core.tui.utils import SLASH_COMMANDS
@@ -19,7 +19,7 @@ def _extensions():
     registry.reset()
     registry.record("observers", "builtin", enabled=True, events=["before_tool"])
     registry.record("permission", "builtin", enabled=True, events=["before_tool"])
-    registry.record("alpha", "user", enabled=False, detail="invalid extension.json")
+    registry.record("alpha", "user", enabled=False, detail="invalid extension.json", error=True)
     registry.record("zeta", "user", enabled=True, events=["before_llm", "after_tool"],
                     description="Zeta extension")
     yield
@@ -27,7 +27,7 @@ def _extensions():
     for entry in original:
         registry.record(entry.name, entry.origin, enabled=entry.enabled,
                         detail=entry.detail, events=entry.events,
-                        description=entry.description)
+                        description=entry.description, error=entry.error)
 
 
 def _rows(app):
@@ -206,7 +206,7 @@ def test_ctrl_e_toggles_selected_user_extension(monkeypatch):
                      if e.origin == "user" and e.name == name)
         registry.record(name, "user", enabled=not entry.enabled,
                         events=entry.events, description=entry.description)
-        return True, f"Disabled extension '{name}'", False
+        return ToggleResult(True, f"Disabled extension '{name}'")
 
     monkeypatch.setattr(extensions_screen, "toggle_extension", _toggle)
 
@@ -235,7 +235,7 @@ def test_ctrl_e_on_builtin_only_notifies(monkeypatch):
 
     def _toggle(name: str):
         calls.append(name)
-        return True, "should not run", False
+        return ToggleResult(True, "should not run")
 
     monkeypatch.setattr(extensions_screen, "toggle_extension", _toggle)
 
@@ -257,7 +257,7 @@ def test_ctrl_e_on_builtin_only_notifies(monkeypatch):
 def test_ctrl_e_failure_shows_error_toast(monkeypatch):
     monkeypatch.setattr(
         extensions_screen, "toggle_extension",
-        lambda name: (False, "Failed to save extension state: disk full", False))
+        lambda name: ToggleResult(False, "Failed to save extension state: disk full"))
 
     async def main():
         async with chat_app() as (app, pilot):
@@ -274,11 +274,14 @@ def test_ctrl_e_failure_shows_error_toast(monkeypatch):
 
 
 def test_ctrl_e_enable_load_failed_shows_warning(monkeypatch):
-    registry.record("broken", "user", enabled=False, detail="disabled · load failed")
+    registry.record("broken", "user", enabled=False, detail="disabled · load failed", error=True)
     monkeypatch.setattr(
         extensions_screen, "toggle_extension",
-        lambda name: (True, "Set extension 'broken' to enabled, but it still fails to load: "
-                            "load failed", True))
+        lambda name: ToggleResult(
+            True,
+            "Set extension 'broken' to enabled, but it still fails to load: load failed",
+            warning=True,
+        ))
 
     async def main():
         async with chat_app() as (app, pilot):

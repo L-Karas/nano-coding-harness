@@ -10,7 +10,7 @@
 
 扩展所需的自定义配置可以直接写在扩展目录的 `extension.json` 中；加载器解析 `enabled`（使用开关）与可选的 `description`（后者仅用于 `/extensions` 展示），其余字段由扩展在 `register(api)` 里自行读取（见 5.8）。
 
-> 源码：`core/extension/`（`api.py` / `context.py` / `dispatcher.py` / `loader.py` / `protocol.py`）
+> 源码：`core/extension/`（`api.py` / `context.py` / `events.py` / `dispatcher.py` / `host.py` / `loader.py` / `protocol.py` / `registry.py`，内置扩展在 `builtin/`）
 > 完整设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（`after_tool` 覆盖范围已由本文件 §3.3 / §8 取代；
 > `description` 字段见本文件 §1.4 / §2 / §5.8）
 
@@ -132,7 +132,7 @@ TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`
 | 原子性 | `api.on()` 只缓冲注册；`register(api)` **正常返回后**才一次性提交全部注册。中途抛错 → 该扩展零注册 |
 | 失败隔离 | 单个扩展导入失败 / 注册失败只影响自己并记日志，不阻断启动，也不影响其它扩展 |
 | 注册顺序 | 所有清单合法扩展按文件夹名字典序注册；同一扩展内按 `api.on()` 调用顺序。启用/停用只过滤派发，不改变注册顺序 |
-| 幂等 | 进程内 `load_extensions()` 只生效一次 |
+| 幂等 | 进程内 `load_extensions()` 成功后只生效一次；目录级异常可重试，已处理过的目录会跳过 |
 | 生效时机 | 启动时加载并注册一次；`/extensions` 的 `Ctrl+E` 改写 `enabled` 并即时切换派发。修改 `description`、自定义配置、扩展代码或新增扩展目录后**必须重启进程** |
 
 `.harness/extensions/` 相对于**启动进程时的工作目录**（`WORKDIR`）。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
@@ -150,7 +150,7 @@ def register(api):
 
 - `event` 取值：`before_llm` / `after_llm` / `before_tool` / `tool_execute` / `after_tool`；未知事件名抛 `ValueError`。
 - `callback` 非 callable 抛 `TypeError`。
-- `register` 内抛出的任何异常（包括上面两种）都会让**整个扩展作废**，因此建议只做注册、把逻辑放在独立函数里。
+- `register` 内抛出的任何异常（包括上面两种）都会让**整个扩展作废**，因此建议只做注册、把逻辑放在独立函数里。`register(api)` 必须是**同步函数**；`async def register` 会被当作加载失败。
 - 回调签名固定为一个上下文对象：`def hook(ctx)` 或 `async def hook(ctx)`；返回值会被忽略，只通过修改 `ctx` 生效。
 - `api` 没有配置读取接口；扩展所需配置直接写在同一个 `extension.json` 中，由扩展自行读取（见 5.8）。
 
@@ -162,7 +162,7 @@ def register(api):
 | --- | --- | --- | --- |
 | `before_llm` | `BeforeLLMContext(messages, tools, max_tokens)` | **`messages`**（统一为即将发出的完整请求视图：`[system] + to_llm_messages(history, vision=client.supports_vision())`）、**`tools`**、**`max_tokens`** | `ctx.abort(reason)` |
 | `after_llm` | `AfterLLMContext(content, tool_calls, finish_reason="", usage=None)` | **`content`**、**`tool_calls`**、**`inject_messages`** | 无 |
-| `before_tool` | `BeforeToolContext(tool_name, args, cwd=None)` | **`args`** | `ctx.decide(action, reason)` / `ctx.block(reason)` |
+| `before_tool` | `BeforeToolContext(tool_name, args, cwd=None)` | **`args`** | `ctx.decide(action, reason)` / `ctx.deny(reason)`（`ctx.block` 为旧别名） |
 | `tool_execute` | `ToolExecuteContext(tool_name, args, tctx=None)` | **`result`**、**`is_error`** | `ctx.handle(result, is_error=False)` |
 | `after_tool` | `AfterToolContext(tool_name, args, result, is_error=False)` | **`result`**、**`inject_messages`** | 无 |
 
@@ -170,10 +170,11 @@ def register(api):
 
 - `messages` / `tool_calls` / `inject_messages` 中的消息是普通 dict（`{"role": ..., "content": ...}`）；`before_llm` 里的消息就是即将发出的请求消息（已裁剪），追加的消息需是 API 可接受的普通 dict，不会再被二次裁剪。
 - `tool_calls` 在无工具调用时为空列表（不会为 `None`）。
-- `abort()` / `decide()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` 可读，`blocked` / `block_reason` 由内置权限门在裁决后写入（见 4.4）。
-- `tool_execute` **只有调用 `ctx.handle(result, is_error=False)` 才算接管**（`handled` 置真）；只写 `ctx.result` 不算接管，内置执行照常发生。`tctx` 是只读运行上下文（取消信号 / cwd / agent 身份）。
+- `abort()` / `decide()` / `deny()` / `block()` 的原因参数会做 `str()` 归一；`abort_reason` 可读，`blocked` / `block_reason` 由内置权限门在裁决后写入（扩展直接赋值会抛 `AttributeError`，见 4.4）。
+- `tool_execute` **只有调用 `ctx.handle(result, is_error=False)` 才算接管**（`handled` 置真）；只写 `ctx.result` 不算接管，内置执行照常发生。`handled` 只读，直接赋值 / 删除会抛 `AttributeError`。`tctx` 是只读运行上下文（取消信号 / cwd / agent 身份）。
+- `tool_execute` 的 `args` / `tctx` 与执行层共享引用：按只读契约使用，原地修改不属于支持接口。需要改写参数请在 `before_tool` 做；`tool_execute` 只通过 `handle()` 接管结果。
 - `before_tool` 的 `cwd` 只读，是本次调用的工作目录：权限门按它判定路径越界；子代理的 `working_directory` 由此生效（见 [`permissions.md`](permissions.md)）。
-- `finish_reason`、`usage`、`tool_name`、`is_error` 为只读信息，供回调判断，不要写入。
+- `finish_reason`、`usage`、`tool_name`、`is_error` 等调用方事实为只读：尝试赋值 / 删除会抛 `AttributeError`；上下文使用 `slots`，也不能动态添加字段（例如用 `ctx.aborted` 跳过 `before_tool` 的权限门）。`aborted` / `handled` 同样只能通过 `abort()` / `handle()` 修改。
 
 ### 3.3 事件触发时机
 
@@ -204,7 +205,7 @@ def register(api):
 
 ### 4.2 短路控制
 
-- `ctx.block(reason)`（`before_tool`）：等价于 `ctx.decide("deny", reason)`，登记一票拒绝（**不短路、不直接拦截**）；是否拒绝由内置权限门统一裁决——与 allow 规则/扩展票冲突时改为弹确认卡，最终被拒时跳过工具执行，工具结果写为 `[Extension blocked] <reason>`。
+- `ctx.block(reason)`（`before_tool`）：`ctx.deny(reason)` 的旧别名，等价于 `ctx.decide("deny", reason)`，登记一票拒绝（**不短路、不直接拦截**）；是否拒绝由内置权限门统一裁决——与 allow 规则/扩展票冲突时改为弹确认卡，最终被拒时跳过工具执行，工具结果写为 `[Extension blocked] <reason>`。
 - `ctx.abort(reason)`（`before_llm`）：跳过该事件剩余回调，不再调用 LLM。
   - 主循环：写入一条 `[Extension aborted] <reason>` 的 assistant 消息并结束本回合；
   - 子代理：返回文本 `(subagent aborted by extension: <reason>)`。
@@ -225,13 +226,13 @@ def register(api):
 
 `before_tool` 上的决定语义与内置权限门（完整规则、文案与已知风险见 [`permissions.md`](permissions.md)）：
 
-- `ctx.decide(action, reason="")`：登记一票，`action ∈ {allow, ask, deny}`；非法值抛 `ValueError`，该回调按失败处理、票丢弃。
+- `ctx.decide(action, reason="")`：登记一票，`action ∈ {allow, ask, deny}`；非法值抛 `ValueError`，该回调按失败处理、票丢弃。`ctx.decisions` 是受控票箱（`Ballot`），直接追加非 `Decision` 对象会抛 `TypeError`；请只使用 `decide()`（或 `deny()` / `block()` 别名）。
 - 同一回调多次 `decide` 以最后一次为准；票来源由派发器自动标注（外部扩展 `nano_extension_<名字>`，内置 `builtin:permission`）。
 - 回调结束时为票记录参数快照；后续回调改写了参数则票作废（记日志）并视为弃权，权限门按最终参数判定。
 - 回调按 `user → observer → gate` 三个阶段排序，同阶段内保持注册顺序：外部扩展只能注册 `user` 阶段；内置观察者在 `observer`；内置权限门固定在 `gate` 最后执行，看到所有参数改写与全部投票。
 - 权限门裁决顺序：地板（硬编码，永远拒绝）→ 用户表态（规则 + 扩展票；规则层内部先按 deny > ask > allow 收敛为至多一票，再与扩展票合并；动作一致采用，冲突弹确认卡）→ 默认层（受 `approval_mode` 影响：`Manual` 下破坏性命令 / 越界路径 → 询问；`Yolo` 只执行地板，规则 / 扩展票 / 默认层整体跳过）。
 - `StepPolicy.use_extensions=False` 只跳过外部回调（所有事件一律跳过）；内置观察者与权限门照常，地板与规则仍然生效。
-- `api.on()` 不向外部扩展暴露阶段与 `fail_closed`；外部扩展没有任何公开注册点可以排到权限门之后。失败语义见 4.3。
+- `api.on()` 不向外部扩展暴露阶段与 `fail_closed`；内置注册使用内置入口私有 API，正常扩展缝无法排到权限门之后。扩展仍是进程内可信代码，Python 不阻止显式 import 内部模块，但这属于越界而非公开接口。失败语义见 4.3。
 
 ### 4.5 字段归一与注入消息
 
@@ -242,7 +243,7 @@ def register(api):
 | `result` | 一律 `str()` 后写回 |
 | `content` | 非 `None` 时 `str()`（`None` 表示无文本的 tool-call 响应，保留） |
 | `tool_calls` / `inject_messages` | 必须是 `list`；不是则置空并记 ERROR |
-| `decisions` | 必须是 `list`；不是则置空并记 ERROR |
+| `decisions` | `Ballot`，只接受合法 `Decision`；通过 `ctx.decide()` 登记，派发器负责提交 / 过期 |
 
 其余字段的类型契约由扩展自行保证，写坏类型可能在主循环抛出（属于扩展 bug）。
 
@@ -442,7 +443,7 @@ def _mark(ctx, tag):
 4. **缺少 `__init__.py` 或 `register`**：该扩展被跳过，检查 `loader.log`。
 5. **`register` 里抛错**：例如 `api.on("before_llm", "not-callable")`（`TypeError`）或事件名拼写错误（`ValueError`）。原子提交意味着此时**该扩展零注册**，其它扩展不受影响。
 6. **写错了目录**：必须是**启动进程时工作目录**下的 `.harness/extensions/`，且只扫描直接子文件夹。
-7. **回调异常被 fail-open 吞掉**：外部回调异常只记 `dispatcher.log` 并视为弃权（内置权限门是 fail-closed，异常会导致拒绝）；`inject_messages` / `decisions` 写成非 list 也会被丢弃并记 ERROR。
+7. **回调异常被 fail-open 吞掉**：外部回调异常只记 `dispatcher.log` 并视为弃权（内置权限门是 fail-closed，异常会导致拒绝）；`inject_messages` / `tool_calls` 写成非 list 会被丢弃并记 ERROR，`ctx.decisions` 直接塞非 `Decision` 对象会被拒绝。
 8. **包内模块用了裸绝对导入**：`import helpers` / `from helpers import x` 不会命中扩展目录（扩展目录不在 `sys.path`），必须写成 `from .helpers import x`；此时扩展整体加载失败，见 `loader.log`。
 9. **`tool_execute` 接管没生效**：只写了 `ctx.result` 没调 `ctx.handle()`；或回调抛异常被 fail-open 吞掉（`dispatcher.log`）后回退执行了内置实现——注意这可能触发内置的真实副作用。
 10. **自定义配置没生效**：加载器不会把 `extension.json` 注入 `api`，扩展必须自己读取（见 5.8）；字段名、默认值与类型校验都由扩展约定。
@@ -473,19 +474,23 @@ def test_blocks_rm_commands():
     from my_extension import guard_dangerous_commands  # 回调需位于可导入模块；仅存在于扩展包内的写法见下段
 
     dispatcher.add("before_tool", guard_dangerous_commands, "my_ext")
-    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm -rf /"})
+    ctx = BeforeToolContext(tool_name="terminal", args={"command": "rm -rf build"})
     asyncio.run(dispatcher.dispatch("before_tool", ctx))
-    assert ctx.blocked
-    assert ctx.block_reason == "危险命令已被扩展拦截"
+    assert [(decision.action, decision.reason) for decision in ctx.decisions] == [
+        ("deny", "危险命令已被扩展拦截"),
+    ]
 ```
 
-想要连注册与派发开关一起验证（`enabled`、相对导入、原子性、清单写回），可参考 `tests/test_extension_loader.py` 与 `tests/test_extension_toggle.py` 的做法：把扩展目录复制到临时目录，再调用 `load_extensions(tmp_path)`，用 `dispatcher._HANDLERS` / `dispatcher.is_module_enabled()` 断言注册与派发状态。
+上面只验证扩展投出的票；最终是否拦截由内置权限门裁决（且 `approval_mode=Yolo` 会跳过扩展票）。要测完整裁决，注册 `build_gate(Rules())` 并确保测试环境为 `Manual`，参见 [`permissions.md`](permissions.md)。
 
-可测试性导出：`core.extension` 提供 `EVENTS`、五个上下文类、`dispatch`、`add`、`load_extensions`、`toggle_extension`、`reset_extensions`。
+想要连注册与派发开关一起验证（`enabled`、相对导入、原子性、清单写回），可参考 `tests/test_extension_loader.py` 与 `tests/test_extension_toggle.py` 的做法：把扩展目录复制到临时目录，再调用 `load_extensions(tmp_path)`，用 `dispatcher.describe_handlers(event)` / `dispatcher.is_module_enabled()` 断言注册与派发状态。`describe_handlers` 返回只读快照（模块名、回调名、阶段、`fail_closed`、`builtin`），不需要直接访问 `_HANDLERS`。
+
+可测试性导出：`core.extension` 提供 `EVENTS`、五个上下文类、`dispatch`、`load_extensions`、`toggle_extension`、`reset_extensions`。底层注册可继续用 `import core.extension.dispatcher as dispatcher; dispatcher.add(...)` 或 `dispatcher.add_many(...)`；测试也可用 `dispatcher.describe_handlers(event)` 读取只读注册快照，而不直接访问 `_HANDLERS`。
 
 ## 8. 安全与边界
 
 - **信任模型**：扩展在 agent 进程内以**完整进程权限**运行，可以 import harness 内部模块、读写任意文件。只放可信代码。
+- **接口约束不是沙箱**：只读字段、事件级短路与 host 私有注册入口防止误用和普通绕过；显式 import 内部模块仍不受阻止。
 - **无超时**：hook 同步阻塞会阻塞 agent；长耗时的网络 / 磁盘 / 计算请自行异步化或降级为快速操作。
 - **不阻断启动**：单个扩展加载失败只记日志并跳过。
 - **禁用不等于隔离**：`enabled: false` 只抑制 hook 派发，扩展的 import / 模块级代码 / `register(api)` 仍会执行；扩展必须以完整进程权限可信。
@@ -500,8 +505,9 @@ def test_blocks_rm_commands():
 ## 参考
 
 - 设计契约：[`superpowers/specs/2026-10-08-extension-hooks-design.md`](superpowers/specs/2026-10-08-extension-hooks-design.md)（其「与旧 hook 的关系」一节已由 [`2026-10-13 权限策略设计`](superpowers/specs/2026-10-13-permission-policy-design.md) 取代；「5.3 事件触发时机」的 `after_tool` 覆盖范围已由本文件 §3.3 / §8 取代）
+- 接口契约（事实只读 / 票箱受控 / 注册原子）：[ADR-0012](adr/0012-extension-host-contract.md)
 - 权限门与决定票：[`permissions.md`](permissions.md)
-- 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`dispatcher.py`、`loader.py`、`protocol.py`）
+- 实现源码：[`core/extension/`](../core/extension/)（`api.py`、`context.py`、`events.py`、`dispatcher.py`、`host.py`、`loader.py`、`protocol.py`、`registry.py`，内置扩展在 `builtin/`）
 - 最小示例：[`examples/extension_example/`](../examples/extension_example/)
 - 进阶示例（`after_tool` 读取并按需改写 `web_search` 结果）：[`examples/jev-for-web-search/`](../examples/jev-for-web-search/)
 - 进阶示例（`before_tool` 决定票：调用 Jev 评估 `terminal` 命令；默认禁用，复制后需把

@@ -55,7 +55,7 @@ def test_disabled_extension_registers_but_dispatch_is_skipped(tmp_path):
     assert list_extensions() == [
         ExtensionInfo("demo", "user", False, "", ("before_llm",)),
     ]
-    assert len(dispatcher._HANDLERS["before_llm"]) == 1
+    assert len(dispatcher.describe_handlers("before_llm")) == 1
     assert dispatcher.is_module_enabled(_MODULE) is False
     assert _dispatch_llm().messages == []
 
@@ -67,9 +67,10 @@ def test_toggle_off_writes_manifest_and_suppresses_dispatch(tmp_path):
     )
     load_extensions(tmp_path)
 
-    ok, message, enabled = toggle_extension("demo")
+    result = toggle_extension("demo")
 
-    assert (ok, message, enabled) == (True, "Disabled extension 'demo'", False)
+    assert (result.ok, result.message) == (True, "Disabled extension 'demo'")
+    assert result.warning is False
     data = json.loads((folder / "extension.json").read_text(encoding="utf-8"))
     assert data == {
         "enabled": False,
@@ -89,12 +90,13 @@ def test_toggle_on_restores_dispatch_without_duplicate_registration(tmp_path):
     _make_extension(tmp_path, "demo", enabled=False)
     load_extensions(tmp_path)
 
-    ok, message, enabled = toggle_extension("demo")
+    result = toggle_extension("demo")
 
-    assert (ok, message, enabled) == (True, "Enabled extension 'demo'", True)
+    assert (result.ok, result.message) == (True, "Enabled extension 'demo'")
+    assert result.warning is False
     assert list_extensions()[0] == ExtensionInfo(
         "demo", "user", True, "", ("before_llm",))
-    assert len(dispatcher._HANDLERS["before_llm"]) == 1, "启停不应重复注册回调"
+    assert len(dispatcher.describe_handlers("before_llm")) == 1, "启停不应重复注册回调"
     assert _dispatch_llm().messages == [{"role": "user", "content": "hit"}]
 
 
@@ -106,21 +108,23 @@ def test_toggle_load_failed_extension_updates_config_only(tmp_path):
     )
     load_extensions(tmp_path)
     assert list_extensions() == [
-        ExtensionInfo("demo", "user", False, "disabled · load failed", ()),
+        ExtensionInfo("demo", "user", False, "disabled · load failed", (), error=True),
     ]
 
-    ok, message, enabled = toggle_extension("demo")
+    result = toggle_extension("demo")
 
-    assert ok is True and enabled is True
-    assert "still fails to load" in message
+    assert result.ok is True
+    assert result.warning is True
+    assert "still fails to load" in result.message
     assert json.loads((folder / "extension.json").read_text(encoding="utf-8"))["enabled"] is True
     assert list_extensions() == [
-        ExtensionInfo("demo", "user", False, "load failed", ()),
+        ExtensionInfo("demo", "user", False, "load failed", (), error=True),
     ]
     assert _dispatch_llm().messages == []
 
-    ok, _message, enabled = toggle_extension("demo")
-    assert ok is True and enabled is False
+    result = toggle_extension("demo")
+    assert result.ok is True
+    assert result.warning is False
     assert list_extensions()[0].detail == "disabled · load failed"
 
 
@@ -132,17 +136,17 @@ def test_toggle_missing_or_invalid_manifest_is_rejected(tmp_path):
     (bad / "extension.json").write_text("{not json", encoding="utf-8")
     load_extensions(tmp_path)
 
-    ok, message, _enabled = toggle_extension("missing")
-    assert ok is False and "missing extension.json" in message
-    ok, message, _enabled = toggle_extension("bad")
-    assert ok is False and "invalid extension.json" in message
+    result = toggle_extension("missing")
+    assert result.ok is False and "missing extension.json" in result.message
+    result = toggle_extension("bad")
+    assert result.ok is False and "invalid extension.json" in result.message
     assert (bad / "extension.json").read_text(encoding="utf-8") == "{not json"
 
 
 def test_toggle_unknown_extension_is_rejected():
-    ok, message, enabled = toggle_extension("nope")
-    assert (ok, enabled) == (False, None)
-    assert "restart to load it" in message
+    result = toggle_extension("nope")
+    assert result.ok is False
+    assert "restart to load it" in result.message
 
 
 def test_manifest_write_failure_keeps_config_and_runtime_state(tmp_path, monkeypatch):
@@ -154,10 +158,10 @@ def test_manifest_write_failure_keeps_config_and_runtime_state(tmp_path, monkeyp
         raise OSError("disk full")
 
     monkeypatch.setattr(loader, "_write_manifest", _fail)
-    ok, message, enabled = toggle_extension("demo")
+    result = toggle_extension("demo")
 
-    assert ok is False and enabled is None
-    assert "Failed to save extension state" in message
+    assert result.ok is False
+    assert "Failed to save extension state" in result.message
     assert (folder / "extension.json").read_text(encoding="utf-8") == before
     assert list_extensions()[0].enabled is True
     assert dispatcher.is_module_enabled(_MODULE) is True
@@ -184,9 +188,9 @@ def test_toggle_missing_enabled_field_writes_true(tmp_path):
     load_extensions(tmp_path)
 
     assert list_extensions()[0].enabled is False
-    ok, _message, enabled = toggle_extension("demo")
+    result = toggle_extension("demo")
 
-    assert ok is True and enabled is True
+    assert result.ok is True
     data = json.loads((folder / "extension.json").read_text(encoding="utf-8"))
     assert data == {"description": "No enabled", "enabled": True}
     assert list_extensions()[0].enabled is True
@@ -204,3 +208,13 @@ def test_manifest_key_order_is_preserved(tmp_path):
         object_pairs_hook=list,
     )
     assert [key for key, _value in pairs] == ["enabled", "description", "z"]
+
+
+def test_toggle_rejects_folder_without_registry_entry(tmp_path):
+    folder = _make_extension(tmp_path, "ghost")
+    loader._FOLDERS["ghost"] = folder  # 模拟目录级异常后残留的 limbo 项
+
+    result = toggle_extension("ghost")
+
+    assert result.ok is False
+    assert "restart to load it" in result.message

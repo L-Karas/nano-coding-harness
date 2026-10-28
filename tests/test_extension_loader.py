@@ -7,7 +7,7 @@ import pytest
 
 import core.extension.dispatcher as dispatcher
 import core.extension.loader as loader
-from core.extension import ExtensionInfo, list_extensions
+from core.extension import EVENTS, ExtensionInfo, list_extensions
 from core.extension.loader import load_extensions
 pytestmark = pytest.mark.usefixtures("empty_extension_registry")
 
@@ -38,7 +38,7 @@ def _make_extension(
 
 
 def _count(event):
-    return len(dispatcher._HANDLERS.get(event, ()))
+    return len(dispatcher.describe_handlers(event))
 
 
 def test_enabled_extension_registers(tmp_path):
@@ -102,7 +102,7 @@ def test_missing_entry_and_missing_register_skipped(tmp_path):
     _make_extension(tmp_path, "no_entry", entry=False)
     _make_extension(tmp_path, "no_register", "X = 1\n")
     load_extensions(tmp_path)
-    assert not any(dispatcher._HANDLERS.values())
+    assert not any(dispatcher.describe_handlers(event) for event in EVENTS)
 
 
 def test_register_failure_registers_nothing(tmp_path):
@@ -128,7 +128,7 @@ def test_underscore_folder_skipped(tmp_path):
 def test_external_extension_handlers_use_default_stage_metadata(tmp_path):
     _make_extension(tmp_path, "demo", REGISTER_LLM)
     load_extensions(tmp_path)
-    (handler,) = dispatcher._HANDLERS["before_llm"]
+    (handler,) = dispatcher.describe_handlers("before_llm")
     assert handler.stage == "user"
     assert handler.fail_closed is False
     assert handler.builtin is False
@@ -237,7 +237,7 @@ def test_missing_register_recorded(tmp_path):
     load_extensions(tmp_path)
 
     assert list_extensions() == [
-        ExtensionInfo("no_register", "user", False, "missing register(api)", ()),
+        ExtensionInfo("no_register", "user", False, "missing register(api)", (), error=True),
     ]
 
 
@@ -247,7 +247,7 @@ def test_register_failure_recorded_as_load_failed(tmp_path):
     load_extensions(tmp_path)
 
     assert list_extensions() == [
-        ExtensionInfo("half", "user", False, "load failed", ()),
+        ExtensionInfo("half", "user", False, "load failed", (), error=True),
     ]
 
 
@@ -263,7 +263,7 @@ def test_disabled_load_failure_records_combined_detail(tmp_path, body, reason):
     load_extensions(tmp_path)
 
     assert list_extensions() == [
-        ExtensionInfo("broken", "user", False, f"disabled · {reason}", ()),
+        ExtensionInfo("broken", "user", False, f"disabled · {reason}", (), error=True),
     ]
 
 
@@ -291,3 +291,50 @@ def test_events_keep_registration_order_and_dedupe(tmp_path):
     load_extensions(tmp_path)
 
     assert list_extensions()[0].events == ("after_tool", "before_llm")
+
+
+def test_async_register_is_rejected(tmp_path):
+    _make_extension(
+        tmp_path, "async_ext",
+        "async def register(api):\n"
+        "    api.on('before_llm', lambda ctx: None)\n",
+    )
+    load_extensions(tmp_path)
+
+    assert _count("before_llm") == 0
+    assert list_extensions() == [
+        ExtensionInfo("async_ext", "user", False, "load failed", (), error=True),
+    ]
+
+
+def test_reset_purges_loaded_extension_modules(tmp_path):
+    import sys
+
+    _make_extension(tmp_path, "demo", REGISTER_LLM)
+    load_extensions(tmp_path)
+    assert "nano_extension_demo" in sys.modules
+
+    loader.reset()
+    assert "nano_extension_demo" not in sys.modules
+
+
+def test_load_can_retry_after_directory_level_failure(tmp_path, monkeypatch):
+    _make_extension(tmp_path, "a", REGISTER_LLM)
+    _make_extension(tmp_path, "b", REGISTER_LLM)
+    original = loader._manifest_state
+    failed = []
+
+    def flaky(folder):
+        if folder.name == "a" and not failed:
+            failed.append(folder.name)
+            raise OSError("boom")
+        return original(folder)
+
+    monkeypatch.setattr(loader, "_manifest_state", flaky)
+    with pytest.raises(OSError):
+        load_extensions(tmp_path)
+    assert _count("before_llm") == 0
+
+    load_extensions(tmp_path)
+    assert _count("before_llm") == 2
+    assert [entry.name for entry in list_extensions()] == ["a", "b"]

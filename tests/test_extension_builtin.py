@@ -16,11 +16,12 @@ pytestmark = pytest.mark.usefixtures("empty_extension_registry")
 
 def test_builtins_register_observers_before_gate():
     register_builtin_extensions(rules=Rules())
-    stages = [(h.module_name, h.stage) for h in dispatcher._HANDLERS["before_tool"]]
+    handlers = dispatcher.describe_handlers("before_tool")
+    stages = [(h.module_name, h.stage) for h in handlers]
     assert stages == [("builtin:observers", "observer"), ("builtin:permission", "gate")]
-    gate = dispatcher._HANDLERS["before_tool"][-1]
+    gate = handlers[-1]
     assert gate.fail_closed is True and gate.builtin is True
-    assert all(handler.builtin is True for handler in dispatcher._HANDLERS["before_tool"])
+    assert all(handler.builtin is True for handler in handlers)
 
 
 def test_register_without_rules_loads_permission_file(tmp_path, monkeypatch):
