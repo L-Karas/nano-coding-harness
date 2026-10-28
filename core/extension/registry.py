@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Iterable, Literal
 
 Origin = Literal["user", "builtin"]
+ExtensionStatus = Literal["enabled", "disabled", "error"]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,16 @@ class ExtensionInfo:
     detail: str = ""
     events: tuple[str, ...] = ()
     description: str = ""
+
+    @property
+    def status(self) -> ExtensionStatus:
+        """展示状态：已启用 / 用户禁用 / 加载或注册失败。
+
+        loader 保证 detail 非空只出现在加载 / 注册失败的记录上，故按非空判定 error。
+        """
+        if self.enabled:
+            return "enabled"
+        return "error" if self.detail else "disabled"
 
 
 _ENTRIES: list[ExtensionInfo] = []

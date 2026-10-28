@@ -1,4 +1,4 @@
-"""`/extensions` 弹窗：来源 tag、可选描述、hook / 未启用原因、搜索、Ctrl+E 启停、Enter 无动作、Esc 关闭、空列表提示。"""
+"""`/extensions` 弹窗：来源 tag 前的状态标签、可选描述与 hook 颜色、搜索、Ctrl+E 启停、Enter 无动作、Esc 关闭、空列表提示。"""
 import asyncio
 
 import pytest
@@ -8,6 +8,7 @@ import core.extension.registry as registry
 import core.tui.screens.extensions as extensions_screen
 from core.extension import list_extensions
 from core.tui.screens import ExtensionsScreen
+from core.tui.theme import HOOK_TEXT, SECONDARY_TEXT
 from core.tui.utils import SLASH_COMMANDS
 from tests.support import chat_app, option_texts
 
@@ -50,7 +51,7 @@ def test_extensions_command_is_completable_and_opens_screen():
             assert rows == [
                 "● observers [builtin]\nhooks: before_tool",
                 "● permission [builtin]\nhooks: before_tool",
-                "○ alpha [user]\ninvalid extension.json",
+                "○ alpha (error) [user]\nno hooks",
                 "● zeta [user]\nZeta extension\nhooks: before_llm, after_tool",
             ]
             assert screen.TITLE == "Extensions"
@@ -107,21 +108,55 @@ def test_list_is_transparent_and_hint_is_pinned_to_window_bottom():
     asyncio.run(main())
 
 
-def test_disabled_extension_uses_failed_mcp_server_style():
+def test_extension_status_rows_use_status_specific_style():
     async def main():
+        registry.record("off", "user", enabled=False)
         async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             _screen, lst, _ = _rows(app)
-            row = lst.get_option_at_index(2).prompt  # alpha（禁用）
-            assert row.plain.startswith("○ alpha")
-            head = next(span for span in row.spans
-                        if row.plain[span.start:span.end] == "○ alpha")
-            assert str(head.style) == "#f87171", "未启用行应同 /mcp failed server 的红色"
+            enabled_row = lst.get_option_at_index(0).prompt  # observers
+            assert enabled_row.plain == "● observers [builtin]\nhooks: before_tool", \
+                "enabled 不应显示状态标签"
+            error_row = lst.get_option_at_index(2).prompt  # alpha（注册失败）
+            assert error_row.plain == "○ alpha (error) [user]\nno hooks", \
+                "error 状态只显示标签，不展示失败原因"
+            error_head = next(span for span in error_row.spans
+                              if error_row.plain[span.start:span.end]
+                              == "○ alpha")
+            assert str(error_head.style) == "#f87171", "error 行应同 /mcp failed server 的红色"
+            disabled_row = lst.get_option_at_index(3).prompt  # off（用户禁用）
+            assert disabled_row.plain.startswith("○ off (disabled) [user]")
+            disabled_head = next(span for span in disabled_row.spans
+                                 if disabled_row.plain[span.start:span.end]
+                                 == "○ off")
+            assert SECONDARY_TEXT in str(disabled_head.style), \
+                "disabled 行应同 /mcp disabled server 的灰色"
     asyncio.run(main())
 
 
-def test_disabled_extension_shows_description_before_status():
+def test_hook_text_uses_a_distinct_color():
+    async def main():
+        async with chat_app() as (app, pilot):
+            app._open_extensions()
+            await pilot.pause()
+            screen, lst, _ = _rows(app)
+            screen.query_one("#search-input", Input).value = "zeta"
+            await pilot.pause()
+            row = lst.get_option_at_index(0).prompt
+            description = next(span for span in row.spans
+                               if row.plain[span.start:span.end].strip()
+                               == "Zeta extension")
+            hooks = next(span for span in row.spans
+                         if row.plain[span.start:span.end].strip()
+                         == "hooks: before_llm, after_tool")
+            assert str(description.style) == SECONDARY_TEXT
+            assert str(hooks.style) == HOOK_TEXT
+            assert str(description.style) != str(hooks.style)
+    asyncio.run(main())
+
+
+def test_disabled_extension_shows_description_then_hooks():
     async def main():
         registry.record("off", "user", enabled=False,
                         description="Disabled but described")
@@ -129,7 +164,7 @@ def test_disabled_extension_shows_description_before_status():
             app._open_extensions()
             await pilot.pause()
             _screen, _lst, rows = _rows(app)
-            assert "○ off [user]\nDisabled but described\ndisabled · no hooks" in rows
+            assert "○ off (disabled) [user]\nDisabled but described\nno hooks" in rows
     asyncio.run(main())
 
 
@@ -145,8 +180,8 @@ def test_disabled_extension_shows_recorded_hooks():
             screen.query_one("#search-input", Input).value = "offhook"
             await pilot.pause()
             assert option_texts(lst) == [
-                "○ offhook [user]\nOff with hooks\n"
-                "disabled · hooks: before_tool, after_tool",
+                "○ offhook (disabled) [user]\nOff with hooks\n"
+                "hooks: before_tool, after_tool",
             ]
     asyncio.run(main())
 
@@ -187,9 +222,9 @@ def test_ctrl_e_toggles_selected_user_extension(monkeypatch):
             assert option_texts(lst) == [
                 "● observers [builtin]\nhooks: before_tool",
                 "● permission [builtin]\nhooks: before_tool",
-                "○ alpha [user]\ninvalid extension.json",
-                "○ zeta [user]\nZeta extension\n"
-                "disabled · hooks: before_llm, after_tool",
+                "○ alpha (error) [user]\nno hooks",
+                "○ zeta (disabled) [user]\nZeta extension\n"
+                "hooks: before_llm, after_tool",
             ]
             assert any(n.message == "Disabled extension 'zeta'" for n in app._notifications)
     asyncio.run(main())

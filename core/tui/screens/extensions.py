@@ -1,12 +1,18 @@
-"""扩展列表弹窗（/extensions）：展示全部扩展与来源标签，Ctrl+E 启用/停用。"""
+"""扩展列表弹窗（/extensions）：状态标签展示启用状态，Ctrl+E 启用/停用。"""
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.binding import Binding
 from textual.widgets.option_list import Option
 
 from core.extension import ExtensionInfo, list_extensions, toggle_extension
 from core.tui.screens.base import _entry_row, _ListPickerScreen, _rebuild_options
+from core.tui.theme import ACTIVE_STYLE, HOOK_TEXT, INACTIVE_STYLE, SECONDARY_TEXT
+
+# 状态后缀 / 颜色：enabled 不显示标签（绿色 ●）；disabled 灰色 ○；error 红色 ○。
+_STATUS_STYLES = {"enabled": ACTIVE_STYLE, "disabled": SECONDARY_TEXT,
+                  "error": INACTIVE_STYLE}
 
 
 def _hooks(entry: ExtensionInfo) -> str:
@@ -14,30 +20,29 @@ def _hooks(entry: ExtensionInfo) -> str:
     return f"hooks: {', '.join(entry.events)}" if entry.events else "no hooks"
 
 
-def _summary(entry: ExtensionInfo) -> str:
-    """名称行之后：可选描述（第二行）+ 状态。
-
-    启用项显示 hooks / no hooks；禁用但加载成功的项显示 `disabled · hooks: ...` /
-    `disabled · no hooks`；未加载项显示 `load failed` / `missing register(api)` 等原因，
-    配置禁用且加载失败时为 `disabled · <原因>`。
-    """
-    if entry.enabled:
-        status = _hooks(entry)
-    elif entry.detail:
-        status = entry.detail
-    else:
-        status = f"disabled · {_hooks(entry)}"
-    return f"{entry.description}\n{status}" if entry.description else status
+def _row(entry: ExtensionInfo) -> Text:
+    """列表行 = 状态字形 名称 (状态) [来源] + 描述 / hooks；失败原因不展示。"""
+    status = entry.status
+    row = _entry_row(
+        entry.name,
+        entry.description,
+        entry.origin,
+        enabled=entry.enabled,
+        status="" if status == "enabled" else status,
+        head_style=_STATUS_STYLES[status],
+    )
+    row.append("\n" + _hooks(entry), style=HOOK_TEXT)
+    return row
 
 
 class ExtensionsScreen(_ListPickerScreen):
-    """扩展列表弹窗（/extensions）：行 = 状态字形 名称 [user|builtin] + 可选描述 + hook /
-    未启用原因。
+    """扩展列表弹窗（/extensions）：行 = 状态字形 名称（状态标签）[user|builtin] + 描述 / hook。
 
-    已启用为绿色 ●，未启用 / 加载失败为红色 ○。Ctrl+E 切换当前高亮 user 扩展的
-    `extension.json.enabled` 并即时切换派发开关（不重新注册）；数据来自
-    core.extension.list_extensions()。builtin 与清单缺失 / 非法项不可切换，只提示原因。
-    Enter / 单击保持无动作，搜索栏按名称过滤，Esc 关闭。"""
+    已启用为绿色 ● 且不显示状态标签；禁用为灰色 ○ + `(disabled)`；加载 / 注册失败为红色 ○
+    + `(error)`。状态标签在来源标签前，失败原因不展示。第二行仅显示可选描述与 hooks。
+    Ctrl+E 切换当前高亮 user 扩展的 `extension.json.enabled` 并即时切换派发开关（不重新
+    注册）；数据来自 core.extension.list_extensions()。builtin 与清单缺失 / 非法项不可切换，
+    只提示原因。Enter / 单击保持无动作，搜索栏按名称过滤，Esc 关闭。"""
 
     TITLE = "Extensions"
     HINT = "  ↑/↓ browse    Ctrl+E enable/disable    Esc close"
@@ -52,9 +57,7 @@ class ExtensionsScreen(_ListPickerScreen):
     def _reload(self) -> None:
         _rebuild_options(
             self._list(),
-            [Option(_entry_row(entry.name, _summary(entry), entry.origin,
-                               enabled=entry.enabled),
-                    id=f"{entry.origin}:{entry.name}")
+            [Option(_row(entry), id=f"{entry.origin}:{entry.name}")
              for entry in self._extensions if self._match(entry.name)],
         )
 

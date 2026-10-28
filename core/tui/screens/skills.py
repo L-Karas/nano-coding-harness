@@ -14,6 +14,7 @@ from core.skill.skills import (
     skill_state_error,
 )
 from core.tui.screens.base import _entry_row, _NamedItem, _NamedListScreen, _rebuild_options
+from core.tui.theme import SECONDARY_TEXT
 
 _STATE_ID = "__skill_state__"
 
@@ -24,8 +25,8 @@ class SkillsScreen(_NamedListScreen):
     Enter/点击回传 (name, False)，由 ChatApp 立即发送 "[Invoke skill '<name>']"；Tab 回传
     (name, True)，由 ChatApp 把调用信息填入输入栏并聚焦，用户可继续写补充消息后一起发送；
     Ctrl+E 切换选中技能的启用状态（落盘到 .harness/.skills.json）；Esc 关闭。
-    禁用技能显示为红色 ○，Enter/Tab 只提示、不调用；状态文件损坏时列表顶部显示一条
-    合成故障行，但所有技能仍按启用处理（fail-open）。"""
+    禁用技能显示为灰色 ○（同 /extensions 的禁用项），Enter/Tab 只提示、不调用；状态文件
+    损坏时列表顶部显示一条合成故障行，但所有技能仍按启用处理（fail-open）。"""
 
     TITLE = "Available Skills"
     HINT = ("  ↑/↓ browse    Enter/click invoke    Tab invoke with message"
@@ -46,9 +47,11 @@ class SkillsScreen(_NamedListScreen):
         for item in self._items:
             if not self._match(item.name):
                 continue
+            enabled = is_skill_enabled(item.name)
             rows.append(Option(
                 _entry_row(item.name, item.description, item.tag,
-                           enabled=is_skill_enabled(item.name)),
+                           enabled=enabled,
+                           head_style=None if enabled else SECONDARY_TEXT),
                 id=item.name,
             ))
         _rebuild_options(self._list(), rows)

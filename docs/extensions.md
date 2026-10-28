@@ -96,15 +96,16 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 
 TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`）：
 
-- 已启用与未启用的扩展都会列出；未启用 / 加载失败项以红色 `○` 标示（同 `/mcp` 连接
-  失败的 server），已启用项为绿色 `●`。`[user]` = `.harness/extensions/` 下的外部扩展，
-  `[builtin]` = 内置观察者 / 权限门。
-- 清单含非空 `description` 时，描述显示在名称下方（第二行），状态行顺延到下一行；
-  无描述时不占行。
-- 已启用项显示注册的 hook 事件（`hooks: before_tool`），无回调显示 `no hooks`。
-- 禁用但加载成功的项显示 `disabled · hooks: ...` 或 `disabled · no hooks`；加载失败项
-  显示原因：`missing extension.json`、`invalid extension.json`、`missing register(api)` 或
-  `load failed`；配置禁用且加载失败时显示 `disabled · <原因>`，不会掩盖故障。
+- 已启用与未启用的扩展都会列出；状态标签在来源 tag 前：已启用项为绿色 `●` 且不显示
+  标签；用户禁用项为灰色 `○` 并显示 `(disabled)`；加载 / 注册失败项为红色 `○` 并显示
+  `(error)`，例如 `name (disabled) [user]`。`[user]` = `.harness/extensions/` 下的外部
+  扩展，`[builtin]` = 内置观察者 / 权限门。
+- 清单含非空 `description` 时，描述显示在名称下方（第二行）；hook 行顺延到下一行（hook
+  文本使用青蓝色，与描述区分），无描述时 hook / `no hooks` 占第二行。
+- 已启用与禁用但加载成功的项都显示注册的 hook 事件（`hooks: before_tool`），无回调显示
+  `no hooks`。
+- 加载 / 注册失败项只显示 `(error)` 状态，第二行仍只展示描述与 hook，不展示
+  `missing extension.json` / `load failed` 等失败原因。
 - `Ctrl+E` 切换选中 user 扩展的 `extension.json.enabled` 并即时生效：已注册模块直接
   切换派发开关，不重新 import / register。写回保留其他字段与键顺序，原子替换并规范化为
   `indent=4`；启停状态只存在该扩展的 `extension.json`，不新增独立状态文件。写盘失败时
@@ -377,7 +378,7 @@ async def local_web_search(ctx):
 
 ### 5.8 读取扩展配置（`extension.json`）
 
-加载器读取 `enabled`（使用开关）与可选的 `description`（后者仅用于 `/extensions` 展示），不会把清单内容注入 `api`；扩展需要配置时，在同一个 `extension.json` 里追加自定义字段，并在 `register(api)` 中按包路径自行读取。注意 `enabled: false` 时扩展仍会执行 `register(api)`，因此自定义配置缺失也可能让禁用的扩展显示 `load failed`。
+加载器读取 `enabled`（使用开关）与可选的 `description`（后者仅用于 `/extensions` 展示），不会把清单内容注入 `api`；扩展需要配置时，在同一个 `extension.json` 里追加自定义字段，并在 `register(api)` 中按包路径自行读取。注意 `enabled: false` 时扩展仍会执行 `register(api)`，因此自定义配置缺失也可能让禁用的扩展在 `/extensions` 中显示 `(error)` 状态。
 
 `extension.json`：
 

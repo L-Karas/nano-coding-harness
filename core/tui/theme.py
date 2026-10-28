@@ -7,6 +7,7 @@ DEFAULT_SUBTITLE = "Enter your query and press Enter to send it. Type /exit or /
 TERMINAL_TITLE = "nano-harness"  # 运行期终端窗口标题（OSC 2），退出时清空
 SECONDARY_TEXT = "#94a3b8"  # 次级文字色：说明 / 未配置 / 占位提示等
 COMPACT_HINT = "#7dd3fc"  # 页脚压缩阈值提示色（青蓝，区别于次级灰）
+HOOK_TEXT = "#7dd3fc"  # /extensions 的 hook 行色（同青蓝，区别于描述次级灰）
 PLACEHOLDER = "Type a message… Enter to send · Ctrl+J for newline"
 
 # 状态字形 / 配色：/extensions 启用/禁用、/mcp connected/failed 共用

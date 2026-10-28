@@ -1,4 +1,4 @@
-"""冒烟自检 · /extensions：来源 tag / 可选描述 / hook 与未启用原因 / 搜索 / Ctrl+E 启停 /
+"""冒烟自检 · /extensions：来源 tag 前的状态标签 / 可选描述 / hook / 搜索 / Ctrl+E 启停 /
 Enter 不关窗 / Esc 关闭 / 空 registry toast 提示。"""
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ async def run(app, pilot) -> None:
     registry.record("smoke-on", "user", enabled=True, events=["before_llm", "after_tool"],
                     description="Smoke enabled extension")
     try:
-        # /ext 补全到 /extensions，Enter 打开弹窗；行 = 状态字形 名称 [来源] + 可选描述 +
-        # hook / 未启用原因（未启用以同 /mcp failed server 的红色 ○ 标示；禁用行仍展示 hooks）
+        # /ext 补全到 /extensions，Enter 打开弹窗；行 = 状态字形 名称（状态标签）[来源] + 可选描述 +
+        # hook（enabled 绿色 ● 无标签；disabled 灰色 ○ (disabled)；error 红色 ○ (error)）
         prompt.focus()
         await type_query(prompt, pilot, "/ext")
         assert prompt._candidates == ["/extensions"], prompt._candidates
@@ -42,9 +42,9 @@ async def run(app, pilot) -> None:
             f"提示行应钉在窗口最下方: {hint.region} / {picker.content_region}"
         assert screen_option_texts(app, "#extensions-list") == [
             "● smoke-builtin [builtin]\nhooks: before_tool",
-            "○ smoke-missing [user]\nmissing extension.json",
-            "○ smoke-off [user]\nSmoke disabled extension\n"
-            "disabled · hooks: before_tool",
+            "○ smoke-missing (error) [user]\nno hooks",
+            "○ smoke-off (disabled) [user]\nSmoke disabled extension\n"
+            "hooks: before_tool",
             "● smoke-on [user]\nSmoke enabled extension\nhooks: before_llm, after_tool",
         ], screen_option_texts(app, "#extensions-list")
         # 搜索栏过滤名称（忽略大小写）；清空恢复
@@ -77,8 +77,8 @@ async def run(app, pilot) -> None:
             await pilot.press("ctrl+e")
             await settle(pilot)
             assert screen_option_texts(app, "#extensions-list") == [
-                "○ smoke-on [user]\nSmoke enabled extension\n"
-                "disabled · hooks: before_llm, after_tool",
+                "○ smoke-on (disabled) [user]\nSmoke enabled extension\n"
+                "hooks: before_llm, after_tool",
             ], screen_option_texts(app, "#extensions-list")
             assert any(n.message == "Disabled extension 'smoke-on'"
                        for n in app._notifications), [n.message for n in app._notifications]
@@ -105,7 +105,7 @@ async def run(app, pilot) -> None:
         assert not isinstance(app.screen_stack[-1], ExtensionsScreen), "空 registry 不应开空弹窗"
         toasts = [n.message for n in app._notifications]
         assert any("No extensions found" in message for message in toasts), toasts
-        print("[smoke] /extensions OK: descriptions, source tags, disabled hooks, search, "
+        print("[smoke] /extensions OK: descriptions, status tags, source tags, hooks, search, "
               "Ctrl+E toggle, empty notice")
     finally:
         registry.reset()

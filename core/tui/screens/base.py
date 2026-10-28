@@ -32,12 +32,24 @@ _ENTRY_DESC_STYLE = SECONDARY_TEXT
 _ENTRY_TAG_STYLE = "#a5adce"  # [tag] 段（/skills 的来源标记 global/user/project）
 
 
-def _entry_row(name: str, desc: str = "", tag: str = "", *, enabled: bool = True) -> Text:
-    """「● 名称」行；enabled=False 改用红色「○ 名称」（同 /mcp 连接失败的 server）；
-    tag 非空时以源标记色追加 [tag]；描述 strip 后自第二行起（内部换行 / 缩进原样保留）。"""
+def _entry_row(
+    name: str,
+    desc: str = "",
+    tag: str = "",
+    *,
+    enabled: bool = True,
+    status: str = "",
+    head_style: Optional[str] = None,
+) -> Text:
+    """「● 名称」行；enabled=False 默认改用红色「○ 名称」（同 /mcp 连接失败的 server，
+    head_style 可覆盖）；tag 非空时以源标记色追加 [tag]；status 非空时在 tag 前追加
+    `(status)`，与名称同色；描述 strip 后自第二行起（内部换行 / 缩进原样保留）。"""
     row = Text()
     glyph = ACTIVE_GLYPH if enabled else INACTIVE_GLYPH
-    row.append(f"{glyph} {name}", style=ACTIVE_STYLE if enabled else INACTIVE_STYLE)
+    row_style = head_style or (ACTIVE_STYLE if enabled else INACTIVE_STYLE)
+    row.append(f"{glyph} {name}", style=row_style)
+    if status:
+        row.append(f" ({status})", style=row_style)
     if tag:
         row.append(f" [{tag}]", style=_ENTRY_TAG_STYLE)
     desc = (desc or "").strip()

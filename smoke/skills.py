@@ -152,7 +152,7 @@ async def run(app, pilot) -> None:
     assert any("[Invoke skill 'smoke-skill-a'] extra" in b for b in bodies), bodies
     await wait_idle(app, pilot)
     print("[smoke] /skills Tab OK: fills invoke message into prompt, extra message sent together")
-    # Ctrl+E：禁用当前技能（行变红 ○）→ Enter 只提示不关窗 → 再次 Ctrl+E 恢复
+    # Ctrl+E：禁用当前技能（行变灰 ○，同 /extensions 禁用项）→ Enter 只提示不关窗 → 再次 Ctrl+E 恢复
     await open_command(app, pilot, "/skills")
     assert isinstance(app.screen_stack[-1], SkillsScreen)
     sk_lst = app.screen_stack[-1].query_one("#skills-list", OptionList)

@@ -65,6 +65,18 @@ def test_same_name_keeps_user_and_builtin_separate():
     ]
 
 
+def test_status_classifies_enabled_disabled_and_error():
+    registry.record("on", "user", enabled=True)
+    registry.record("off", "user", enabled=False)
+    registry.record("broken", "user", enabled=False, detail="load failed")
+
+    assert [(entry.name, entry.status) for entry in list_extensions()] == [
+        ("broken", "error"),
+        ("off", "disabled"),
+        ("on", "enabled"),
+    ]
+
+
 def test_reset_clears_all_entries():
     registry.record("demo", "user", enabled=True)
     reset_extensions()
