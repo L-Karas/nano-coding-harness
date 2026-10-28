@@ -47,7 +47,7 @@ def test_ctrl_e_toggles_and_disabled_blocks_invoke(state):
             row = olist.get_option_at_index(olist.highlighted).prompt
             head = next(span for span in row.spans
                         if row.plain[span.start:span.end] == "○ review")
-            assert DISABLED_TEXT in str(head.style), "禁用技能应同 /extensions 的灰紫色"
+            assert DISABLED_TEXT in str(head.style), "禁用技能应同 /extensions 的米黄"
             assert "#f87171" not in str(head.style), "禁用技能不应再使用错误红"
 
             await pilot.press("enter")

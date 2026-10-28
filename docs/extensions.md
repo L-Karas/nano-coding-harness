@@ -97,7 +97,7 @@ tail -f .harness/log/dispatcher.log   # hook 运行异常日志
 TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`）：
 
 - 已启用与未启用的扩展都会列出；状态标签在来源 tag 前：已启用项为绿色 `●` 且不显示
-  标签；用户禁用项为灰紫 `○` 并显示 `(disabled)`；加载 / 注册失败项为红色 `○` 并显示
+  标签；用户禁用项为米黄 `○` 并显示 `(disabled)`；加载 / 注册失败项为红色 `○` 并显示
   `(error)`，例如 `name (disabled) [user]`。`[user]` = `.harness/extensions/` 下的外部
   扩展，`[builtin]` = 内置观察者 / 权限门。
 - 清单含非空 `description` 时，描述显示在名称下方（第二行）；hook 行顺延到下一行（hook

@@ -23,7 +23,7 @@ async def run(app, pilot) -> None:
                     description="Smoke enabled extension")
     try:
         # /ext 补全到 /extensions，Enter 打开弹窗；行 = 状态字形 名称（状态标签）[来源] + 可选描述 +
-        # hook（enabled 绿色 ● 无标签；disabled 灰紫 ○ (disabled)；error 红色 ○ (error)）
+        # hook（enabled 绿色 ● 无标签；disabled 米黄 ○ (disabled)；error 红色 ○ (error)）
         prompt.focus()
         await type_query(prompt, pilot, "/ext")
         assert prompt._candidates == ["/extensions"], prompt._candidates

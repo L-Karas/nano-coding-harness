@@ -10,7 +10,7 @@ from core.extension import ExtensionInfo, list_extensions, toggle_extension
 from core.tui.screens.base import _entry_row, _ListPickerScreen, _rebuild_options
 from core.tui.theme import ACTIVE_STYLE, DISABLED_TEXT, HOOK_TEXT, INACTIVE_STYLE
 
-# 状态后缀 / 颜色：enabled 不显示标签（绿色 ●）；disabled 灰紫 ○；error 红色 ○。
+# 状态后缀 / 颜色：enabled 不显示标签（绿色 ●）；disabled 米黄 ○；error 红色 ○。
 _STATUS_STYLES = {"enabled": ACTIVE_STYLE, "disabled": DISABLED_TEXT,
                   "error": INACTIVE_STYLE}
 
@@ -38,7 +38,7 @@ def _row(entry: ExtensionInfo) -> Text:
 class ExtensionsScreen(_ListPickerScreen):
     """扩展列表弹窗（/extensions）：行 = 状态字形 名称（状态标签）[user|builtin] + 描述 / hook。
 
-    已启用为绿色 ● 且不显示状态标签；禁用为灰紫 ○ + `(disabled)`；加载 / 注册失败为红色 ○
+    已启用为绿色 ● 且不显示状态标签；禁用为米黄 ○ + `(disabled)`；加载 / 注册失败为红色 ○
     + `(error)`。状态标签在来源标签前，失败原因不展示。第二行仅显示可选描述与 hooks。
     Ctrl+E 切换当前高亮 user 扩展的 `extension.json.enabled` 并即时切换派发开关（不重新
     注册）；数据来自 core.extension.list_extensions()。builtin 与清单缺失 / 非法项不可切换，

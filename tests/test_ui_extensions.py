@@ -131,7 +131,7 @@ def test_extension_status_rows_use_status_specific_style():
                                  if disabled_row.plain[span.start:span.end]
                                  == "○ off")
             assert DISABLED_TEXT in str(disabled_head.style), \
-                "disabled 行应同 /mcp disabled server 的灰紫色"
+                "disabled 行应同 /mcp disabled server 的米黄"
     asyncio.run(main())
 
 

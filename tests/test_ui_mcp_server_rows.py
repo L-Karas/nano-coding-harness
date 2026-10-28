@@ -1,5 +1,5 @@
 """MCP server 列表行：按连接状态着色（connected 绿 ● / connecting 橙色 spinner 轮播 /
-failed 红 ○ (failed) / disabled 灰紫 ○ (disabled)）。"""
+failed 红 ○ (failed) / disabled 米黄 ○ (disabled)）。"""
 from core.tui.screens.mcp import _server_row
 from core.tui.theme import DISABLED_TEXT, _SPINNER_FRAMES
 
