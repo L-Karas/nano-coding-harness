@@ -1,4 +1,4 @@
-# 内置扩展能力（MCP / Skills / Memory / Cron）
+# 扩展能力（MCP / Skills / Extensions / Memory / Cron）
 
 ## MCP 接入
 
@@ -42,6 +42,14 @@ description: 一句话说明这个技能做什么
 禁用项从系统提示词表移除、`load_skill` 返回不可用，窗口中显示为红 `○`，可再次切换恢复。
 扫描时会剔除已不存在的禁用名；状态文件缺失按全员启用处理，损坏时 fail-open（全员启用）并在
 `/skills` 顶部显示一条只读故障行。
+
+## Extensions
+
+外部扩展放在 `.harness/extensions/<name>/`，由 `extension.json` + `__init__.py` 组成。所有清单合法的
+扩展在启动时统一 import 并执行 `register(api)`；`enabled: true` 才让 hook 参与派发，禁用只抑制派发，
+不阻止扩展代码执行（扩展必须是可信代码）。`/extensions` 窗口用 `Ctrl+E` 改写该扩展的 `enabled`
+并即时切换派发开关，不需要重启；禁用行仍展示已注册的 hooks。修改扩展代码或自定义配置、新增扩展目录
+仍需重启。完整事件与配方见 [`extensions.md`](extensions.md)。
 
 ## Memory
 

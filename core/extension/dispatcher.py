@@ -20,6 +20,9 @@ class _Handler:
 
 
 _HANDLERS: dict[str, list[_Handler]] = {}
+# 扩展级派发开关：loader 注册完一个模块后按 extension.json.enabled 设置；
+# 禁用只影响后续派发，已注册回调保留，重新启用无需再次 register。
+_DISABLED_MODULES: set[str] = set()
 
 
 def add(
@@ -41,17 +44,38 @@ def add(
     )
 
 
+def set_module_enabled(module_name: str, enabled: bool) -> None:
+    """切换一个扩展模块的派发开关。
+
+    外部扩展禁用后回调仍保留在注册表中，只在下一次派发时跳过，重新启用无需重新
+    import / register。内置模块的派发由 dispatch 的 handler.builtin 分支保证，不受此开关影响。
+    """
+    if enabled:
+        _DISABLED_MODULES.discard(module_name)
+    else:
+        _DISABLED_MODULES.add(module_name)
+
+
+def is_module_enabled(module_name: str) -> bool:
+    """该模块是否未被显式禁用。"""
+    return module_name not in _DISABLED_MODULES
+
+
 def reset() -> None:
-    """清空全部注册，供测试隔离使用。"""
+    """清空全部注册与模块开关，供测试隔离使用。"""
     for handlers in _HANDLERS.values():
         handlers.clear()
+    _DISABLED_MODULES.clear()
 
 
 async def dispatch(event: str, ctx: Any, *, include_external: bool = True) -> None:
-    """按 user → observer → gate 顺序调用事件回调，原地修改 ctx；单回调异常不影响其余回调。"""
+    """按 user → observer → gate 顺序调用事件回调，原地修改 ctx；单回调异常不影响其余回调。
+
+    被禁用模块的回调不参与派发；内置模块不受模块开关影响。"""
     handlers = [
         handler for handler in _HANDLERS.get(event, ())
-        if include_external or handler.builtin
+        if (include_external or handler.builtin)
+        and (handler.builtin or is_module_enabled(handler.module_name))
     ]
     handlers.sort(key=lambda handler: STAGE_ORDER[handler.stage])
 

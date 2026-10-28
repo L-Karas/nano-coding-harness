@@ -1,4 +1,4 @@
-"""派发器：顺序链式、短路、异步、fail-open、CancelledError 传播、字段归一。"""
+"""派发器：顺序链式、短路、异步、fail-open、CancelledError 传播、字段归一、模块开关。"""
 import asyncio
 from unittest.mock import MagicMock
 
@@ -301,6 +301,50 @@ def test_include_external_false_skips_external_but_runs_builtin():
                    "builtin:observers", stage="observer", builtin=True)
     _run_external_off("before_tool", BeforeToolContext(tool_name="terminal", args={}))
     assert seen == ["builtin"]
+
+
+def test_disabled_module_is_skipped_until_reenabled():
+    seen = []
+    dispatcher.add("before_tool", lambda ctx: seen.append("ext"), "ext_a")
+    dispatcher.set_module_enabled("ext_a", False)
+    assert dispatcher.is_module_enabled("ext_a") is False
+
+    _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
+    assert seen == []
+
+    dispatcher.set_module_enabled("ext_a", True)
+    _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
+    assert seen == ["ext"]
+
+
+def test_disabled_module_skips_all_its_events():
+    seen = []
+    for event in ("before_llm", "after_tool"):
+        dispatcher.add(event, lambda ctx, name=event: seen.append(name), "ext_a")
+    dispatcher.set_module_enabled("ext_a", False)
+
+    _run("before_llm", BeforeLLMContext(messages=[], tools=[], max_tokens=1))
+    _run("after_tool", AfterToolContext(tool_name="terminal", args={}, result="out"))
+    assert seen == []
+
+
+def test_builtin_runs_even_if_its_module_flag_is_disabled():
+    seen = []
+    dispatcher.add("before_tool", lambda ctx: seen.append("builtin"),
+                   "builtin:permission", stage="gate", builtin=True)
+    dispatcher.set_module_enabled("builtin:permission", False)
+
+    _run("before_tool", BeforeToolContext(tool_name="terminal", args={}))
+
+    assert seen == ["builtin"], "内置模块不受扩展派发开关影响"
+
+
+def test_reset_clears_module_flags():
+    dispatcher.add("before_tool", lambda ctx: None, "ext_a")
+    dispatcher.set_module_enabled("ext_a", False)
+    dispatcher.reset()
+    assert dispatcher.is_module_enabled("ext_a") is True
+    assert dispatcher._HANDLERS["before_tool"] == []
 
 
 def test_fail_closed_blocks_on_exception():

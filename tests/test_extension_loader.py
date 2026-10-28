@@ -1,4 +1,4 @@
-"""加载器：清单门槛、原子注册、失败隔离、包内相对导入、幂等。"""
+"""加载器：清单解析、统一注册、禁用派发、失败隔离、包内相对导入、幂等。"""
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -65,7 +65,7 @@ def test_register_failure_does_not_log_success(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("value", [False, "true", 1, None])
-def test_not_exactly_true_is_disabled(tmp_path, value):
+def test_not_exactly_true_is_registered_but_not_dispatched(tmp_path, value):
     _make_extension(
         tmp_path,
         "demo",
@@ -73,7 +73,8 @@ def test_not_exactly_true_is_disabled(tmp_path, value):
         enabled=value,
     )
     load_extensions(tmp_path)
-    assert _count("before_llm") == 0
+    assert _count("before_llm") == 1
+    assert dispatcher.is_module_enabled("nano_extension_demo") is False
 
 
 def test_missing_or_invalid_manifest_isolated(tmp_path):
@@ -175,7 +176,8 @@ def test_disabled_extension_keeps_description(tmp_path):
     load_extensions(tmp_path)
 
     assert list_extensions() == [
-        ExtensionInfo("off", "user", False, "disabled", (), "Shown while disabled"),
+        ExtensionInfo("off", "user", False, "", ("before_llm",),
+                      "Shown while disabled"),
     ]
 
 
@@ -205,12 +207,12 @@ def test_invalid_or_empty_description_is_ignored(tmp_path, value):
     assert entry.description == ""
 
 
-def test_disabled_extension_recorded_with_reason(tmp_path):
+def test_disabled_extension_recorded_as_loaded_but_disabled(tmp_path):
     _make_extension(tmp_path, "off", REGISTER_LLM, enabled=False)
     load_extensions(tmp_path)
 
     assert list_extensions() == [
-        ExtensionInfo("off", "user", False, "disabled", ()),
+        ExtensionInfo("off", "user", False, "", ("before_llm",)),
     ]
 
 
@@ -246,6 +248,22 @@ def test_register_failure_recorded_as_load_failed(tmp_path):
 
     assert list_extensions() == [
         ExtensionInfo("half", "user", False, "load failed", ()),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        ("X = 1\n", "missing register(api)"),
+        ("def register(api):\n    raise RuntimeError('boom')\n", "load failed"),
+    ],
+)
+def test_disabled_load_failure_records_combined_detail(tmp_path, body, reason):
+    _make_extension(tmp_path, "broken", body, enabled=False)
+    load_extensions(tmp_path)
+
+    assert list_extensions() == [
+        ExtensionInfo("broken", "user", False, f"disabled · {reason}", ()),
     ]
 
 

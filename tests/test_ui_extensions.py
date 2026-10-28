@@ -1,10 +1,11 @@
-"""`/extensions` 弹窗：来源 tag、可选描述、hook / 未启用原因、搜索、Enter 无动作、Esc 关闭、空列表提示。"""
+"""`/extensions` 弹窗：来源 tag、可选描述、hook / 未启用原因、搜索、Ctrl+E 启停、Enter 无动作、Esc 关闭、空列表提示。"""
 import asyncio
 
 import pytest
 from textual.widgets import Input, OptionList, Static
 
 import core.extension.registry as registry
+import core.tui.screens.extensions as extensions_screen
 from core.extension import list_extensions
 from core.tui.screens import ExtensionsScreen
 from core.tui.utils import SLASH_COMMANDS
@@ -34,7 +35,7 @@ def _rows(app):
     return screen, lst, option_texts(lst)
 
 
-def test_extensions_command_is_completable_and_opens_read_only_screen():
+def test_extensions_command_is_completable_and_opens_screen():
     async def main():
         async with chat_app() as (app, pilot):
             assert "/extensions" in SLASH_COMMANDS
@@ -53,7 +54,7 @@ def test_extensions_command_is_completable_and_opens_read_only_screen():
                 "● zeta [user]\nZeta extension\nhooks: before_llm, after_tool",
             ]
             assert screen.TITLE == "Extensions"
-            assert screen.HINT == "  ↑/↓ browse    Esc close"
+            assert screen.HINT == "  ↑/↓ browse    Ctrl+E enable/disable    Esc close"
             search = screen.query_one("#search-input", Input)
             assert search.placeholder == "Search extensions…"
             assert search.has_focus
@@ -120,15 +121,33 @@ def test_disabled_extension_uses_failed_mcp_server_style():
     asyncio.run(main())
 
 
-def test_disabled_extension_shows_description_before_reason():
+def test_disabled_extension_shows_description_before_status():
     async def main():
-        registry.record("off", "user", enabled=False, detail="disabled",
+        registry.record("off", "user", enabled=False,
                         description="Disabled but described")
         async with chat_app() as (app, pilot):
             app._open_extensions()
             await pilot.pause()
             _screen, _lst, rows = _rows(app)
-            assert "○ off [user]\nDisabled but described\ndisabled" in rows
+            assert "○ off [user]\nDisabled but described\ndisabled · no hooks" in rows
+    asyncio.run(main())
+
+
+def test_disabled_extension_shows_recorded_hooks():
+    async def main():
+        registry.record("offhook", "user", enabled=False,
+                        events=["before_tool", "after_tool"],
+                        description="Off with hooks")
+        async with chat_app() as (app, pilot):
+            app._open_extensions()
+            await pilot.pause()
+            screen, lst, _rows_before = _rows(app)
+            screen.query_one("#search-input", Input).value = "offhook"
+            await pilot.pause()
+            assert option_texts(lst) == [
+                "○ offhook [user]\nOff with hooks\n"
+                "disabled · hooks: before_tool, after_tool",
+            ]
     asyncio.run(main())
 
 
@@ -140,6 +159,104 @@ def test_enabled_extension_without_events_shows_no_hooks():
             await pilot.pause()
             _screen, _lst, rows = _rows(app)
             assert "● silent [user]\nno hooks" in rows
+    asyncio.run(main())
+
+
+def test_ctrl_e_toggles_selected_user_extension(monkeypatch):
+    calls: list[str] = []
+
+    def _toggle(name: str):
+        calls.append(name)
+        entry = next(e for e in list_extensions()
+                     if e.origin == "user" and e.name == name)
+        registry.record(name, "user", enabled=not entry.enabled,
+                        events=entry.events, description=entry.description)
+        return True, f"Disabled extension '{name}'", False
+
+    monkeypatch.setattr(extensions_screen, "toggle_extension", _toggle)
+
+    async def main():
+        async with chat_app() as (app, pilot):
+            app._open_extensions()
+            await pilot.pause()
+            _screen, lst, _rows_before = _rows(app)
+            lst.highlighted = 3  # zeta
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+            assert calls == ["zeta"]
+            assert option_texts(lst) == [
+                "● observers [builtin]\nhooks: before_tool",
+                "● permission [builtin]\nhooks: before_tool",
+                "○ alpha [user]\ninvalid extension.json",
+                "○ zeta [user]\nZeta extension\n"
+                "disabled · hooks: before_llm, after_tool",
+            ]
+            assert any(n.message == "Disabled extension 'zeta'" for n in app._notifications)
+    asyncio.run(main())
+
+
+def test_ctrl_e_on_builtin_only_notifies(monkeypatch):
+    calls: list[str] = []
+
+    def _toggle(name: str):
+        calls.append(name)
+        return True, "should not run", False
+
+    monkeypatch.setattr(extensions_screen, "toggle_extension", _toggle)
+
+    async def main():
+        async with chat_app() as (app, pilot):
+            app._open_extensions()
+            await pilot.pause()
+            _screen, lst, _rows_before = _rows(app)
+            lst.highlighted = 0  # observers
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+            assert calls == []
+            note = next(n for n in app._notifications
+                        if n.message == "Builtin extensions cannot be toggled.")
+            assert note.title == "⛔ Extensions"
+    asyncio.run(main())
+
+
+def test_ctrl_e_failure_shows_error_toast(monkeypatch):
+    monkeypatch.setattr(
+        extensions_screen, "toggle_extension",
+        lambda name: (False, "Failed to save extension state: disk full", False))
+
+    async def main():
+        async with chat_app() as (app, pilot):
+            app._open_extensions()
+            await pilot.pause()
+            _screen, lst, _rows_before = _rows(app)
+            lst.highlighted = 3  # zeta
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+            note = next(n for n in app._notifications
+                        if n.message == "Failed to save extension state: disk full")
+            assert note.title == "⚠️ Extensions"
+    asyncio.run(main())
+
+
+def test_ctrl_e_enable_load_failed_shows_warning(monkeypatch):
+    registry.record("broken", "user", enabled=False, detail="disabled · load failed")
+    monkeypatch.setattr(
+        extensions_screen, "toggle_extension",
+        lambda name: (True, "Set extension 'broken' to enabled, but it still fails to load: "
+                            "load failed", True))
+
+    async def main():
+        async with chat_app() as (app, pilot):
+            app._open_extensions()
+            await pilot.pause()
+            screen, lst, _rows_before = _rows(app)
+            screen.query_one("#search-input", Input).value = "broken"
+            await pilot.pause()
+            lst.highlighted = 0
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+            note = next(n for n in app._notifications if "still fails to load" in n.message)
+            assert note.title == "⚠️ Extensions"
     asyncio.run(main())
 
 

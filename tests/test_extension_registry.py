@@ -15,7 +15,7 @@ def _clean():
 def _record_builtins_and_users():
     registry.record("zeta", "user", enabled=True, events=["before_llm"])
     registry.record("permission", "builtin", enabled=True, events=["before_tool"])
-    registry.record("alpha", "user", enabled=False, detail="disabled")
+    registry.record("alpha", "user", enabled=False)
     registry.record("observers", "builtin", enabled=True, events=["before_tool"])
 
 
@@ -25,7 +25,7 @@ def test_list_puts_builtins_first_then_users_by_name():
     assert list_extensions() == [
         ExtensionInfo("observers", "builtin", True, "", ("before_tool",)),
         ExtensionInfo("permission", "builtin", True, "", ("before_tool",)),
-        ExtensionInfo("alpha", "user", False, "disabled", ()),
+        ExtensionInfo("alpha", "user", False, "", ()),
         ExtensionInfo("zeta", "user", True, "", ("before_llm",)),
     ]
 
@@ -38,7 +38,7 @@ def test_events_are_deduplicated_in_registration_order():
 
 
 def test_same_origin_and_name_replaces_in_place():
-    registry.record("demo", "user", enabled=False, detail="disabled")
+    registry.record("demo", "user", enabled=False)
     registry.record("demo", "user", enabled=True, events=["before_llm"])
 
     assert list_extensions() == [
@@ -48,7 +48,7 @@ def test_same_origin_and_name_replaces_in_place():
 
 def test_description_is_stored_and_replaced_in_place():
     registry.record("demo", "user", enabled=True, description="first")
-    registry.record("demo", "user", enabled=False, detail="disabled",
+    registry.record("demo", "user", enabled=False,
                     description="second")
 
     assert list_extensions()[0].description == "second"

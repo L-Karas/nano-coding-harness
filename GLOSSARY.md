@@ -66,3 +66,9 @@ _Avoid_: 技能配置、enabled 列表
 MCP server 的用户开关，存在 `.mcp.json` 的 `enabled` 字段（缺省启用）；关闭 = 断开连接、
 工具下架，但配置保留，可重新启用。
 _Avoid_: disabled server、MCP 开关
+
+**Extension enabled state**:
+扩展的使用开关，存在扩展目录 `extension.json` 的 `enabled` 字段（严格 `true` 才派发）；
+所有清单合法的扩展启动时都会 import + `register`，禁用只抑制 hook 派发，不阻止代码执行；
+`/extensions` 的 `Ctrl+E` 原子写回该字段并即时切换派发开关，不新增独立状态文件。
+_Avoid_: 扩展状态文件、disabled 列表

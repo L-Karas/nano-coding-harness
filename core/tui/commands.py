@@ -136,7 +136,7 @@ class _CommandFlow:
         self._send_user_query(query)
 
     def _open_extensions(self) -> None:
-        """/extensions：全部扩展（含未启用）与来源标签；只读，Esc 关闭。"""
+        """/extensions：全部扩展（含未启用）与来源标签；Ctrl+E 启停，Esc 关闭。"""
         rows = _list_extensions()
         if not rows:
             self._notify("No extensions found", title="⚠️ Extensions")

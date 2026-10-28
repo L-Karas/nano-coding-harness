@@ -1,4 +1,4 @@
-"""外部扩展系统：事件上下文与注册 API。"""
+"""外部扩展系统：事件上下文、注册 API、加载与启停。"""
 from core.extension.api import EVENTS, ExtensionAPI
 from core.extension.context import (
     AfterLLMContext,
@@ -8,7 +8,11 @@ from core.extension.context import (
     ToolExecuteContext,
 )
 from core.extension.dispatcher import add, dispatch, reset as reset_dispatcher
-from core.extension.loader import load_extensions, reset as reset_loader
+from core.extension.loader import (
+    load_extensions,
+    toggle_extension,
+    reset as reset_loader,
+)
 from core.extension.registry import ExtensionInfo, list_extensions, reset as reset_registry
 
 __all__ = [
@@ -24,6 +28,7 @@ __all__ = [
     "dispatch",
     "list_extensions",
     "load_extensions",
+    "toggle_extension",
     "reset_extensions",
 ]
 

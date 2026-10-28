@@ -1,7 +1,8 @@
 """扩展登记表：记录启动时扫描 / 注册到的扩展及其来源与加载状态。
 
 loader 登记外部扩展（含未启用原因），builtin 注册入口登记内置扩展；TUI 的 /extensions
-只读这张表，不重新解析清单。进程内单例，reset() 供测试隔离与 reset_extensions() 使用。
+只读这张表，不重新解析清单；Ctrl+E 启停由 loader 改写 extension.json 后再回写登记。
+进程内单例，reset() 供测试隔离与 reset_extensions() 使用。
 """
 from dataclasses import dataclass
 from typing import Iterable, Literal
@@ -13,7 +14,10 @@ Origin = Literal["user", "builtin"]
 class ExtensionInfo:
     """一条扩展登记：user = .harness/extensions 下的文件夹；builtin = 内置模块。
 
-    description 为清单里的可选展示描述（空 = 不显示）。"""
+    enabled 是有效使用状态：清单 enabled 为 true 且加载成功才为 True；禁用但加载成功的
+    扩展仍保留 events，供 /extensions 展示 hooks。detail 为空表示已加载（启用或禁用）；
+    非空为未加载原因（如 load failed）或禁用 + 失败的组合文案。description 为清单里的
+    可选展示描述（空 = 不显示）。"""
 
     name: str
     origin: Origin
