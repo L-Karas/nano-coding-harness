@@ -1,4 +1,4 @@
-"""core/bootstrap.py 的 .harness 初始化测试。"""
+"""core/bootstrap.py 的 .nano-harness 初始化测试。"""
 import json
 import threading
 import time
@@ -21,12 +21,12 @@ def test_init_harness_creates_files(tmp_path, monkeypatch):
     for name in ("HARNESS_SETTING_FILE", "PROVIDER_AUTH_FILE", "CUSTOM_PROVIDER_FILE",
                  "CUSTOM_MODEL_FILE", "MCP_CONFIG_FILE", "SESSION_INDEX_FILE", "CRON_TASK_FILE"):
         files[name] = tmp_path / f"{name}.tmp"
-    monkeypatch.setattr(bootstrap_mod, "_CONFIG_DIRS", tuple(dirs.values()))
-    monkeypatch.setattr(bootstrap_mod, "_JSON_FILES",
-                        {files["HARNESS_SETTING_FILE"]: {"default_model": "p:m"},
-                         files["PROVIDER_AUTH_FILE"]: {}})
-    monkeypatch.setattr(bootstrap_mod, "_TOUCH_FILES",
-                        (files["SESSION_INDEX_FILE"], files["CRON_TASK_FILE"]))
+    monkeypatch.setattr(bootstrap_mod, "_config_dirs", lambda: tuple(dirs.values()))
+    monkeypatch.setattr(bootstrap_mod, "_json_files",
+                        lambda: {files["HARNESS_SETTING_FILE"]: {"default_model": "p:m"},
+                                 files["PROVIDER_AUTH_FILE"]: {}})
+    monkeypatch.setattr(bootstrap_mod, "_touch_files",
+                        lambda: (files["SESSION_INDEX_FILE"], files["CRON_TASK_FILE"]))
 
     init_harness()
     init_harness()  # 幂等
@@ -39,15 +39,15 @@ def test_init_harness_creates_files(tmp_path, monkeypatch):
 
 
 def test_extension_dir_is_bootstrapped():
-    assert config.EXTENSION_DIR in bootstrap_mod._CONFIG_DIRS
+    assert config.EXTENSION_DIR in bootstrap_mod._config_dirs()
 
 
 def test_permission_file_is_bootstrapped():
-    assert config.PERMISSION_FILE in bootstrap_mod._JSON_FILES
+    assert config.PERMISSION_FILE in bootstrap_mod._json_files()
 
 
 def test_skill_state_file_is_bootstrapped():
-    assert config.SKILL_STATE_FILE in bootstrap_mod._JSON_FILES
+    assert config.SKILL_STATE_FILE in bootstrap_mod._json_files()
 
 
 def test_bootstrap_initializes_once_across_threads(monkeypatch):

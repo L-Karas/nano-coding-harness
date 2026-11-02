@@ -6,38 +6,60 @@
 每个模型声明 `vision` / `thinking` / `thinking_level_map`（档位 → `reasoning_effort`），
 `thinking_level_map` 中值为 `false` 表示该模型不支持此档位（此时不发送 `reasoning_effort`）。
 
-- `/provider`：填/删 API Key（写入 `.harness/.auth.json`）
+- `/provider`：填/删 API Key（写入 `.nano-harness/.auth.json`）
 - `/model`：从已配置 provider 的模型列表中切换当前会话的模型（只改内存 client，不落盘；默认值需到 `/settings` 修改）
 - `/effort`：切换思考档位（`minimal` / `low` / `medium` / `high` / `max`）
-- `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型（写入 `.harness/.custom_providers.json` /
-  `.harness/.custom_models.json`）
+- `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型（写入 `.nano-harness/.custom_providers.json` /
+  `.nano-harness/.custom_models.json`）
 
 所有 LLM 调用共用单例 `core.client.shared_model_client()`：主循环、子代理、上下文压缩走同一份配置，
 不存在第二处模型来源。
 
-## `.harness/` 配置与数据目录
+## 运行模式
 
-启动时由 `core.bootstrap.bootstrap()` 自动创建
-（`main.py` / TUI `run()` / `start_agent_runtime()` 均会调用；单独 import `core.*` 不再产生文件副作用）：
+入口 `main.py` 用 `--mode` 选定 `.nano-harness/` 的位置，缺省 `dev`：
+
+| 模式 | `.nano-harness/` 位置 | 说明 |
+| --- | --- | --- |
+| `dev`（默认） | `<工作目录>/.nano-harness` | 配置随项目走，适合开发与调试 |
+| `prod` | `~/.nano-harness` | 配置集中到 home，项目目录保持干净 |
+
+规则：
+
+- 两种模式目录名一致；没有旧目录兼容逻辑，也没有模式持久化文件，prod 每次启动都要带
+  `--mode prod`（可按需自建 alias）。
+- `WORKDIR` 恒为启动时的工作目录：工具沙箱、系统提示词、`@` 文件补全与 `.session/<workdir>/`
+  的键都不随模式变化；受影响的只有 `.nano-harness/` 根及其派生路径。
+- prod 下 `.settings.json`、`.permissions.json`、`extensions/`、`.mcp.json` 等对所有项目**全局共享**；
+  会话仍按工作目录分子目录，不会串会话。
+- 模式是进程级、导入期决策：入口解析 `--mode` 后立刻调用 `core.config.configure_mode()`，之后才导入
+  其他 core 模块；裸导入 `core.config`（测试、脚本）一律按 `dev`。`--mode` 只在 `main.py` 生效，
+  `python -m core.tui.ui_textual --smoke` 始终是 dev + smoke。
+
+## `.nano-harness/` 配置与数据目录
+
+启动时由 `core.bootstrap.bootstrap()` 在 `.nano-harness/` 根下自动创建
+（根的位置由 `--mode` 决定，见上节；`main.py` / TUI `run()` / `start_agent_runtime()` 均会调用；
+单独 import `core.*` 不再产生文件副作用）：
 
 | 路径 | 内容 |
 | --- | --- |
-| `.harness/.settings.json` | `AgentConfig` 参数（默认模型与思考档位、压缩与运行参数）：由 `/settings` 写入；`/model` / `/effort` 只切换当前会话的内存 client，不写盘；注销 provider / model 会清空指向它的默认模型引用 |
-| `.harness/.auth.json` | 各 provider 的 `api_key` |
-| `.harness/.mcp/.mcp.json` | MCP Server 配置（`mcpServers`）；每个 server 可选 `"enabled": false` 表示禁用（缺省启用） |
-| `.harness/extensions/<name>/extension.json` | 扩展清单：`enabled` 是使用开关（严格 `true` 才派发；`false` / 缺失仍会 import + `register`，只是不派发），`/extensions` 的 `Ctrl+E` 原子写回并即时切换；`description` 仅展示，其余字段由扩展自读 |
-| `.harness/.skills.json` | 技能启用状态（`{"disabled": [name, ...]}`，缺省全员启用；启动时读取，`/skills` 的 `Ctrl+E` 写入并即时生效） |
-| `.harness/.permissions.json` | 权限规则（terminal 命令正则与外部目录策略 / 文件工具 path 正则与越界策略，见 [`permissions.md`](permissions.md)）：启动时读取，修改后需重启；本期不设写保护 |
-| `~/.agents/skills/<name>/SKILL.md` / `.harness/skills/<name>/SKILL.md` / `.agents/skills/<name>/SKILL.md` | 技能清单三来源（global / user / project，同名 project > user > global；YAML frontmatter + 正文） |
-| `.harness/.memory/*.json` | 长期记忆条目 |
-| `.harness/.session/<workdir>/` | 按工作目录分目录的会话目录：`session-<ts>.jsonl` 会话文件 + `session_index.jsonl` 索引。`<workdir>` 由工作目录绝对路径格式化而来：路径分隔符与盘符冒号转 `_`、空格转 `-`（如 `E:\AI-Programs\nano-harness` → `E__AI-Programs_nano-harness`）；转义有损（可能碰撞），超长路径受文件名长度限制，详见 [ADR-0011](adr/0011-session-directory-per-workdir.md) |
-| `.harness/.scheduled_tasks.json` | 持久化 cron 任务 |
-| `.harness/.task_outputs/tool_results/` | 超长工具输出落盘文件 |
-| `.harness/log/<module>.log` | 各模块日志 |
+| `.nano-harness/.settings.json` | `AgentConfig` 参数（默认模型与思考档位、压缩与运行参数）：由 `/settings` 写入；`/model` / `/effort` 只切换当前会话的内存 client，不写盘；注销 provider / model 会清空指向它的默认模型引用 |
+| `.nano-harness/.auth.json` | 各 provider 的 `api_key` |
+| `.nano-harness/.mcp/.mcp.json` | MCP Server 配置（`mcpServers`）；每个 server 可选 `"enabled": false` 表示禁用（缺省启用） |
+| `.nano-harness/extensions/<name>/extension.json` | 扩展清单：`enabled` 是使用开关（严格 `true` 才派发；`false` / 缺失仍会 import + `register`，只是不派发），`/extensions` 的 `Ctrl+E` 原子写回并即时切换；`description` 仅展示，其余字段由扩展自读 |
+| `.nano-harness/.skills.json` | 技能启用状态（`{"disabled": [name, ...]}`，缺省全员启用；启动时读取，`/skills` 的 `Ctrl+E` 写入并即时生效） |
+| `.nano-harness/.permissions.json` | 权限规则（terminal 命令正则与外部目录策略 / 文件工具 path 正则与越界策略，见 [`permissions.md`](permissions.md)）：启动时读取，修改后需重启；本期不设写保护 |
+| `~/.agents/skills/<name>/SKILL.md` / `.nano-harness/skills/<name>/SKILL.md` / `.agents/skills/<name>/SKILL.md` | 技能清单三来源（global / user / project，同名 project > user > global；YAML frontmatter + 正文） |
+| `.nano-harness/.memory/*.json` | 长期记忆条目 |
+| `.nano-harness/.session/<workdir>/` | 按工作目录分目录的会话目录：`session-<ts>.jsonl` 会话文件 + `session_index.jsonl` 索引。`<workdir>` 由工作目录绝对路径格式化而来：路径分隔符与盘符冒号转 `_`、空格转 `-`（如 `E:\AI-Programs\nano-harness` → `E__AI-Programs_nano-harness`）；转义有损（可能碰撞），超长路径受文件名长度限制，详见 [ADR-0011](adr/0011-session-directory-per-workdir.md) |
+| `.nano-harness/.scheduled_tasks.json` | 持久化 cron 任务 |
+| `.nano-harness/.task_outputs/tool_results/` | 超长工具输出落盘文件 |
+| `.nano-harness/log/<module>.log` | 各模块日志 |
 
 ## `/settings` 参数一览
 
-`/settings` 弹窗编辑 `.harness/.settings.json` 的 `AgentConfig` 参数。交互：↑/↓ 或 Tab 切字段，
+`/settings` 弹窗编辑 `.nano-harness/.settings.json` 的 `AgentConfig` 参数。交互：↑/↓ 或 Tab 切字段，
 Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 或点击直接切换并落盘；Esc 关窗
 （未保存的改动丢弃）。数字字段留空 = 回退 `AgentConfig` 默认值（没有“未设置”语义）；
 未在表单中的字段（`max_retries`、`max_recovery_retries`、`base_retry_delay_ms`、`compact_type`）
@@ -89,7 +111,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 
 `compact_trigger_tokens` / `compact_reserve_tokens` / `summary_max_tokens` 等来自 `AgentConfig`
 （默认值见 `core/config.py`），均为绝对 token 数，可在 `/settings` 中调整；上下文长度与最大输出
-直接取自当前模型的注册表配置（`core/client/models.json` / `.harness/.custom_models.json`）。
+直接取自当前模型的注册表配置（`core/client/models.json` / `.nano-harness/.custom_models.json`）。
 压缩阈值按当前模型窗口动态解析，切换模型（`/model`）后立即生效；完整优先级与退化处理见
 [`context-compaction.md`](context-compaction.md#22-按当前模型解析coreclientmodelpy)。
 `max_output` 只用于调用时的输出钳制，不参与阈值计算。

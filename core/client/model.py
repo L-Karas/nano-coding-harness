@@ -424,7 +424,7 @@ def model_supports_vision(client) -> bool:
 
 # ---------- 进程内共享 ModelClient ----------
 # 使用方：main agent / 上下文压缩 → shared_model_client；sub-agent → shared_sub_model_client。
-# 配置来源：.harness/.settings.json 的 default_model / default_sub_model 及对应 thinking level。
+# 配置来源：.nano-harness/.settings.json 的 default_model / default_sub_model 及对应 thinking level。
 # 惰性构建：首次实际调用时才实例化，import 阶段无副作用（测试/演示环境可安全导入）。
 # 无需加锁：主 agent 与 cron 的 agent 回合已被 TurnRunner 的锁串行，且每轮先建 client 再执行 tool；
 # sub-agent 只能在主回合中途被 spawn，届时对应单例必然已建立，不存在并发首次实例化。

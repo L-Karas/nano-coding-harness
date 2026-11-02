@@ -12,7 +12,7 @@ from core.tools.base_tools.read import ReadFile
 
 @pytest.fixture
 def tool_results_dir(tmp_path, monkeypatch):
-    """把落盘目录指向 tmp_path，避免污染真实 .harness。"""
+    """把落盘目录指向 tmp_path，避免污染真实 .nano-harness。"""
     monkeypatch.setattr(compact_mod, "TOOL_RESULTS_DIR", tmp_path)
     return tmp_path
 

@@ -1,6 +1,6 @@
 """测试进程初始化：与生产 core.bootstrap 同源，但不启动 cron 后台线程。
 
-各测试模块在导入期就会调用 get_logger() 写日志、读模型注册表；这里先建 .harness，
+各测试模块在导入期就会调用 get_logger() 写日志、读模型注册表；这里先建 .nano-harness，
 再加载内置扩展 / 技能 / 模型注册表，使测试环境与运行进程的默认状态一致。
 空规则注册内置扩展：测试不依赖工作目录下的 .permissions.json。
 """
@@ -27,7 +27,7 @@ from core.extension.builtin.permission import Rules  # noqa: E402
 import core.skill.skills as skills_mod  # noqa: E402
 
 register_builtin_extensions(rules=Rules())
-# 测试不读写开发者真实的 .harness/.skills.json；启动扫描后固定为全员启用
+# 测试不读写开发者真实的 .nano-harness/.skills.json；启动扫描后固定为全员启用
 skills_mod.SKILL_STATE_FILE = Path(
     tempfile.mkdtemp(prefix="nano-harness-skills-")) / ".skills.json"
 skills_mod.scan_skills()

@@ -60,7 +60,7 @@ prepare_messages(messages, ctx, sub_model=?)
 - `summary_max_tokens` 经 `clamp_max_tokens` 钳到当前模型 `max_output`。
 
 上下文长度与最大输出取自当前模型的注册表配置：`core/client/models.json`、
-`.harness/.custom_models.json`。
+`.nano-harness/.custom_models.json`。
 
 ### 2.3 切换模型后的行为
 
@@ -79,7 +79,7 @@ prepare_messages(messages, ctx, sub_model=?)
 - `read_file` 的输出已在工具侧按同一上限截断，并自带 offset 续读提示 → 跳过，不落盘、不二次截断。
 - 其余工具经 `truncate_tool_output` 按**行数 2000 / 字节 50KB 双上限**截断，任一先到即停，
   停处附 `[Truncated: … offset=N]` 续读提示（`core/context/truncate.py`）。
-- 一旦截断：全文落盘到 `.harness/.task_outputs/tool_results/<tool_call_id>.text`
+- 一旦截断：全文落盘到 `.nano-harness/.task_outputs/tool_results/<tool_call_id>.text`
   （无 id 时用随机文件名），正文替换为 `<persisted-output>` 包裹：
   `<saved-path>` + `<content-preview>`（有界预览）。需要全文时用
   `read_file <saved-path> offset=N` 续读。
@@ -147,7 +147,7 @@ UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），ru
 
 ## 6. 配置
 
-`.harness/.settings.json` 由 `/settings` 写入，加载时直接交给 `AgentConfig` 校验。
+`.nano-harness/.settings.json` 由 `/settings` 写入，加载时直接交给 `AgentConfig` 校验。
 `/settings` 中两个压缩字段为整数输入（`type="integer"`），回显不带 `.0`。
 旧字段 `compact_threshold` / `reserve_threshold` 与比例语义已废弃，文件中残留的未知字段会被忽略。
 

@@ -21,25 +21,49 @@ def format_workdir_name(workdir: Path) -> str:
 
 
 WORKDIR = Path.cwd()
-HARNESS_CONFIG_DIR = WORKDIR / ".harness"
-LOG_DIR = HARNESS_CONFIG_DIR / "log"
-SKILL_DIR = HARNESS_CONFIG_DIR / "skills"
-EXTENSION_DIR = HARNESS_CONFIG_DIR / "extensions"
-MEMORY_DIR = HARNESS_CONFIG_DIR / ".memory"
-TOOL_RESULTS_DIR = HARNESS_CONFIG_DIR / ".task_outputs" / "tool_results"
-MCP_DIR = HARNESS_CONFIG_DIR / ".mcp"
-SESSION_ROOT_DIR = HARNESS_CONFIG_DIR / ".session"
-SESSION_DIR = SESSION_ROOT_DIR / format_workdir_name(WORKDIR)
+HARNESS_DIR_NAME = ".nano-harness"
 
-HARNESS_SETTING_FILE = HARNESS_CONFIG_DIR / ".settings.json"
-SKILL_STATE_FILE = HARNESS_CONFIG_DIR / ".skills.json"
-PROVIDER_AUTH_FILE = HARNESS_CONFIG_DIR / ".auth.json"
-CUSTOM_PROVIDER_FILE = HARNESS_CONFIG_DIR / ".custom_providers.json"
-CUSTOM_MODEL_FILE = HARNESS_CONFIG_DIR / ".custom_models.json"
-SESSION_INDEX_FILE = SESSION_DIR / "session_index.jsonl"
-MCP_CONFIG_FILE = MCP_DIR / ".mcp.json"
-CRON_TASK_FILE = HARNESS_CONFIG_DIR / ".scheduled_tasks.json"
-PERMISSION_FILE = HARNESS_CONFIG_DIR / ".permissions.json"
+# 运行模式：dev = .nano-harness 位于项目目录（WORKDIR），prod = 位于 home 目录。
+# 由入口 --mode 决定（见 main.py）；默认 dev 保持「直接 uv run main.py」的旧行为。
+Mode = Literal["dev", "prod"]
+DEFAULT_MODE: Mode = "dev"
+MODE: Mode = DEFAULT_MODE
+
+
+def _recompute_paths(mode: Mode) -> None:
+    """按 mode 重算全部 .nano-harness 派生路径（模块级常量）。
+
+    WORKDIR 不受 mode 影响：它始终是项目根（工具沙箱、系统提示词、@ 补全、会话目录键）。
+    维护提示：新增路径常量必须同时加入下方 global 列表与 tests/test_mode.py::_PATH_NAMES，
+    否则它会静默停在 dev 值。
+    """
+    global MODE, HARNESS_CONFIG_DIR, LOG_DIR, SKILL_DIR, EXTENSION_DIR, MEMORY_DIR, \
+        TOOL_RESULTS_DIR, MCP_DIR, SESSION_ROOT_DIR, SESSION_DIR, HARNESS_SETTING_FILE, \
+        SKILL_STATE_FILE, PROVIDER_AUTH_FILE, CUSTOM_PROVIDER_FILE, CUSTOM_MODEL_FILE, \
+        SESSION_INDEX_FILE, MCP_CONFIG_FILE, CRON_TASK_FILE, PERMISSION_FILE
+    MODE = mode
+    root = (WORKDIR if mode == "dev" else Path.home()) / HARNESS_DIR_NAME
+    HARNESS_CONFIG_DIR = root
+    LOG_DIR = root / "log"
+    SKILL_DIR = root / "skills"
+    EXTENSION_DIR = root / "extensions"
+    MEMORY_DIR = root / ".memory"
+    TOOL_RESULTS_DIR = root / ".task_outputs" / "tool_results"
+    MCP_DIR = root / ".mcp"
+    SESSION_ROOT_DIR = root / ".session"
+    SESSION_DIR = SESSION_ROOT_DIR / format_workdir_name(WORKDIR)
+    HARNESS_SETTING_FILE = root / ".settings.json"
+    SKILL_STATE_FILE = root / ".skills.json"
+    PROVIDER_AUTH_FILE = root / ".auth.json"
+    CUSTOM_PROVIDER_FILE = root / ".custom_providers.json"
+    CUSTOM_MODEL_FILE = root / ".custom_models.json"
+    SESSION_INDEX_FILE = SESSION_DIR / "session_index.jsonl"
+    MCP_CONFIG_FILE = MCP_DIR / ".mcp.json"
+    CRON_TASK_FILE = root / ".scheduled_tasks.json"
+    PERMISSION_FILE = root / ".permissions.json"
+
+
+_recompute_paths(DEFAULT_MODE)
 
 GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
@@ -140,3 +164,18 @@ class AgentConfigManager:
 
 
 CONFIGMANAGER = AgentConfigManager.load_config()
+
+
+def configure_mode(mode: Mode) -> None:
+    """切换运行模式：重算 .nano-harness 根目录与全部派生路径，并按新根重载 AgentConfig。
+
+    必须在其他 core 模块导入前调用：那些模块 `from core.config import X` 是导入期值绑定，
+    早于本调用导入就仍持有 dev 路径（导入顺序由 main.py 与 tests/test_mode.py 保证/锁定）。
+    """
+    if mode not in ("dev", "prod"):
+        raise ValueError(f"unknown mode: {mode!r}")
+    if mode == MODE:
+        return
+    _recompute_paths(mode)
+    # 保持 manager 实例身份（消费方可能在 configure_mode 前已持有引用），只换配置内容
+    CONFIGMANAGER.config = AgentConfigManager.load_config().config

@@ -1,4 +1,4 @@
-"""扩展加载器：读取 .harness/extensions 下的扩展包，统一注册并按清单开关派发。
+"""扩展加载器：读取 .nano-harness/extensions 下的扩展包，统一注册并按清单开关派发。
 
 每个扩展是一个含 extension.json 与 __init__.py 的目录；register(api) 通过
 ExtensionAPI 缓冲注册，正常返回后由 host 一次性提交到派发器，失败则整体作废（原子性）。

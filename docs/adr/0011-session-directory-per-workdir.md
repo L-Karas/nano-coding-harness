@@ -4,16 +4,16 @@
 
 accepted
 
-`SessionManager` 的会话文件与 `session_index.jsonl` 不再直接放在 `.harness/.session/`，而是放在
-`.harness/.session/<格式化工作目录>/`。格式化规则：工作目录绝对路径的分隔符（`\` / `/`）与盘符
+`SessionManager` 的会话文件与 `session_index.jsonl` 不再直接放在 `.nano-harness/.session/`，而是放在
+`.nano-harness/.session/<格式化工作目录>/`。格式化规则：工作目录绝对路径的分隔符（`\` / `/`）与盘符
 冒号 `:` 替换为 `_`，空格替换为 `-`；例如 `E:\AI-Programs\nano-harness` →
-`E__AI-Programs_nano-harness`。`SESSION_ROOT_DIR` 保留 `.harness/.session` 作为根，`SESSION_DIR`
+`E__AI-Programs_nano-harness`。`SESSION_ROOT_DIR` 保留 `.nano-harness/.session` 作为根，`SESSION_DIR`
 指向当前工作目录的子目录，`SESSION_INDEX_FILE` 跟随到该子目录。
 
 已知限制：转义映射有损，`E:\a_b` 与 `E:\a/b` 会落到同一目录（会话与索引共享）；完整路径被压成
 单段目录名，工作目录过深时可能超过文件系统 255 字节的单个文件名限制。子代理的
 `working_directory` 会话仍归入主 `WORKDIR` 的会话目录，不按子代理目录拆分。旧版扁平的
-`.harness/.session/` 会话不做自动迁移，旧文件保留在原处。
+`.nano-harness/.session/` 会话不做自动迁移，旧文件保留在原处。
 
 ## Considered Options
 

@@ -107,7 +107,7 @@ class _CommandFlow:
         if not rows:
             self._notify(
                 "No skills found: add SKILL.md manifests under the global (~/.agents/skills), "
-                "user (.harness/skills) or project (.agents/skills) skills directory",
+                "user (.nano-harness/skills) or project (.agents/skills) skills directory",
                 title="⚠️ Skills")
             return
         self.push_screen(SkillsScreen(rows), callback=self._on_skill_picked)

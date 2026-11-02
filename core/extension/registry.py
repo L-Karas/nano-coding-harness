@@ -13,7 +13,7 @@ ExtensionStatus = Literal["enabled", "disabled", "error"]
 
 @dataclass(frozen=True)
 class ExtensionInfo:
-    """一条扩展登记：user = .harness/extensions 下的文件夹；builtin = 内置模块。
+    """一条扩展登记：user = .nano-harness/extensions 下的文件夹；builtin = 内置模块。
 
     enabled 是有效使用状态：清单 enabled 为 true 且加载成功才为 True；禁用但加载成功的
     扩展仍保留 events，供 /extensions 展示 hooks。error 标记加载 / 注册失败；detail 只是

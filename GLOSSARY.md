@@ -28,6 +28,11 @@ _Avoid_: 回合（turn）、loop
 harness 运行期的展示状态：todo 列表、后台任务、子代理；由 RuntimeState 单例持有，经类型化快照读取。
 _Avoid_: 全局变量、面板数据源
 
+**Mode**:
+进程级运行模式，决定 `.nano-harness/` 的根：`dev` 在项目目录（默认）、`prod` 在 home 目录；
+入口 `--mode` 选定后不再变化，工作目录（工具沙箱、会话键）不受影响。
+_Avoid_: 环境变量、运行期切换、配置优先级
+
 **Subagent role**:
 子代理的展示角色标签（如 reviewer / researcher），在右栏 Subagents 条目中替代内部 id；仅影响展示，
 不改变提示词、工具池或模型。
@@ -58,7 +63,7 @@ _Avoid_: 会话文件、session_map
 _Avoid_: 固定压缩阈值、按 max_output 计算阈值
 
 **Skill state**:
-技能对模型的可见性开关，持久化在 `.harness/.skills.json`（只记禁用名，缺省启用）；
+技能对模型的可见性开关，持久化在 `.nano-harness/.skills.json`（只记禁用名，缺省启用）；
 关闭后从系统提示词移除，并让 `load_skill` 拒绝。
 _Avoid_: 技能配置、enabled 列表
 

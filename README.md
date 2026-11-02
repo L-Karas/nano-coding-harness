@@ -11,16 +11,18 @@
 - **两层上下文压缩**：工具输出统一截断 + 历史摘要，阈值随当前模型动态解析；
 - **健壮性**：Esc 中断、按 provider 分类的错误退避重试、截断自动扩窗与续写恢复、会话逐条落盘；
 - **子代理**：独立提示词与工具池，后台运行、最多 30 轮，只回传最终文本结论，右栏按 role 展示；
-- **可扩展**：`.harness/.permissions.json` 权限规则（allow / ask / deny）+ `.harness/extensions/` 外部扩展五个事件介入（`before_tool` 决定票与内置权限门）。
+- **可扩展**：`.nano-harness/.permissions.json` 权限规则（allow / ask / deny）+ `.nano-harness/extensions/` 外部扩展五个事件介入（`before_tool` 决定票与内置权限门）。
 
 ## 快速开始
 
 ```bash
 uv sync          # 安装依赖（requires-python >= 3.13）
-uv run main.py   # 启动 Textual TUI
+uv run main.py               # 启动 Textual TUI（dev：.nano-harness 在项目目录）
+uv run main.py --mode prod   # prod：.nano-harness 在 home 目录（~/.nano-harness）
 ```
 
-首次启动会在项目根自动创建 `.harness/` 配置与数据目录（见「配置目录」）。
+首次启动会按模式自动创建 `.nano-harness/` 配置与数据目录（见「配置目录」）。
+prod 需要每次带上 `--mode`，可自建 alias：`alias nhp='uv run main.py --mode prod'`。
 模型未配置时界面可正常打开，先用 `/provider` 填 API Key，再 `/model` 选模型即可对话。
 
 ```bash
@@ -33,7 +35,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 内置 Deepseek、Qwen、Kimi、Z.AI 等 provider（`core/client/models.json`），也可注册自定义提供方；
 模型的视觉 / 思考档位声明与注册表细节见 [`docs/configuration.md`](docs/configuration.md)。
 
-- `/provider`：填/删 API Key（写入 `.harness/.auth.json`）
+- `/provider`：填/删 API Key（写入 `.nano-harness/.auth.json`）
 - `/model`：从已配置 provider 的模型列表中切换当前会话模型（只改内存 client，不落盘；默认模型在 `/settings` 修改）
 - `/effort`：切换思考档位（`minimal` / `low` / `medium` / `high` / `max`）
 - `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型
@@ -69,19 +71,22 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 
 ## 配置目录
 
-首次启动由 `core.bootstrap.bootstrap()` 自动创建 `.harness/`（配置、会话、技能、任务、日志等，
-幂等且线程安全）。完整目录清单与运行参数见 [`docs/configuration.md`](docs/configuration.md)。
+`--mode` 决定 `.nano-harness/` 的位置：`dev`（默认）在项目目录，`prod` 在 home 目录
+（`~/.nano-harness`）；两种模式目录名一致，整棵目录树一起搬。工作目录 / 工具沙箱始终是
+当前项目，不随模式变化。首次启动由 `core.bootstrap.bootstrap()` 自动创建
+（配置、会话、技能、任务、日志等，幂等且线程安全）。完整目录清单与模式规则见
+[`docs/configuration.md`](docs/configuration.md)。
 
 ## 权限策略
 
 工具调用先过内置权限门（`before_tool` 的 gate 阶段）：硬编码地板永远拒绝（`sudo` 等），
-用户可在 `.harness/.permissions.json` 写规则（terminal 命令正则与外部目录策略 / 文件工具
+用户可在 `.nano-harness/.permissions.json` 写规则（terminal 命令正则与外部目录策略 / 文件工具
 path 正则与越界策略）表达 allow / ask / deny；外部扩展也能用 `decide()` 投票，冲突时弹确认卡。
 判定顺序、规则格式与已知风险见 [`docs/permissions.md`](docs/permissions.md)。
 
 ## 扩展系统
 
-外部扩展放在 `.harness/extensions/<name>/`，不改 harness 源码即可在 LLM 调用前/后、工具调用前/后
+外部扩展放在 `.nano-harness/extensions/<name>/`，不改 harness 源码即可在 LLM 调用前/后、工具调用前/后
 介入主流程，或用 `tool_execute` 接管内置工具执行。加载规则、事件语义、实战配方与排错见
 [`docs/extensions.md`](docs/extensions.md)。
 
@@ -92,7 +97,7 @@ path 正则与越界策略）表达 allow / ask / deny；外部扩展也能用 `
 | [`docs/architecture.md`](docs/architecture.md) | core/ 模块地图、Agent 主循环、两层上下文压缩、健壮性设计 |
 | [`docs/tools.md`](docs/tools.md) | 工具系统与内置工具清单、后台任务 |
 | [`docs/tui.md`](docs/tui.md) | TUI 布局与界面模块 |
-| [`docs/configuration.md`](docs/configuration.md) | 模型注册表、`.harness/` 目录、`/settings` 参数与压缩运行参数 |
+| [`docs/configuration.md`](docs/configuration.md) | 模型注册表、`.nano-harness/` 目录、`/settings` 参数与压缩运行参数 |
 | [`docs/context-compaction.md`](docs/context-compaction.md) | 两层上下文压缩：触发 / 保留预算、切分与摘要、模型切换行为 |
 | [`docs/features.md`](docs/features.md) | MCP、Skills、Memory、Cron 调度 |
 | [`docs/permissions.md`](docs/permissions.md) | 权限策略：三层判定、规则文件、扩展决定票与风险 |

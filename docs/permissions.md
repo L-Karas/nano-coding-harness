@@ -30,7 +30,7 @@
    变量拼接、`sh -c` 内层脚本与粘连 flag（`-o/tmp/x`）不覆盖。
 
 `approval_mode` 为 `Yolo` 时**只执行地板校验**：规则层 / 扩展表态与默认层整体跳过。
-该模式即「完全相信 LLM 的输出结果」——`.harness/.permissions.json` 的规则与扩展的
+该模式即「完全相信 LLM 的输出结果」——`.nano-harness/.permissions.json` 的规则与扩展的
 `decide` / `block` 票在此模式下都不再生效。
 
 越界判定的基准是**调用方工作目录**：即 `BeforeToolContext.cwd`（`ToolContext.cwd`），
@@ -59,7 +59,7 @@
 
 ### 位置与生命周期
 
-- 路径：`.harness/.permissions.json`（`core.config.PERMISSION_FILE`）；`init_harness()` 在文件
+- 路径：`.nano-harness/.permissions.json`（`core.config.PERMISSION_FILE`）；`init_harness()` 在文件
   缺失时创建 `{}`。
 - 启动时读取一次（`register_builtin_extensions()` → `load_rules()`）；**修改后需重启进程**，
   与外部扩展一致，本期不做热加载。
@@ -186,9 +186,11 @@ user（外部扩展 / 测试直接注册的回调）→ observer（内置观察�
 
 ## 已知风险
 
-`.harness/.permissions.json` 与 `.harness/extensions/` 都位于工作目录内，agent 作为进程内代码
-**可以写入这两个位置**；修改在重启进程后生效。本期不设写保护（用户已确认），应由用户人工审阅
-规则与扩展的变更，只放入可信内容。
+`.nano-harness/.permissions.json` 与 `.nano-harness/extensions/` 位于当前模式的配置根（`dev` 在
+项目目录、`prod` 在 `~/.nano-harness`）。agent 作为进程内代码**可以写入这两个位置**；修改在重启
+进程后生效。本期不设写保护（用户已确认），应由用户人工审阅规则与扩展的变更，只放入可信内容。
+注意风险边界随模式变化：`dev` 下两者在工具沙箱内，`prod` 下在 home（沙箱外），后续若引入
+「沙箱外默认拒绝」类规则，需重新评估 prod 下的可写性。
 
 > `examples/tutorials/s08_hook_system.py` 是独立教学示例，不被运行时读取，
 > 与上述机制无关。

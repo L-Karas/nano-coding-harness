@@ -1,4 +1,4 @@
-"""最小扩展示例：复制本目录到 .harness/extensions/ 后重启进程生效。"""
+"""最小扩展示例：复制本目录到 .nano-harness/extensions/ 后重启进程生效。"""
 
 
 def register(api):

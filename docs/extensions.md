@@ -6,7 +6,7 @@
 - 工具调用前（`before_tool`）/ 后（`after_tool`）
 - 工具执行接管（`tool_execute`）
 
-扩展是运行在 agent 进程内的普通 Python 包，启动时从工作目录下的 `.harness/extensions/` 加载。**所有清单合法（且不以 `_` 开头）的扩展都会尝试 import 并执行 `register(api)`**；成功注册后，`extension.json` 的 `enabled` 只控制 hook 是否参与派发，因此可以在 `/extensions` 窗口即时启用/停用，不需要重新注册。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
+扩展是运行在 agent 进程内的普通 Python 包，启动时从当前模式的 `.nano-harness/extensions/` 加载（`dev` 在工作目录下、`prod` 在 `~/.nano-harness`）。**所有清单合法（且不以 `_` 开头）的扩展都会尝试 import 并执行 `register(api)`**；成功注册后，`extension.json` 的 `enabled` 只控制 hook 是否参与派发，因此可以在 `/extensions` 窗口即时启用/停用，不需要重新注册。它可以观察数据、原地修改数据，也可以中止 LLM 调用（`abort`）、以决定票参与工具权限裁决、接管工具执行与注入额外消息。
 
 扩展所需的自定义配置可以直接写在扩展目录的 `extension.json` 中；加载器解析 `enabled`（使用开关）与可选的 `description`（后者仅用于 `/extensions` 展示），其余字段由扩展在 `register(api)` 里自行读取（见 5.8）。
 
@@ -27,10 +27,10 @@
 
 ### 1.1 目录结构
 
-每个扩展是一个包含 `extension.json` 与 `__init__.py` 的文件夹，放在 `.harness/extensions/` 下：
+每个扩展是一个包含 `extension.json` 与 `__init__.py` 的文件夹，放在 `.nano-harness/extensions/` 下：
 
 ```
-.harness/extensions/
+.nano-harness/extensions/
   my_ext/
     extension.json     # 启用开关 + 可选展示描述 + 扩展自定义配置（见 5.8）
     __init__.py        # 入口：必须定义 register(api)
@@ -81,15 +81,15 @@ async def on_after_tool(ctx):
 仓库自带可直接复制的最小示例：
 
 ```bash
-mkdir -p .harness/extensions
-cp -r examples/extension_example .harness/extensions/extension_example
+mkdir -p .nano-harness/extensions
+cp -r examples/extension_example .nano-harness/extensions/extension_example
 ```
 
 **重启进程**后（扩展在启动时加载并注册一次），正常发起一轮对话，即可在模型输入或工具结果中看到示例扩展追加的标记。之后可在 `/extensions` 中用 `Ctrl+E` 即时启用/停用；修改扩展代码或自定义配置仍需重启。也可以直接观察日志：
 
 ```bash
-tail -f .harness/log/loader.log       # 加载 / 注册 / 启停相关日志
-tail -f .harness/log/dispatcher.log   # hook 运行异常日志
+tail -f .nano-harness/log/loader.log       # 加载 / 注册 / 启停相关日志
+tail -f .nano-harness/log/dispatcher.log   # hook 运行异常日志
 ```
 
 ### 1.4 TUI 查看与启停扩展
@@ -98,7 +98,7 @@ TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`
 
 - 已启用与未启用的扩展都会列出；状态标签在来源 tag 前：已启用项为绿色 `●` 且不显示
   标签；用户禁用项为米黄 `○` 并显示 `(disabled)`；加载 / 注册失败项为红色 `○` 并显示
-  `(error)`，例如 `name (disabled) [user]`。`[user]` = `.harness/extensions/` 下的外部
+  `(error)`，例如 `name (disabled) [user]`。`[user]` = `.nano-harness/extensions/` 下的外部
   扩展，`[builtin]` = 内置观察者 / 权限门。
 - 清单含非空 `description` 时，描述显示在名称下方（第二行）；hook 行顺延到下一行（hook
   文本使用青蓝色，与描述区分），无描述时 hook / `no hooks` 占第二行。
@@ -120,7 +120,7 @@ TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`
 
 | 规则 | 行为 |
 | --- | --- |
-| 扫描范围 | `.harness/extensions/` 的**直接子文件夹**（不递归）；文件与非文件夹忽略 |
+| 扫描范围 | `.nano-harness/extensions/` 的**直接子文件夹**（不递归）；文件与非文件夹忽略 |
 | 跳过前缀 | 名称以 `_` 开头的文件夹跳过（如 `_draft/`） |
 | 清单门槛 | `extension.json` 缺失、JSON 非法或不是对象 → 不加载、不注册 |
 | 使用开关 | `enabled` **严格为布尔 `true`**（Python 的 `is True`）时 hook 参与派发；`false`、缺失、`"true"`、`1`、`null` → 仍 import + `register(api)`，但不派发 |
@@ -135,7 +135,7 @@ TUI 里输入 `/extensions` 打开扩展列表弹窗（列表样式同 `/skills`
 | 幂等 | 进程内 `load_extensions()` 成功后只生效一次；目录级异常可重试，已处理过的目录会跳过 |
 | 生效时机 | 启动时加载并注册一次；`/extensions` 的 `Ctrl+E` 改写 `enabled` 并即时切换派发。修改 `description`、自定义配置、扩展代码或新增扩展目录后**必须重启进程** |
 
-`.harness/extensions/` 相对于**启动进程时的工作目录**（`WORKDIR`）。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
+`.nano-harness/extensions/` 位于当前模式的配置根：`dev` 在启动进程时的工作目录（`WORKDIR`）下，`prod` 在 `~/.nano-harness`。扩展目录已被 `.gitignore` 忽略，扩展代码不进版本控制。
 
 > **包内导入规则**：扩展目录**不在 `sys.path` 上**（加载器刻意如此，避免与标准库/项目包重名），因此扩展包内部的多文件组织**必须使用相对导入**（如 `from .helpers import x`、`from .subpkg import y`）；裸绝对导入（`import helpers`）不会命中扩展目录，会导致 `ModuleNotFoundError` 或误命中同名模块。harness 内部模块（`core.*` / `logger`）与第三方包不受此限制，照常绝对导入。
 
@@ -331,11 +331,12 @@ async def redact_secrets(ctx):
 ```python
 import json
 from datetime import datetime
-from pathlib import Path
+
+from core.config import LOG_DIR
 
 
 def audit_tool_call(ctx):
-    path = Path(".harness") / "log" / "my_ext_audit.jsonl"
+    path = LOG_DIR / "my_ext_audit.jsonl"  # 跟随当前模式的配置根（dev / prod）
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps({
@@ -424,7 +425,7 @@ def _mark(ctx, tag):
 - 清单在加载前已通过 JSON 解析（`enabled` 只决定是否派发，不阻止进入 `register`）；读取时仍建议用默认值兜底，或让异常冒泡使整个扩展作废。
 - 加载器不校验自定义字段：类型、必填项与取值范围由扩展自己校验。
 - 自定义配置在 `register` 时读取一次，修改后**需要重启进程**；`enabled` 可由 `/extensions` 的 `Ctrl+E` 热切换。
-- 敏感信息优先用环境变量（现有 `jev-for-*` 示例使用 `TYPESAFE_API_KEY`）；`.harness/extensions/` 已被 `.gitignore` 忽略，但仍不要把密钥写进准备分享或提交的扩展目录。
+- 敏感信息优先用环境变量（现有 `jev-for-*` 示例使用 `TYPESAFE_API_KEY`）；`.nano-harness/extensions/` 已被 `.gitignore` 忽略，但仍不要把密钥写进准备分享或提交的扩展目录。
 
 ## 6. 排错
 
@@ -432,8 +433,8 @@ def _mark(ctx, tag):
 
 | 日志文件 | 内容 |
 | --- | --- |
-| `.harness/log/loader.log` | 加载成功（INFO，含扩展名与注册回调数；禁用扩展也会加载） / 清单缺失 / JSON 非法 / 导入失败 / 缺少 `register` / 注册中途抛错 / 启停写回错误，前缀 `[Extension]` |
-| `.harness/log/dispatcher.log` | 每次回调执行成功（DEBUG，含模块名、函数名与事件名） / 回调运行期异常（外部扩展 fail-open、内置权限门 fail-closed，均记 ERROR） |
+| `.nano-harness/log/loader.log` | 加载成功（INFO，含扩展名与注册回调数；禁用扩展也会加载） / 清单缺失 / JSON 非法 / 导入失败 / 缺少 `register` / 注册中途抛错 / 启停写回错误，前缀 `[Extension]` |
+| `.nano-harness/log/dispatcher.log` | 每次回调执行成功（DEBUG，含模块名、函数名与事件名） / 回调运行期异常（外部扩展 fail-open、内置权限门 fail-closed，均记 ERROR） |
 
 ### 6.2 常见「扩展没生效」原因
 
@@ -442,7 +443,7 @@ def _mark(ctx, tag):
 3. **文件夹以 `_` 开头**：会被跳过。
 4. **缺少 `__init__.py` 或 `register`**：该扩展被跳过，检查 `loader.log`。
 5. **`register` 里抛错**：例如 `api.on("before_llm", "not-callable")`（`TypeError`）或事件名拼写错误（`ValueError`）。原子提交意味着此时**该扩展零注册**，其它扩展不受影响。
-6. **写错了目录**：必须是**启动进程时工作目录**下的 `.harness/extensions/`，且只扫描直接子文件夹。
+6. **写错了目录**：必须是**启动进程时工作目录**下的 `.nano-harness/extensions/`，且只扫描直接子文件夹。
 7. **回调异常被 fail-open 吞掉**：外部回调异常只记 `dispatcher.log` 并视为弃权（内置权限门是 fail-closed，异常会导致拒绝）；`inject_messages` / `tool_calls` 写成非 list 会被丢弃并记 ERROR，`ctx.decisions` 直接塞非 `Decision` 对象会被拒绝。
 8. **包内模块用了裸绝对导入**：`import helpers` / `from helpers import x` 不会命中扩展目录（扩展目录不在 `sys.path`），必须写成 `from .helpers import x`；此时扩展整体加载失败，见 `loader.log`。
 9. **`tool_execute` 接管没生效**：只写了 `ctx.result` 没调 `ctx.handle()`；或回调抛异常被 fail-open 吞掉（`dispatcher.log`）后回退执行了内置实现——注意这可能触发内置的真实副作用。

@@ -18,7 +18,7 @@ async def run(app, pilot) -> None:
     # /settings 在 / 指令候选表；Enter 应用候选并提交 → 打开设置窗
     await type_query(prompt, pilot, "/sett")
     assert prompt._candidates == ["/settings"], prompt._candidates
-    with tempfile.TemporaryDirectory() as tmp:  # 隔离：冒烟不写真实 .harness/.settings.json
+    with tempfile.TemporaryDirectory() as tmp:  # 隔离：冒烟不写真实 .nano-harness/.settings.json
         setting_file = Path(tmp) / ".settings.json"
         orig = config_mod.HARNESS_SETTING_FILE
         orig_cfg = config_mod.CONFIGMANAGER.config

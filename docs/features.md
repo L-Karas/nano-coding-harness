@@ -2,7 +2,7 @@
 
 ## MCP 接入
 
-编辑 `.harness/.mcp/.mcp.json`：
+编辑 `.nano-harness/.mcp/.mcp.json`：
 
 ```json
 {
@@ -24,7 +24,7 @@
 
 ## Skills
 
-技能从三处扫描，同名靠后来源覆盖靠前：global `~/.agents/skills/`、user `.harness/skills/`、project `<cwd>/.agents/skills/`（优先级 project > user > global）。每处一个 `<name>/SKILL.md`，YAML frontmatter 提供 `name` / `description`：
+技能从三处扫描，同名靠后来源覆盖靠前：global `~/.agents/skills/`、user `.nano-harness/skills/`、project `<cwd>/.agents/skills/`（优先级 project > user > global）。每处一个 `<name>/SKILL.md`，YAML frontmatter 提供 `name` / `description`：
 
 ```markdown
 ---
@@ -38,14 +38,14 @@ description: 一句话说明这个技能做什么
 `/skills` 弹窗中 Enter/点击直接把技能作为一轮对话发出；Tab 把 `[Invoke skill '<name>']` 填入输入栏
 并聚焦，用户可继续写补充消息后一起发送。方括号只包住调用本身，其后内容即补充信息；
 技能调用视为用户消息，可作为会话标题并参与 `/fork`。
-`Ctrl+E` 切换选中技能的启用状态，落盘到 `.harness/.skills.json`（`{"disabled": [name, ...]}`）：
+`Ctrl+E` 切换选中技能的启用状态，落盘到 `.nano-harness/.skills.json`（`{"disabled": [name, ...]}`）：
 禁用项从系统提示词表移除、`load_skill` 返回不可用，窗口中显示为米黄 `○`（同 `/extensions` 的禁用项），可再次切换恢复。
 扫描时会剔除已不存在的禁用名；状态文件缺失按全员启用处理，损坏时 fail-open（全员启用）并在
 `/skills` 顶部显示一条只读故障行。
 
 ## Extensions
 
-外部扩展放在 `.harness/extensions/<name>/`，由 `extension.json` + `__init__.py` 组成。所有清单合法的
+外部扩展放在 `.nano-harness/extensions/<name>/`，由 `extension.json` + `__init__.py` 组成。所有清单合法的
 扩展在启动时统一 import 并执行 `register(api)`；`enabled: true` 才让 hook 参与派发，禁用只抑制派发，
 不阻止扩展代码执行（扩展必须是可信代码）。`/extensions` 窗口用 `Ctrl+E` 改写该扩展的 `enabled`
 并即时切换派发开关，不需要重启；禁用行仍展示已注册的 hooks。修改扩展代码或自定义配置、新增扩展目录
@@ -53,12 +53,12 @@ description: 一句话说明这个技能做什么
 
 ## Memory
 
-`save_memory` 把记忆写为 `.harness/.memory/memory-<id>.json`，
+`save_memory` 把记忆写为 `.nano-harness/.memory/memory-<id>.json`，
 标题与内容会在每轮构建系统提示词时注入 Memories 段，因此适合沉淀用户偏好与项目约定。
 
 ## Cron 调度
 
 支持标准 5 段表达式：`*`、`*/N`、`a,b`、`a-b`，日期与星期同时限定时按 OR 语义匹配。
 调度线程每秒匹配一次，命中的任务进入队列并记忆「分钟级」触发标记避免重复触发。
-`durable=true` 的任务写入 `.harness/.scheduled_tasks.json` 并在进程启动时加载。
+`durable=true` 的任务写入 `.nano-harness/.scheduled_tasks.json` 并在进程启动时加载。
 `auto_loop` 后台线程取出队列任务后，在 `AGENT_LOCK` 内直接跑一整轮 agent 回合。
