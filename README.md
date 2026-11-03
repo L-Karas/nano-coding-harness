@@ -18,11 +18,11 @@
 ```bash
 uv sync          # 安装依赖（requires-python >= 3.13）
 uv run main.py               # 启动 Textual TUI（dev：.nano-harness 在项目目录）
-uv run main.py --mode prod   # prod：.nano-harness 在 home 目录（~/.nano-harness）
+uv run main.py --production  # prod：.nano-harness 在 home 目录（~/.nano-harness）
 ```
 
 首次启动会按模式自动创建 `.nano-harness/` 配置与数据目录（见「配置目录」）。
-prod 需要每次带上 `--mode`，可自建 alias：`alias nhp='uv run main.py --mode prod'`。
+prod 需要每次带上 `--production`（短写法 `-prod`），可自建 alias：`alias nhp='uv run main.py -prod'`。
 模型未配置时界面可正常打开，先用 `/provider` 填 API Key，再 `/model` 选模型即可对话。
 
 ```bash
@@ -71,7 +71,7 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 
 ## 配置目录
 
-`--mode` 决定 `.nano-harness/` 的位置：`dev`（默认）在项目目录，`prod` 在 home 目录
+`-prod` / `--production` 决定 `.nano-harness/` 的位置：`dev`（默认）在项目目录，`prod` 在 home 目录
 （`~/.nano-harness`）；两种模式目录名一致，整棵目录树一起搬。工作目录 / 工具沙箱始终是
 当前项目，不随模式变化。首次启动由 `core.bootstrap.bootstrap()` 自动创建
 （配置、会话、技能、任务、日志等，幂等且线程安全）。完整目录清单与模式规则见

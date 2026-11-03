@@ -17,7 +17,7 @@
 
 ## 运行模式
 
-入口 `main.py` 用 `--mode` 选定 `.nano-harness/` 的位置，缺省 `dev`：
+入口 `main.py` 用 `--production`（短写法 `-prod`）选定 `.nano-harness/` 的位置，缺省 `dev`：
 
 | 模式 | `.nano-harness/` 位置 | 说明 |
 | --- | --- | --- |
@@ -27,19 +27,19 @@
 规则：
 
 - 两种模式目录名一致；没有旧目录兼容逻辑，也没有模式持久化文件，prod 每次启动都要带
-  `--mode prod`（可按需自建 alias）。
+  `--production`（或 `-prod`，可按需自建 alias）。
 - `WORKDIR` 恒为启动时的工作目录：工具沙箱、系统提示词、`@` 文件补全与 `.session/<workdir>/`
   的键都不随模式变化；受影响的只有 `.nano-harness/` 根及其派生路径。
 - prod 下 `.settings.json`、`.permissions.json`、`extensions/`、`.mcp.json` 等对所有项目**全局共享**；
   会话仍按工作目录分子目录，不会串会话。
-- 模式是进程级、导入期决策：入口解析 `--mode` 后立刻调用 `core.config.configure_mode()`，之后才导入
-  其他 core 模块；裸导入 `core.config`（测试、脚本）一律按 `dev`。`--mode` 只在 `main.py` 生效，
+- 模式是进程级、导入期决策：入口解析 `-prod` / `--production` 后立刻调用 `core.config.configure_mode()`，
+  之后才导入其他 core 模块；裸导入 `core.config`（测试、脚本）一律按 `dev`。该参数只在 `main.py` 生效，
   `python -m core.tui.ui_textual --smoke` 始终是 dev + smoke。
 
 ## `.nano-harness/` 配置与数据目录
 
 启动时由 `core.bootstrap.bootstrap()` 在 `.nano-harness/` 根下自动创建
-（根的位置由 `--mode` 决定，见上节；`main.py` / TUI `run()` / `start_agent_runtime()` 均会调用；
+（根的位置由 `-prod` / `--production` 决定，见上节；`main.py` / TUI `run()` / `start_agent_runtime()` 均会调用；
 单独 import `core.*` 不再产生文件副作用）：
 
 | 路径 | 内容 |

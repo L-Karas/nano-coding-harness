@@ -24,7 +24,7 @@ WORKDIR = Path.cwd()
 HARNESS_DIR_NAME = ".nano-harness"
 
 # 运行模式：dev = .nano-harness 位于项目目录（WORKDIR），prod = 位于 home 目录。
-# 由入口 --mode 决定（见 main.py）；默认 dev 保持「直接 uv run main.py」的旧行为。
+# 由入口 -prod/--production 决定（见 main.py）；缺省 dev。
 Mode = Literal["dev", "prod"]
 DEFAULT_MODE: Mode = "dev"
 MODE: Mode = DEFAULT_MODE

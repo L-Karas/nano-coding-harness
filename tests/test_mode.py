@@ -1,4 +1,4 @@
-"""运行模式：--mode 解析、.nano-harness 根目录切换与导入顺序纪律。
+"""运行模式：-prod/--production 解析、.nano-harness 根目录切换与导入顺序纪律。
 
 mode 是进程级、导入期常量（core.config 的路径全部在导入期派生），
 所以这里既测 configure_mode() 的重算结果，也用子进程锁住「未 configure 时默认 dev」。
@@ -37,26 +37,39 @@ def fake_home(monkeypatch, tmp_path):
     return tmp_path / config.HARNESS_DIR_NAME
 
 
-def test_parse_args_defaults_to_dev():
-    assert entry.parse_args([]).mode == "dev"
+def run_parse_args(monkeypatch, argv):
+    monkeypatch.setattr(sys, "argv", ["main.py", *argv])
+    return entry.parse_args()
 
 
-def test_parse_args_reads_mode():
-    assert entry.parse_args(["--mode", "prod"]).mode == "prod"
+def test_parse_args_defaults_to_dev(monkeypatch):
+    assert run_parse_args(monkeypatch, []).production is False
 
 
-def test_parse_args_rejects_unknown_arguments():
-    """未知参数必须报错：静默退回 dev 会把配置、key 与会话写进项目目录。"""
-    for argv in (["--smoke"], ["--mdoe", "prod"], ["prod"]):
-        with pytest.raises(SystemExit) as exc:
-            entry.parse_args(argv)
-        assert exc.value.code == 2
+@pytest.mark.parametrize("flag", ("-prod", "--production"))
+def test_parse_args_reads_production_flag(flag, monkeypatch):
+    assert run_parse_args(monkeypatch, [flag]).production is True
 
 
-@pytest.mark.parametrize("bad", ["Dev", "prod-mode"])
-def test_parse_args_rejects_unknown_mode(bad):
+@pytest.mark.parametrize("argv", (
+    ["--smoke"], ["--mdoe", "prod"], ["prod"],
+    ["--mode", "prod"], ["--prod"], ["-p"], ["-pro"],
+))
+def test_parse_args_rejects_unknown_arguments(argv, monkeypatch):
+    """未知参数必须报错：静默退回 dev 会把配置、key 与会话写进项目目录。
+
+    allow_abbrev=False：--prod / -p / -pro 不会被当作本参数的前缀缩写。
+    """
     with pytest.raises(SystemExit) as exc:
-        entry.parse_args(["--mode", bad])
+        run_parse_args(monkeypatch, argv)
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("argv", (["--production=1"], ["-prod=1"], ["-prod", "true"]))
+def test_parse_args_rejects_values_on_production_flag(argv, monkeypatch):
+    """生产模式是纯开关，不接受取值；显式赋值与多余位置参数一律报错。"""
+    with pytest.raises(SystemExit) as exc:
+        run_parse_args(monkeypatch, argv)
     assert exc.value.code == 2
 
 
