@@ -76,8 +76,7 @@ class StepRenderer:
     """step 的渲染槽：默认全 no-op；主循环从 TUI render 组装（候选 5 会把它挪到 interaction port 后面）。"""
     on_text: Callable[[str], None] | None = None
     on_tool_call: Callable[[str, dict], None] = _noop
-    on_tool_result: Callable[[str, bool], None] = _noop
-    on_diff: Callable[[list], None] = _noop
+    on_tool_result: Callable[[str, bool, list | None], None] = _noop
     thinking_status: Callable[[], ContextManager] = _null_cm
     working_status: Callable[[], ContextManager] = _null_cm
     scope: Callable[[], ContextManager] = _null_cm
@@ -361,8 +360,6 @@ async def _run_tools(
                     attachments.extend(outcome.images)
                 # 失败 / 取消的结果没有落盘：预览 diff 既不渲染也不落 payload
                 show_diff = bool(item.diff) and not is_error and not outcome.is_cancelled
-                if show_diff:
-                    renderer.on_diff(item.diff)
                 result_ctx = AfterToolContext(
                     tool_name=item.tool_name,
                     args=item.tool_args,
@@ -373,7 +370,8 @@ async def _run_tools(
                 output = result_ctx.result
                 injected.extend(result_ctx.inject_messages)
 
-                renderer.on_tool_result(output, is_error)
+                # diff 随结果一起交给渲染槽：write / edit 的结果与 diff 在同一张卡片内呈现
+                renderer.on_tool_result(output, is_error, item.diff if show_diff else None)
 
                 message = _tool_message(item.tool_call_id, output)
                 if show_diff:

@@ -244,7 +244,7 @@ def test_background_route_sees_rewritten_call_arguments(monkeypatch):
 def test_renderer_receives_tool_call_and_result(monkeypatch):
     seen = []
     renderer = StepRenderer(on_tool_call=lambda n, a: seen.append(("call", n, a)),
-                            on_tool_result=lambda text, err: seen.append(("result", text, err)))
+                            on_tool_result=lambda text, err, _diff: seen.append(("result", text, err)))
     _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)], renderer=renderer)
     assert ("call", "echo", {"value": "x"}) in seen
     assert ("result", "echo:x", False) in seen
@@ -256,7 +256,7 @@ def test_blocked_call_runs_after_tool_and_renders_result(monkeypatch):
     add_hook("before_tool", lambda ctx: ctx.block("no shell"), "test")
     add_hook("after_tool",
              lambda ctx: hooks.append((ctx.tool_name, ctx.args, ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True), renderer=renderer)
@@ -269,7 +269,7 @@ def test_blocked_call_runs_after_tool_and_renders_result(monkeypatch):
 def test_unparsable_arguments_run_after_tool_and_render_result(monkeypatch):
     hooks, rendered = [], []
     add_hook("after_tool", lambda ctx: hooks.append((ctx.tool_name, ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call(args="{oops")], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True), renderer=renderer)
@@ -285,7 +285,7 @@ def test_background_placeholder_runs_after_tool_and_renders_result(monkeypatch):
     monkeypatch.setattr(step_mod, "start_background_task", lambda call, pool, tctx: "bg-1")
     monkeypatch.setattr(step_mod, "should_run_background", lambda *_: True)
     add_hook("after_tool", lambda ctx: hooks.append((ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True, background=True), renderer=renderer)
@@ -301,7 +301,7 @@ def test_interrupted_call_runs_after_tool_and_renders_result(monkeypatch):
     ctx.cancelled.set()
     hooks, rendered = [], []
     add_hook("after_tool", lambda ctx: hooks.append((ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True),
@@ -485,7 +485,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
             tctx=ToolContext(agent_run=ctx),
             max_tokens=1000,
             policy=StepPolicy(use_extensions=False),
-            renderer=StepRenderer(on_tool_result=lambda text, err: rendered.append((text, err))),
+            renderer=StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err))),
         ))
         await started.wait()
         ctx.cancel()
@@ -507,7 +507,7 @@ def test_parallel_group_renderer_order(monkeypatch):
     seen = []
     renderer = StepRenderer(
         on_tool_call=lambda name, _args: seen.append(("call", name)),
-        on_tool_result=lambda text, _err: seen.append(("result", text)))
+        on_tool_result=lambda text, _err, _diff: seen.append(("result", text)))
     _run(monkeypatch,
          [("", "", [_tool_call("read_file", '{"value": "a"}', "t1"),
                      _tool_call("grep", '{"value": "b"}', "t2")], "tool_calls", None)],

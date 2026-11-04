@@ -44,7 +44,6 @@ def _main_renderer() -> StepRenderer:
         on_text=interaction.stream_assistant_response,
         on_tool_call=interaction.render_tool_call,
         on_tool_result=interaction.render_tool_result,
-        on_diff=interaction.render_tool_result_diff,
         thinking_status=interaction.render_thinking_status,
         working_status=interaction.render_working_status,
         scope=interaction.render_scope,

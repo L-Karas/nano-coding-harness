@@ -18,7 +18,7 @@ _HINT_STYLE = "dim yellow"  # 提示行样式，与正文暗灰区分
 
 
 class _CappedCardBody(Static):
-    """工具卡正文：超出 cap 行时折叠（前 cap 行 + 1 行提示，点击展开/收回）。
+    """卡片正文：超出 cap 行时折叠（前 cap 行 + 1 行提示，点击展开/收回）。
 
     行数取自 get_content_height（按渲染宽度换行后的视觉行，长行折出的行同样计入）；
     reserved 为固定头行数，不参与折叠；-expandable 类随宽度变化在 on_resize 中同步。"""

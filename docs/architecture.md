@@ -14,7 +14,7 @@
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |
 | `core/shared/` | 跨模块（包）共用的基础模块：只放无业务归属、被多处复用的底层工具；领域类型与服务留在原包 |
 | `core/shared/file_io.py` | 文件落盘：`atomic_write`（临时文件 → 保留权限 → fsync → `os.replace`，失败 / 中断清理临时文件）与换行风格工具（`normalize_newlines` / `match_eol`）；write / edit 共用 |
-| `core/shared/diff.py` | write / edit 的 diff 预览：按 `WORKDIR` / `cwd` 解析路径并在执行前计算变化行（`DIFF_TOOLS` / `preview_write` / `preview_edit`）；agent_step 渲染与 base_tools 共用 |
+| `core/shared/diff.py` | write / edit 的 diff 预览：按 `WORKDIR` / `cwd` 解析路径并在执行前计算变化行（`DIFF_TOOLS` / `preview_write` / `preview_edit`）；agent_step 预览计算与 base_tools 路径解析共用 |
 | `core/shared/logger.py` | 日志：`get_logger()` 按模块名写 `.nano-harness/log/<module>.log` |
 | `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
 | `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹、后台通知包裹） |
@@ -50,7 +50,7 @@
 3. 重建工具池（内置 + MCP），把预算后的 history 交给 `run_agent_step()`；
 4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
    → 扩展 `after_llm` → 按 `parallel_safe` 声明分组派发工具（组内 `asyncio.gather` 并发，未声明工具作为屏障自成一组；
-   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool`（所有结局，含中断 / 拦截 / 后台占位）→ 渲染 diff/结果）；
+   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool`（所有结局，含中断 / 拦截 / 后台占位）→ 渲染结果（write / edit 的 diff 与结果同卡））；
    结果写回会话后进入下一轮。工具回报的图片由 step 汇总为一条 user 注入消息（路径列表 + `image_url` parts），
    位于所有 tool 消息之后；非视觉模型不附加图片。工具结局统一为 `ToolResult`（内容 +
    失败 / 取消标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；

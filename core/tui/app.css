@@ -207,14 +207,14 @@ Toast, Toast:ansi { background: #1e293b; }
 /* ── 消息卡片 ──
    height:auto 才能随内容伸缩（Vertical 默认 1fr 会均分视口并裁掉超出内容）；
    无左右 margin 保证与终端同宽。类别：user 用户 · assistant 回复 · tool 工具调用 ·
-   result / diff 工具输出 · error 工具错误 · notice 提示 · sessions 会话列表 · perm 权限确认 */
+   result 工具输出（含 write / edit 的 diff）· error 工具错误 · notice 提示 · sessions 会话列表 · perm 权限确认 */
 .card {
     height: auto;
     margin-bottom: 1;
     padding: 1 2;
 }
 
-/* 截断正文（工具调用 / 结果卡）：点击展开全文，指针提示 */
+/* 截断正文（工具调用 / 结果卡正文 / 同卡 diff 段）：点击展开全文，指针提示 */
 .card .card-body.-expandable { pointer: pointer; }
 
 /* Markdown 自带 padding 0 2，去掉以与其它卡片左对齐；
@@ -269,8 +269,7 @@ Toast, Toast:ansi { background: #1e293b; }
 .card.user      { background: #374151; }
 .card.assistant { border-left: heavy #babbf1; }
 .card.tool      { background: #4c3e1a; border-left: heavy #f59e0b; }
-.card.result,
-.card.diff      { background: #283228; border-left: heavy #10b981; }
+.card.result    { background: #283228; border-left: heavy #10b981; }
 .card.error     { background: #3c2828; border-left: heavy #ef4444; }
 .card.notice    { background: #0f172a; border-left: heavy #22d3ee; }
 .card.sessions  { background: #0c1a2e; border-left: heavy #38bdf8; }

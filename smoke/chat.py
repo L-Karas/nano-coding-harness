@@ -8,7 +8,6 @@ from core.tui.render import (
     render_background_notification,
     render_tool_call,
     render_tool_result,
-    render_tool_result_diff,
     render_user_input,
 )
 from core.tui.cards import _CappedCardBody
@@ -52,11 +51,15 @@ async def run(app, pilot) -> None:
     assert "... [truncated 7 lines] · click to expand" in hints[1], hints[1]
     assert capped[2].size.height == 11 and "truncated" in hints[2], \
         f"单行 2000 字符应按视觉行折叠为 10 行 + 1 行提示: {capped[2].size.height} 行"
-    # 截断卡片点击展开：真实鼠标点击折叠的 diff 卡末行提示 → 全文（含第 11~15 行）；
-    # 再点展开态末行（折叠提示）收回截断
-    render_tool_result_diff([("+", i, f"add {i}") for i in range(1, 16)])
+    # 截断卡片点击展开：真实鼠标点击折叠的 diff 段末行提示 → 全文（含第 11~15 行）；
+    # 再点展开态末行（折叠提示）收回截断。diff 与工具结果同卡：结果尾段始终可见。
+    render_tool_result("Wrote 15 lines to demo.py.",
+                       diff=[("+", i, f"add {i}") for i in range(1, 16)])
     await settle(pilot, 10, 0.05)
-    assert app.query("#chat .card.diff"), "diff 预览未渲染为 diff 卡"
+    merged = app.query("#chat .card").last()
+    assert merged.has_class("result"), "diff 应与工具结果同卡渲染"
+    assert "Wrote 15 lines to demo.py." in str(merged.query(".card-body").last().render()), \
+        "工具结果应在卡片最后"
     exp_bodies = [w for w in app.query(".card-body") if w.has_class("-expandable")]
     assert len(exp_bodies) == 4, f"应 4 张可展开卡片: {len(exp_bodies)}"
     diff_w = exp_bodies[-1]
@@ -69,7 +72,7 @@ async def run(app, pilot) -> None:
     await settle(pilot, 5)
     assert "... [truncated 5 lines]" in diff_w.render_line(diff_w.size.height - 1).text, \
         "再点未收回截断"
-    # 结果/调用卡：同一展开逻辑（exp_bodies 按挂载序 = result / tool / 超长单行 / diff）
+    # 结果/调用卡：同一展开逻辑（exp_bodies 按挂载序 = result / tool / 超长单行 / diff 段）
     for w, tail in ((exp_bodies[0], None), (exp_bodies[1], "  14")):
         app._toggle_expand(w)
         await settle(pilot, 5)
@@ -94,7 +97,7 @@ async def run(app, pilot) -> None:
     await settle(pilot, 5)
     assert list(app.query("#chat .card"))[-1].has_class("result"), "普通工具输出误判为 error"
     print("[smoke] tool error card OK: [Tool Error]: prefix renders dark-red card")
-    # 后台通知卡：标题固定常驻，正文超 10 行折叠 + 点击展开/收回（与工具结果卡同款机制）
+    # 后台通知卡：标题固定常驻，正文超 10 行折叠 + 点击展开/收回（与工具卡正文同款机制）
     render_background_notification("\n".join(f"notice {i}" for i in range(15)))
     await settle(pilot, 10, 0.05)
     notice = app.query("#chat .card.notice .card-body").last()

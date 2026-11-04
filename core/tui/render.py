@@ -26,7 +26,7 @@ if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp�
 
 _APP: Optional[ChatApp] = None
 
-DEFAULT_MAX_LINES = 10  # 卡片正文默认行数上限（渲染宽度下换行的视觉行）
+DEFAULT_MAX_LINES = 10  # 可折叠正文默认行数上限（渲染宽度下换行的视觉行）
 
 _DIM = "dim #e2e8f0"  # 卡片正文（暗灰）
 _DIFF_STYLES = {"+": "#b5bd68", "-": "#f87171"}  # diff 行：+ 绿 / - 淡红，其余 dim
@@ -61,9 +61,10 @@ def _add_capped_card(
     body: Text,
     max_lines: int = DEFAULT_MAX_LINES,
     head: Optional[Text] = None,
+    tail: Optional[Text] = None,
 ) -> None:
     """追加卡片：正文超 max_lines 折叠为前 max_lines 行 + 提示行，点击切换展开；
-    head 为固定首行，不计入行数与折叠。"""
+    head 为固定首行，不计入行数与折叠；tail 为固定尾段，不参与折叠，排在正文之后。"""
     head = head if head is not None else Text()
     reserved = head.plain.count("\n")  # head 占用的固定行数
     _exec(lambda app: app._add_card(
@@ -71,6 +72,7 @@ def _add_capped_card(
         head + body,
         cap=max_lines,
         reserved=reserved,
+        tail=tail,
     ))
 
 
@@ -121,20 +123,30 @@ def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MA
     )
 
 
-def render_tool_result(output: Any, is_error: bool | None = None, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """工具输出卡片：is_error 为真为 error 卡；回放路径没有标志时回退识别错误前缀。"""
+def _diff_body(rows: list[tuple[str, int, str]]) -> Text:
+    """diff 行：每行 "标记 行号 │ 内容"（+ 绿 / - 淡红，其余 dim）。"""
+    width = max((len(str(n)) for _, n, _ in rows), default=1)
+    return Text("\n").join(
+        Text(f"{kind}{n:>{width}} │ {_strip_keycaps(line)}", style=_DIFF_STYLES.get(kind, "dim"))
+        for kind, n, line in rows
+    )
+
+
+def render_tool_result(
+    output: Any,
+    is_error: bool | None = None,
+    diff: list[tuple[str, int, str]] | None = None,
+    max_lines: int = DEFAULT_MAX_LINES,
+) -> None:
+    """工具输出卡片：is_error 为真为 error 卡；回放路径没有标志时回退识别错误前缀。
+    带 diff（write / edit）时与结果同卡渲染：diff 在前、超长可折叠，结果固定收尾，不拆成两张卡片。"""
     output_str = str(output)
     failed = is_error if is_error is not None else output_str.startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX))
     kind = "error" if failed else "result"
-    _add_capped_card(kind, _dim_body(output_str), max_lines)
-
-
-def render_tool_result_diff(rows: list[tuple[str, int, str]], max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """diff 预览卡片：每行 "标记 行号 │ 内容"，超出折叠。"""
-    width = max((len(str(n)) for _, n, _ in rows), default=1)
-    body = Text("\n").join(Text(f"{kind}{n:>{width}} │ {_strip_keycaps(line)}", style=_DIFF_STYLES.get(kind, "dim"))
-                           for kind, n, line in rows)
-    _add_capped_card("diff", body, max_lines)
+    if diff:
+        _add_capped_card(kind, _diff_body(diff), max_lines, tail=_dim_body(output_str))
+    else:
+        _add_capped_card(kind, _dim_body(output_str), max_lines)
 
 
 def render_background_notification(message: str) -> None:
@@ -160,10 +172,8 @@ def _is_injected_message(content: Any) -> bool:
 
 
 def _render_tool_message(message: Any) -> None:
-    """工具结果卡片：有 diff payload 时先渲染 diff，再渲染结果正文。"""
-    if message.payload:
-        render_tool_result_diff(message.payload)
-    render_tool_result(message.content)
+    """工具结果卡片：payload 里的 diff 与结果同卡渲染。"""
+    render_tool_result(message.content, diff=message.payload or None)
 
 
 def render_session_history(session: Any) -> None:
@@ -274,7 +284,6 @@ register_render(
     stream_assistant_response=stream_assistant_response,
     render_tool_call=render_tool_call,
     render_tool_result=render_tool_result,
-    render_tool_result_diff=render_tool_result_diff,
     render_background_notification=render_background_notification,
     notify=notify,
     render_thinking_status=render_thinking_status,

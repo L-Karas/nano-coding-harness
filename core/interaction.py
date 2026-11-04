@@ -11,8 +11,7 @@ _ask_permission: Callable[[str, list[str]], str] | None = None
 _ask_clarify: Callable[[list[str], bool], str] | None = None
 _stream_assistant_response: Callable[[str], None] | None = None
 _render_tool_call: Callable[[str, Any], None] | None = None
-_render_tool_result: Callable[[str, bool], None] | None = None
-_render_tool_result_diff: Callable[[list], None] | None = None
+_render_tool_result: Callable[[str, bool, list | None], None] | None = None
 _render_background_notification: Callable[[str], None] | None = None
 _notify: Callable[[str, str, str], None] | None = None
 _render_thinking_status: Callable[[str], ContextManager] | None = None
@@ -34,8 +33,7 @@ def register_render(
     *,
     stream_assistant_response: Callable[[str], None] | None = None,
     render_tool_call: Callable[[str, Any], None] | None = None,
-    render_tool_result: Callable[[str, bool], None] | None = None,
-    render_tool_result_diff: Callable[[list], None] | None = None,
+    render_tool_result: Callable[[str, bool, list | None], None] | None = None,
     render_background_notification: Callable[[str], None] | None = None,
     notify: Callable[[str, str, str], None] | None = None,
     render_thinking_status: Callable[[str], ContextManager] | None = None,
@@ -43,7 +41,7 @@ def register_render(
     render_scope: Callable[[], ContextManager] | None = None,
 ) -> None:
     """TUI 注入渲染实现；只覆盖传入的项，重复注册幂等。"""
-    global _stream_assistant_response, _render_tool_call, _render_tool_result, _render_tool_result_diff
+    global _stream_assistant_response, _render_tool_call, _render_tool_result
     global _render_background_notification, _notify, _render_thinking_status, _render_working_status, _render_scope
     if stream_assistant_response is not None:
         _stream_assistant_response = stream_assistant_response
@@ -51,8 +49,6 @@ def register_render(
         _render_tool_call = render_tool_call
     if render_tool_result is not None:
         _render_tool_result = render_tool_result
-    if render_tool_result_diff is not None:
-        _render_tool_result_diff = render_tool_result_diff
     if render_background_notification is not None:
         _render_background_notification = render_background_notification
     if notify is not None:
@@ -92,14 +88,10 @@ def render_tool_call(name: str, args: Any) -> None:
         _render_tool_call(name, args)
 
 
-def render_tool_result(text: str, is_error: bool = False) -> None:
+def render_tool_result(text: str, is_error: bool = False, diff: list | None = None) -> None:
+    """工具结果：diff（write / edit）随结果一起交给 UI，由 UI 同卡渲染。"""
     if _render_tool_result is not None:
-        _render_tool_result(text, is_error)
-
-
-def render_tool_result_diff(rows: list) -> None:
-    if _render_tool_result_diff is not None:
-        _render_tool_result_diff(rows)
+        _render_tool_result(text, is_error, diff)
 
 
 def render_background_notification(message: str) -> None:

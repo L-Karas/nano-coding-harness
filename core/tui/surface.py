@@ -73,8 +73,10 @@ class _RenderSurface:
         body: Any,
         cap: Optional[int] = None,
         reserved: int = 0,
+        tail: Any = None,
     ) -> Static:
-        """追加卡片并返回正文 Static；cap 非 None 时按视觉行折叠（reserved = 固定头行数）。"""
+        """追加卡片并返回正文 Static；cap 非 None 时按视觉行折叠（reserved = 固定头行数）；
+        tail 非 None 时作为固定尾段追加，不参与折叠，排在正文之后。"""
         self._set_welcome(False)
         body_w = (_CappedCardBody(
             body,
@@ -84,7 +86,10 @@ class _RenderSurface:
             markup=False,
         )
                   if cap is not None else Static(body, classes="card-body", markup=False))
-        self._chat().mount(Vertical(body_w, classes=f"card {kind}"))
+        widgets = [body_w]
+        if tail is not None:
+            widgets.append(Static(tail, classes="card-body", markup=False))
+        self._chat().mount(Vertical(*widgets, classes=f"card {kind}"))
         return body_w
 
     def _toggle_expand(self, body_w: Static) -> None:

@@ -41,6 +41,15 @@ def _tool(output="", exc=None):
     return _Fake
 
 
+def _collect_diff(renders: list):
+    """on_tool_result 替身：只记录随结果一起渲染的 diff（无 diff 时为 None，不入列表）。"""
+    def on_tool_result(_text, _is_error, diff):
+        if diff:
+            renders.append(diff)
+
+    return on_tool_result
+
+
 def _run(
     monkeypatch,
     fixture,
@@ -59,7 +68,7 @@ def _run(
         return responses.pop(0)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
-    renderer = StepRenderer(on_diff=renders.append)
+    renderer = StepRenderer(on_tool_result=_collect_diff(renders))
     outcome = asyncio.run(run_agent_step(
         [],
         "sys",
@@ -166,7 +175,7 @@ def test_cancelled_write_renders_no_diff_and_no_payload(ctx, monkeypatch):
             tctx=tctx,
             max_tokens=100,
             policy=StepPolicy(use_extensions=False, diff_preview=True),
-            renderer=StepRenderer(on_diff=renders.append),
+            renderer=StepRenderer(on_tool_result=_collect_diff(renders)),
         ))
         await started.wait()
         tctx.agent_run.cancel()
@@ -191,7 +200,7 @@ def test_failure_passes_error_flag_to_render(ctx, monkeypatch):
         }], "tool_calls", None)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
-    renderer = StepRenderer(on_tool_result=lambda text, err: flags.append(err))
+    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: flags.append(err))
     asyncio.run(run_agent_step(
         [],
         "sys",

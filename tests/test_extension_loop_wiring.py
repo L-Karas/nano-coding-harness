@@ -50,7 +50,6 @@ def _prepare_runtime(
     monkeypatch.setattr(interaction, "stream_assistant_response", lambda *a, **k: None)
     monkeypatch.setattr(interaction, "render_tool_call", lambda *a, **k: None)
     monkeypatch.setattr(interaction, "render_tool_result", lambda *a, **k: None)
-    monkeypatch.setattr(interaction, "render_tool_result_diff", lambda *a, **k: None)
     monkeypatch.setattr(interaction, "notify", lambda *a, **k: calls["notify"].append((a, k)))
     monkeypatch.setattr(interaction, "render_working_status", contextlib.nullcontext)
     monkeypatch.setattr(interaction, "render_thinking_status", lambda *a, **k: contextlib.nullcontext())

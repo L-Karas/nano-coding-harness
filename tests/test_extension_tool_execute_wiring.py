@@ -72,7 +72,7 @@ def test_handle_replaces_builtin_and_after_tool_sees_result(monkeypatch):
 def test_handled_error_flag_reaches_renderer(monkeypatch):
     seen = []
     add_hook("tool_execute", lambda ctx: ctx.handle("[Error] remote down", is_error=True), "ext_a")
-    renderer = StepRenderer(on_tool_result=lambda text, err: seen.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: seen.append((text, err)))
     calls = []
     outcome = _run(monkeypatch, _tool_call(), calls, renderer=renderer)
     assert calls == []
@@ -120,7 +120,12 @@ def test_handled_write_file_skips_diff_preview(monkeypatch):
     previews = []
     monkeypatch.setattr(step_mod, "preview_write", lambda *a: previews.append(a) or "diff")
     diffs = []
-    renderer = StepRenderer(on_diff=lambda d: diffs.append(d))
+
+    def _record_diff(_text, _err, diff):
+        if diff:
+            diffs.append(diff)
+
+    renderer = StepRenderer(on_tool_result=_record_diff)
     add_hook("tool_execute", lambda ctx: ctx.handle("ext:written"), "ext_a")
     calls = []
     outcome = _run(monkeypatch,
