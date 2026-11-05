@@ -4,7 +4,8 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `main.py` | 入口：`start_agent_runtime()` 接真实 agent 回合，交给 Textual UI |
+| `main.py` | 仓库内入口薄壳：延迟导入 `core.cli` 并传 `default_mode="dev"` |
+| `core/cli.py` | CLI 入口：解析 `-dev/-prod/--version` → `configure_mode()` → `start_agent_runtime()` 接真实 agent 回合，交给 Textual UI（ADR-0013） |
 | `core/agent_loop.py` | Agent 主循环 `AgentRuntime`：外层骨架（cron / 后台注入、预算、会话落盘、长度恢复）、`/compact`；线程契约（loop / 锁 / 中断）委托 `TurnRunner` |
 | `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
 | `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |

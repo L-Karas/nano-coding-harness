@@ -19,7 +19,7 @@
 但在 `/mcp` 窗口保留条目，按 `Ctrl+E` 可运行时重新启用并后台重连。Insert 改连接参数不会
 改变启用状态，Delete 才会彻底删除配置。失败或禁用的 server 按 Enter 只提示，不打开工具列表。
 所有 MCP 会话归属独立后台事件循环，工具调用经 `run_coroutine_threadsafe` 调度回去执行（可被 Esc 取消）。
-启动时 `main.py` 预热连接；若建连未完成，本次回合回退为纯内置工具池，
+启动时入口（`core.cli.main()` → `start_agent_runtime()`）预热连接；若建连未完成，本次回合回退为纯内置工具池，
 且每个 30s 窗口最多阻塞等待 5s，不会每轮都被拖住。
 
 ## Skills

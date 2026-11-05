@@ -691,7 +691,7 @@ def get_client_manager() -> ClientManager:
 
 
 def warmup() -> None:
-    """阻塞直到建连完成或失败；由 main.py 在 daemon 线程调用，使首个 agent 轮次通常已就绪。"""
+    """阻塞直到建连完成或失败；由 start_agent_runtime() 在 daemon 线程调用，使首个 agent 轮次通常已就绪。"""
     try:
         _ensure_manager_started().result()
     except Exception as e:

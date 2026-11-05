@@ -2,7 +2,7 @@
 
 各模块导入自身不再创建目录 / 启动线程 / 扫描磁盘；由这里显式按序初始化：
 .nano-harness 目录树与文件 → 内置扩展 → 技能扫描 → 模型注册表 → cron 调度线程。
-`bootstrap()` 幂等，供 main.py / TUI run() / start_agent_runtime() 调用；
+`bootstrap()` 幂等，由 start_agent_runtime() / TUI run() 调用（入口 core.cli.main() 经它们进入）；
 测试用 tests/conftest.py 复用其中的单项初始化（不启动后台线程）。
 """
 import json

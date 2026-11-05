@@ -24,7 +24,7 @@ WORKDIR = Path.cwd()
 HARNESS_DIR_NAME = ".nano-harness"
 
 # 运行模式：dev = .nano-harness 位于项目目录（WORKDIR），prod = 位于 home 目录。
-# 由入口 -prod/--production 决定（见 main.py）；缺省 dev。
+# 由入口解析后调用 configure_mode() 决定（见 core/cli.py）；裸导入时缺省 dev。
 Mode = Literal["dev", "prod"]
 DEFAULT_MODE: Mode = "dev"
 MODE: Mode = DEFAULT_MODE
@@ -170,7 +170,7 @@ def configure_mode(mode: Mode) -> None:
     """切换运行模式：重算 .nano-harness 根目录与全部派生路径，并按新根重载 AgentConfig。
 
     必须在其他 core 模块导入前调用：那些模块 `from core.config import X` 是导入期值绑定，
-    早于本调用导入就仍持有 dev 路径（导入顺序由 main.py 与 tests/test_mode.py 保证/锁定）。
+    早于本调用导入就仍持有 dev 路径（导入顺序由 core/cli.py 与 tests/test_mode.py 保证/锁定）。
     """
     if mode not in ("dev", "prod"):
         raise ValueError(f"unknown mode: {mode!r}")

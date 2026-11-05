@@ -1,4 +1,4 @@
-"""运行模式：-prod/--production 解析、.nano-harness 根目录切换与导入顺序纪律。
+"""运行模式：-dev/-prod 解析、.nano-harness 根目录切换与导入顺序纪律。
 
 mode 是进程级、导入期常量（core.config 的路径全部在导入期派生），
 所以这里既测 configure_mode() 的重算结果，也用子进程锁住「未 configure 时默认 dev」。
@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
+import core.cli as cli_entry
 import core.config as config
-import main as entry
 from core.bootstrap import init_harness
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -37,39 +37,54 @@ def fake_home(monkeypatch, tmp_path):
     return tmp_path / config.HARNESS_DIR_NAME
 
 
-def run_parse_args(monkeypatch, argv):
-    monkeypatch.setattr(sys, "argv", ["main.py", *argv])
-    return entry.parse_args()
+def run_parse_args(argv, *, default_mode="prod"):
+    return cli_entry.parse_args(argv, default_mode=default_mode)
 
 
-def test_parse_args_defaults_to_dev(monkeypatch):
-    assert run_parse_args(monkeypatch, []).production is False
+@pytest.mark.parametrize(("default_mode", "expected"), (("prod", "prod"), ("dev", "dev")))
+def test_parse_args_follows_entry_default(default_mode, expected):
+    """默认值随入口：nh/nano-harness = prod，main.py 薄壳 = dev（uv run main.py 行为不变）。"""
+    assert run_parse_args([], default_mode=default_mode).mode == expected
 
 
-@pytest.mark.parametrize("flag", ("-prod", "--production"))
-def test_parse_args_reads_production_flag(flag, monkeypatch):
-    assert run_parse_args(monkeypatch, [flag]).production is True
+@pytest.mark.parametrize(("flag", "default_mode", "expected"), (
+    ("-dev", "prod", "dev"),
+    ("--dev", "prod", "dev"),
+    ("-prod", "dev", "prod"),
+    ("--production", "dev", "prod"),
+))
+def test_parse_args_reads_mode_flags(flag, default_mode, expected):
+    assert run_parse_args([flag], default_mode=default_mode).mode == expected
+
+
+def test_parse_args_rejects_dev_and_prod_together():
+    """互斥组：同时给两个模式开关直接报错，不让后出现的静默覆盖。"""
+    with pytest.raises(SystemExit) as exc:
+        run_parse_args(["-dev", "-prod"])
+    assert exc.value.code == 2
 
 
 @pytest.mark.parametrize("argv", (
     ["--smoke"], ["--mdoe", "prod"], ["prod"],
-    ["--mode", "prod"], ["--prod"], ["-p"], ["-pro"],
+    ["--mode", "prod"], ["--prod"], ["-p"], ["-pro"], ["-d"],
 ))
-def test_parse_args_rejects_unknown_arguments(argv, monkeypatch):
-    """未知参数必须报错：静默退回 dev 会把配置、key 与会话写进项目目录。
+def test_parse_args_rejects_unknown_arguments(argv):
+    """未知参数必须报错：静默退回默认模式会把配置、key 与会话写进错误目录。
 
     allow_abbrev=False：--prod / -p / -pro 不会被当作本参数的前缀缩写。
     """
     with pytest.raises(SystemExit) as exc:
-        run_parse_args(monkeypatch, argv)
+        run_parse_args(argv)
     assert exc.value.code == 2
 
 
-@pytest.mark.parametrize("argv", (["--production=1"], ["-prod=1"], ["-prod", "true"]))
-def test_parse_args_rejects_values_on_production_flag(argv, monkeypatch):
-    """生产模式是纯开关，不接受取值；显式赋值与多余位置参数一律报错。"""
+@pytest.mark.parametrize("argv", (
+    ["--production=1"], ["-prod=1"], ["-dev=1"], ["--dev=1"], ["-prod", "true"],
+))
+def test_parse_args_rejects_values_on_mode_flags(argv):
+    """模式开关不接受取值；显式赋值与多余位置参数一律报错。"""
     with pytest.raises(SystemExit) as exc:
-        run_parse_args(monkeypatch, argv)
+        run_parse_args(argv)
     assert exc.value.code == 2
 
 
@@ -132,9 +147,19 @@ def test_unconfigured_import_defaults_to_dev():
 
 
 def test_importing_entry_point_loads_no_core_module():
-    """main.py 顶层只能 import 标准库：core.* 必须在 configure_mode 之后导入。"""
+    """main.py 薄壳顶层不得加载 core.*：configure_mode 必须先于其他 core 模块。"""
     code = ("import sys, main; "
             "print(sorted(m for m in sys.modules if m == 'core' or m.startswith('core.')))")
+    result = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT,
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "[]"
+
+
+def test_importing_cli_module_loads_no_runtime_modules():
+    """core.cli 顶层只能 import 标准库：core.config 等必须在 configure_mode() 之后导入。"""
+    code = ("import sys, core.cli; "
+            "print(sorted(m for m in sys.modules "
+            "if m == 'core.config' or m.startswith('core.config.') or m == 'core.agent_loop'))")
     result = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT,
                             capture_output=True, text=True, check=True)
     assert result.stdout.strip() == "[]"

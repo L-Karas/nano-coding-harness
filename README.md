@@ -2,7 +2,8 @@
 
 一个用 Python 3.13 + Textual 写的 coding agent harness：全屏 TUI 对话、流式工具调用、
 分层上下文压缩、后台任务、cron 调度与子代理。
-源码即文档，主体实现位于 `core/`；入口 `main.py` 在根目录，日志实现位于 `core/shared/logger.py`。
+源码即文档，主体实现位于 `core/`；命令行入口在 `core/cli.py`（全局命令 `nh` / `nano-harness`），
+仓库根 `main.py` 是保持 dev 默认的薄壳，日志实现位于 `core/shared/logger.py`。
 
 ## 核心特性
 
@@ -16,13 +17,24 @@
 ## 快速开始
 
 ```bash
-uv sync          # 安装依赖（requires-python >= 3.13）
-uv run main.py               # 启动 Textual TUI（dev：.nano-harness 在项目目录）
+uv sync          # 安装依赖（requires-python >= 3.13；同时把 nh 装进 .venv）
+
+# 安装为全局命令（在仓库根执行）：nh / nano-harness 落到 uv 的 shim 目录，需在 PATH 中
+# Windows 默认 %USERPROFILE%\.local\bin，macOS / Linux 默认 ~/.local/bin
+uv tool install --editable .
+
+nh                 # 任意目录启动：默认 prod（~/.nano-harness）
+nh -dev            # 用当前目录的 .nano-harness（等价于 uv run main.py）
+nano-harness       # 长命令与 nh 完全等价
+
+uv run main.py               # 仓库内开发：dev（.nano-harness 在项目目录）
 uv run main.py --production  # prod：.nano-harness 在 home 目录（~/.nano-harness）
 ```
 
 首次启动会按模式自动创建 `.nano-harness/` 配置与数据目录（见「配置目录」）。
-prod 需要每次带上 `--production`（短写法 `-prod`），可自建 alias：`alias nhp='uv run main.py -prod'`。
+全局命令默认 `prod`，配置集中到 `~/.nano-harness`，项目目录保持干净；`-dev` / `-prod` 可在任一入口覆盖（互斥）。
+editable 安装直接使用仓库代码，改源码即时生效；改了依赖或版本后重装
+`uv tool install --editable . --force`，卸载 `uv tool uninstall nano-harness`。
 模型未配置时界面可正常打开，先用 `/provider` 填 API Key，再 `/model` 选模型即可对话。
 
 ```bash
@@ -71,9 +83,10 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 
 ## 配置目录
 
-`-prod` / `--production` 决定 `.nano-harness/` 的位置：`dev`（默认）在项目目录，`prod` 在 home 目录
-（`~/.nano-harness`）；两种模式目录名一致，整棵目录树一起搬。工作目录 / 工具沙箱始终是
-当前项目，不随模式变化。首次启动由 `core.bootstrap.bootstrap()` 自动创建
+运行模式决定 `.nano-harness/` 的位置：全局命令 `nh` 默认 `prod`（home，跨项目共享），
+`uv run main.py` 默认 `dev`（项目目录）；`-dev` / `-prod` 可覆盖。两种模式目录名一致，
+整棵目录树一起搬。工作目录 / 工具沙箱始终是当前项目，不随模式变化。首次启动由
+`core.bootstrap.bootstrap()` 自动创建
 （配置、会话、技能、任务、日志等，幂等且线程安全）。完整目录清单与模式规则见
 [`docs/configuration.md`](docs/configuration.md)。
 

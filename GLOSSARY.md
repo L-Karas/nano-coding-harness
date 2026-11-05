@@ -29,8 +29,9 @@ harness 运行期的展示状态：todo 列表、后台任务、子代理；由 
 _Avoid_: 全局变量、面板数据源
 
 **Mode**:
-进程级运行模式，决定 `.nano-harness/` 的根：`dev` 在项目目录（默认）、`prod` 在 home 目录；
-入口 `--production`（短写法 `-prod`）选定后不再变化，工作目录（工具沙箱、会话键）不受影响。
+进程级运行模式，决定 `.nano-harness/` 的根：`dev` 在项目目录、`prod` 在 home 目录；
+全局命令 `nh` / `nano-harness` 缺省 `prod`，仓库入口 `main.py` 缺省 `dev`，`-dev` / `-prod` 覆盖，
+选定后不再变化，工作目录（工具沙箱、会话键）不受影响。
 _Avoid_: 环境变量、运行期切换、配置优先级
 
 **Subagent role**:

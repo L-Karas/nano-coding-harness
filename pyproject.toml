@@ -1,7 +1,11 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "nano-harness"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python + Textual coding agent harness"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -26,6 +30,13 @@ dependencies = [
     "textual[syntax]>=8.2.8",
     "tiktoken>=0.14.0",
 ]
+
+[project.scripts]
+nh = "core.cli:main"
+nano-harness = "core.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
