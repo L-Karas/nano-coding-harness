@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -27,46 +28,85 @@ HARNESS_DIR_NAME = ".nano-harness"
 # 由入口解析后调用 configure_mode() 决定（见 core/cli.py）；裸导入时缺省 dev。
 Mode = Literal["dev", "prod"]
 DEFAULT_MODE: Mode = "dev"
-MODE: Mode = DEFAULT_MODE
 
-
-def _recompute_paths(mode: Mode) -> None:
-    """按 mode 重算全部 .nano-harness 派生路径（模块级常量）。
-
-    WORKDIR 不受 mode 影响：它始终是项目根（工具沙箱、系统提示词、@ 补全、会话目录键）。
-    维护提示：新增路径常量必须同时加入下方 global 列表与 tests/test_mode.py::_PATH_NAMES，
-    否则它会静默停在 dev 值。
-    """
-    global MODE, HARNESS_CONFIG_DIR, LOG_DIR, SKILL_DIR, EXTENSION_DIR, MEMORY_DIR, \
-        TOOL_RESULTS_DIR, MCP_DIR, SESSION_ROOT_DIR, SESSION_DIR, HARNESS_SETTING_FILE, \
-        SKILL_STATE_FILE, PROVIDER_AUTH_FILE, CUSTOM_PROVIDER_FILE, CUSTOM_MODEL_FILE, \
-        SESSION_INDEX_FILE, MCP_CONFIG_FILE, CRON_TASK_FILE, PERMISSION_FILE
-    MODE = mode
-    root = (WORKDIR if mode == "dev" else Path.home()) / HARNESS_DIR_NAME
-    HARNESS_CONFIG_DIR = root
-    LOG_DIR = root / "log"
-    SKILL_DIR = root / "skills"
-    EXTENSION_DIR = root / "extensions"
-    MEMORY_DIR = root / ".memory"
-    TOOL_RESULTS_DIR = root / ".task_outputs" / "tool_results"
-    MCP_DIR = root / ".mcp"
-    SESSION_ROOT_DIR = root / ".session"
-    SESSION_DIR = SESSION_ROOT_DIR / format_workdir_name(WORKDIR)
-    HARNESS_SETTING_FILE = root / ".settings.json"
-    SKILL_STATE_FILE = root / ".skills.json"
-    PROVIDER_AUTH_FILE = root / ".auth.json"
-    CUSTOM_PROVIDER_FILE = root / ".custom_providers.json"
-    CUSTOM_MODEL_FILE = root / ".custom_models.json"
-    SESSION_INDEX_FILE = SESSION_DIR / "session_index.jsonl"
-    MCP_CONFIG_FILE = MCP_DIR / ".mcp.json"
-    CRON_TASK_FILE = root / ".scheduled_tasks.json"
-    PERMISSION_FILE = root / ".permissions.json"
-
-
-_recompute_paths(DEFAULT_MODE)
-
+# 与 mode 无关的两个技能来源（global / project），因此留在派生表之外。
 GLOBAL_SKILLS_DIR = Path.home() / ".agents" / "skills"
 PROJECT_SKILL_DIR = WORKDIR / ".agents" / "skills"
+
+
+@dataclass
+class Paths:
+    """一次 mode 决策派生出的全部 .nano-harness 路径表。
+
+    `PATHS` 是进程级单例、对象身份不变：`configure_mode()` 只换字段值，所以
+    `from core.config import PATHS` 在任何导入顺序下都读到当前 mode 的路径——不再需要
+    「先 configure 再 import 其他模块」的纪律。唯一例外是首次 `get_logger()` 已打开的
+    日志句柄，它绑定当时的 `LOG_DIR`（见 ADR-0014）。
+
+    维护提示：新增路径 = 在这里加一个字段 + 在 `resolve()` 里给值，没有第二份名单要同步
+    （测试按 `dataclasses.fields(Paths)` 遍历）。字段只允许 `configure_mode()` 与测试隔离
+    （monkeypatch）改写；同一用例里不要再调 `configure_mode()`，它会整表覆盖。
+    """
+    MODE: Mode
+    HARNESS_CONFIG_DIR: Path
+    LOG_DIR: Path
+    SKILL_DIR: Path
+    EXTENSION_DIR: Path
+    MEMORY_DIR: Path
+    TOOL_RESULTS_DIR: Path
+    MCP_DIR: Path
+    SESSION_ROOT_DIR: Path
+    SESSION_DIR: Path
+    HARNESS_SETTING_FILE: Path
+    SKILL_STATE_FILE: Path
+    PROVIDER_AUTH_FILE: Path
+    CUSTOM_PROVIDER_FILE: Path
+    CUSTOM_MODEL_FILE: Path
+    SESSION_INDEX_FILE: Path
+    MCP_CONFIG_FILE: Path
+    CRON_TASK_FILE: Path
+    PERMISSION_FILE: Path
+
+    @classmethod
+    def resolve(cls, mode: Mode) -> "Paths":
+        """按 mode 派生全部路径。
+
+        WORKDIR 不受 mode 影响：它始终是项目根（工具沙箱、系统提示词、@ 补全、会话目录键）。
+        """
+        root = (WORKDIR if mode == "dev" else Path.home()) / HARNESS_DIR_NAME
+        session_root = root / ".session"
+        session_dir = session_root / format_workdir_name(WORKDIR)
+        mcp_dir = root / ".mcp"
+        return cls(
+            MODE=mode,
+            HARNESS_CONFIG_DIR=root,
+            LOG_DIR=root / "log",
+            SKILL_DIR=root / "skills",
+            EXTENSION_DIR=root / "extensions",
+            MEMORY_DIR=root / ".memory",
+            TOOL_RESULTS_DIR=root / ".task_outputs" / "tool_results",
+            MCP_DIR=mcp_dir,
+            SESSION_ROOT_DIR=session_root,
+            SESSION_DIR=session_dir,
+            HARNESS_SETTING_FILE=root / ".settings.json",
+            SKILL_STATE_FILE=root / ".skills.json",
+            PROVIDER_AUTH_FILE=root / ".auth.json",
+            CUSTOM_PROVIDER_FILE=root / ".custom_providers.json",
+            CUSTOM_MODEL_FILE=root / ".custom_models.json",
+            SESSION_INDEX_FILE=session_dir / "session_index.jsonl",
+            MCP_CONFIG_FILE=mcp_dir / ".mcp.json",
+            CRON_TASK_FILE=root / ".scheduled_tasks.json",
+            PERMISSION_FILE=root / ".permissions.json",
+        )
+
+    def replace_with(self, other: "Paths") -> None:
+        """原地换成另一份快照（全量覆盖，不是键级合并）：保持 PATHS 对象身份，
+        已导入该对象的模块自动看到新值。"""
+        for field in fields(self):
+            setattr(self, field.name, getattr(other, field.name))
+
+
+PATHS: Paths = Paths.resolve(DEFAULT_MODE)
 
 # 工具审批策略；下拉选项的取值即这里的字面量（顺序即表单顺序）
 ApprovalMode = Literal["LLM", "Decision Model", "Manual", "Yolo"]
@@ -151,15 +191,16 @@ class AgentConfigManager:
         self.config = config
 
     def save_config(self):
-        HARNESS_SETTING_FILE.write_text(self.config.model_dump_json(ensure_ascii=False, indent=4), encoding="utf-8")
+        setting_json = self.config.model_dump_json(ensure_ascii=False, indent=4)
+        PATHS.HARNESS_SETTING_FILE.write_text(setting_json, encoding="utf-8")
         CONFIGMANAGER.config = self.config  # 同步运行中的单例；消费方持有 manager 引用，需改属性而非重新绑定
 
     @classmethod
     def load_config(cls) -> "AgentConfigManager":
-        if not HARNESS_SETTING_FILE.exists():
+        if not PATHS.HARNESS_SETTING_FILE.exists():
             return cls(config=AgentConfig())
 
-        raw = json.loads(HARNESS_SETTING_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(PATHS.HARNESS_SETTING_FILE.read_text(encoding="utf-8"))
         return cls(config=AgentConfig.model_validate(raw))
 
 
@@ -167,15 +208,15 @@ CONFIGMANAGER = AgentConfigManager.load_config()
 
 
 def configure_mode(mode: Mode) -> None:
-    """切换运行模式：重算 .nano-harness 根目录与全部派生路径，并按新根重载 AgentConfig。
+    """切换运行模式：换掉 PATHS 的全部字段，并按新根重载 AgentConfig。
 
-    必须在其他 core 模块导入前调用：那些模块 `from core.config import X` 是导入期值绑定，
-    早于本调用导入就仍持有 dev 路径（导入顺序由 core/cli.py 与 tests/test_mode.py 保证/锁定）。
+    可以在任何时刻调用：`PATHS` 的对象身份不变，消费方即使早于本调用导入了它也仍读新值。
+    重复设置同一模式是空操作（不重载 AgentConfig，避免丢掉内存中未落盘的修改）。
     """
     if mode not in ("dev", "prod"):
         raise ValueError(f"unknown mode: {mode!r}")
-    if mode == MODE:
+    if mode == PATHS.MODE:
         return
-    _recompute_paths(mode)
+    PATHS.replace_with(Paths.resolve(mode))
     # 保持 manager 实例身份（消费方可能在 configure_mode 前已持有引用），只换配置内容
     CONFIGMANAGER.config = AgentConfigManager.load_config().config

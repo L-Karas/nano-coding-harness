@@ -4,13 +4,14 @@ import json
 from types import SimpleNamespace
 
 import core.mcp.mcp_client as mcp_client
+import core.config as config
 
 
 def test_tool_snapshot_groups_by_config_server(monkeypatch, tmp_path):
     config_file = tmp_path / ".mcp.json"
     config_file.write_text(json.dumps({"mcpServers": {"my server": {"command": "x", "args": []}}}),
                            encoding="utf-8")
-    monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", config_file)
+    monkeypatch.setattr(config.PATHS, "MCP_CONFIG_FILE", config_file)
 
     manager = mcp_client.ClientManager({"mcpServers": {}})
     manager.session_group = SimpleNamespace(tools={

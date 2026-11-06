@@ -15,7 +15,7 @@ from core.client import (
     shared_model_client,
     shared_sub_model_client,
 )
-from core.config import TOOL_RESULTS_DIR, CONFIGMANAGER
+from core.config import PATHS, CONFIGMANAGER
 from core.context import to_llm_messages
 from core.context.message import Message, message_get, message_set
 from core.context.token import estimate_size
@@ -88,7 +88,7 @@ def persist_tool_output(tool_call_id: str, full_output: str, preview: str) -> st
     if _is_persisted_output(full_output):
         return full_output
 
-    path = TOOL_RESULTS_DIR / (f"{tool_call_id}.text" if tool_call_id else f"call-{uuid.uuid4().hex[:8]}.text")
+    path = PATHS.TOOL_RESULTS_DIR / (f"{tool_call_id}.text" if tool_call_id else f"call-{uuid.uuid4().hex[:8]}.text")
     if not path.exists():
         path.write_text(full_output, encoding="utf-8")
 

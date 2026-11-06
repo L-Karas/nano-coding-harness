@@ -20,7 +20,7 @@ from mcp.client import stdio as _mcp_stdio
 from mcp.client.session_group import SseServerParameters, StreamableHttpParameters
 from mcp_types import ImageContent, TextContent
 
-from core.config import LOG_DIR, MCP_CONFIG_FILE
+from core.config import PATHS
 from core.shared.logger import get_logger
 from core.tools import vision
 from core.tools.tool_result import ImageAttachment, ToolResult
@@ -35,8 +35,8 @@ async def _stdio_client(server: StdioServerParameters):
     OSError(9, 'Bad file descriptor')（Windows 的 get_osfhandle 与 POSIX 的 open_process 同样中招），
     所有 stdio server 都连不上（HTTP 传输不受影响）。"""
     try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        errlog = open(LOG_DIR / "mcp-stderr.log", "a", encoding="utf-8", errors="replace")
+        PATHS.LOG_DIR.mkdir(parents=True, exist_ok=True)
+        errlog = open(PATHS.LOG_DIR / "mcp-stderr.log", "a", encoding="utf-8", errors="replace")
     except OSError as e:  # 落盘失败不能拖累建连：宁丢服务端 stderr，也要连得上
         _LOGGER.warning(f"[MCP] stdio stderr log unavailable, discarding server stderr: {e!r}")
         errlog = open(os.devnull, "w", encoding="utf-8")
@@ -552,7 +552,7 @@ def configure_mcp_server(mcp_configs: str) -> tuple[bool, str]:
                 server_config = {**server_config, "enabled": old_config["enabled"]}
             servers[server_name] = server_config
         configs["mcpServers"] = servers
-        MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
+        PATHS.MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
         _reload_config_in_background()  # 落盘即返回，连接在 MCP loop 后台完成
         return True, "Configured MCP Servers"
     except Exception as e:
@@ -579,7 +579,7 @@ def set_mcp_server_enabled(mcp_server_name: str, enabled: bool) -> tuple[bool, s
             server_config["enabled"] = False
             action = "Disabled"
         servers[mcp_server_name] = server_config
-        MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
+        PATHS.MCP_CONFIG_FILE.write_text(json.dumps(configs, ensure_ascii=False, indent=4), encoding="utf-8")
         _reload_config_in_background()  # 落盘即返回，断开 / 重连在 MCP loop 后台完成
         return True, f"{action} MCP server '{mcp_server_name}'"
     except Exception as e:
@@ -601,7 +601,7 @@ def unconfigure_mcp_server(mcp_server_name: str) -> tuple[bool, str]:
         return False, f"MCP server {mcp_server_name} not found"
     mcp_configs["mcpServers"].pop(mcp_server_name)
     try:
-        MCP_CONFIG_FILE.write_text(json.dumps(mcp_configs, ensure_ascii=False, indent=4), encoding="utf-8")
+        PATHS.MCP_CONFIG_FILE.write_text(json.dumps(mcp_configs, ensure_ascii=False, indent=4), encoding="utf-8")
         _reload_config_in_background()  # 落盘即返回，断开在 MCP loop 后台完成
         return True, "Unconfigured MCP Servers"
     except Exception as e:
@@ -610,9 +610,9 @@ def unconfigure_mcp_server(mcp_server_name: str) -> tuple[bool, str]:
 
 
 def _read_config() -> dict:
-    if not MCP_CONFIG_FILE.exists():
-        raise FileNotFoundError(f"MCP server config file not found at {MCP_CONFIG_FILE}")
-    return json.loads(MCP_CONFIG_FILE.read_text(encoding="utf-8"))
+    if not PATHS.MCP_CONFIG_FILE.exists():
+        raise FileNotFoundError(f"MCP server config file not found at {PATHS.MCP_CONFIG_FILE}")
+    return json.loads(PATHS.MCP_CONFIG_FILE.read_text(encoding="utf-8"))
 
 
 async def aget_client_manager() -> ClientManager:

@@ -59,7 +59,7 @@
 
 ### 位置与生命周期
 
-- 路径：`.nano-harness/.permissions.json`（`core.config.PERMISSION_FILE`）；`init_harness()` 在文件
+- 路径：`.nano-harness/.permissions.json`（`core.config.PATHS.PERMISSION_FILE`）；`init_harness()` 在文件
   缺失时创建 `{}`。
 - 启动时读取一次（`register_builtin_extensions()` → `load_rules()`）；**修改后需重启进程**，
   与外部扩展一致，本期不做热加载。

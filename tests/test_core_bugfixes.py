@@ -59,10 +59,11 @@ def test_cancel_unknown_cron_reports_not_found():
 
 
 def test_session_index_write_failure_returns_false(monkeypatch, tmp_path):
+    import core.config as config
     import core.context.session.session as session_module
 
-    monkeypatch.setattr(session_module, "SESSION_DIR", tmp_path)
-    monkeypatch.setattr(session_module, "SESSION_INDEX_FILE", tmp_path / "missing" / "index.jsonl")
+    monkeypatch.setattr(config.PATHS, "SESSION_DIR", tmp_path)
+    monkeypatch.setattr(config.PATHS, "SESSION_INDEX_FILE", tmp_path / "missing" / "index.jsonl")
     manager = session_module.SessionManager()
     manager.new_session()
 

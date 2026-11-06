@@ -1,7 +1,7 @@
 """命令行入口：解析模式开关选定 .nano-harness 根，再把真实 agent 回合接进 Textual UI。
 
-本模块顶层只 import 标准库：`core.config` / `core.agent_loop` 等必须在 `configure_mode()` 之后
-导入，否则它们会在导入期绑定 dev 路径（导入顺序由 tests/test_mode.py 锁定）。
+本模块顶层只 import 标准库：`core.config` / `core.agent_loop` 等运行时代价大，留到解析完参数
+再导入（`--version` / 参数错误不付完整运行时的启动成本）。
 
 两个控制台脚本 `nh` / `nano-harness` 都指向 `main()`（缺省 prod）；仓库根 `main.py` 是
 传 `default_mode="dev"` 的薄壳，保持 `uv run main.py` 的既有行为。
@@ -58,7 +58,7 @@ def parse_args(argv: list[str] | None = None, *, default_mode: str = "prod") -> 
 
 
 def main(default_mode: str = "prod") -> None:
-    """入口：先定 mode 再导入其他 core 模块（它们在导入期绑定 core.config 的路径常量）。"""
+    """入口：先解析参数定 mode，再导入运行时模块并启动。"""
     args = parse_args(default_mode=default_mode)
 
     from core.config import configure_mode

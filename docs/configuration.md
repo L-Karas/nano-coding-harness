@@ -34,9 +34,12 @@
   的键都不随模式变化；受影响的只有 `.nano-harness/` 根及其派生路径。
 - prod 下 `.settings.json`、`.permissions.json`、`extensions/`、`.mcp.json` 等对所有项目**全局共享**；
   会话仍按工作目录分子目录，不会串会话。
-- 模式是进程级、导入期决策：`core/cli.py` 顶层只 import 标准库，解析参数后立刻调用
-  `core.config.configure_mode()`，之后才导入其他 core 模块；裸导入 `core.config`（测试、脚本）
-  一律按 `dev`。`python -m core.tui.ui_textual --smoke` 始终是 dev + smoke。
+- 模式是进程级决策：`core/cli.py` 解析参数后立即 `core.config.configure_mode()`，它只改写
+  `core.config.PATHS`（`Paths` 单例）的字段，对象身份不变。消费方统一 `from core.config import
+  PATHS` 后读 `PATHS.SESSION_DIR` 等字段，导入顺序不影响路径读取；但**随 mode 派生的路径不要
+  按名导入**（导入期会快照成当时模式的值），`WORKDIR` 等与 mode 无关的常量不受此限。日志句柄
+  在首次 `get_logger()` 时绑定当时的 `LOG_DIR`（ADR-0014）。
+  裸导入 `core.config`（测试、脚本）一律按 `dev`；`--smoke` 始终是 dev + smoke。
 
 ## `.nano-harness/` 配置与数据目录
 

@@ -9,7 +9,7 @@
 | `core/agent_loop.py` | Agent 主循环 `AgentRuntime`：外层骨架（cron / 后台注入、预算、会话落盘、长度恢复）、`/compact`；线程契约（loop / 锁 / 中断）委托 `TurnRunner` |
 | `core/turn_runtime.py` | `TurnRunner`：私有事件循环 + 串行锁 + 当前回合的 ctx/task；`run_turn` / `run_compact` / `interrupt`（ADR-0007） |
 | `core/agent_step.py` | Agent step：一次模型调用 + 工具派发（ADR-0003 / 0008），main / sub-agent 共享；差异经 `StepPolicy` / `StepRenderer` 显式化 |
-| `core/config.py` | 路径常量与 `AgentConfig` 运行参数（`/settings` 编辑） |
+| `core/config.py` | `PATHS` 路径快照（按 mode 派生，字段原地切换，ADR-0014）与 `AgentConfig` 运行参数（`/settings` 编辑） |
 | `core/bootstrap.py` | 启动初始化（composition root）：`.nano-harness` 目录树/文件、内置扩展、技能、模型注册表、cron 线程；`bootstrap()` 幂等且线程安全 |
 | `core/interaction.py` | 域层 → UI 端口（permission / clarify + 渲染事件）：TUI 适配器导入时注册，headless 默认拒绝 / 取消 / no-op（ADR-0005） |
 | `core/runtime_context.py` | `AgentRunContext`（取消事件 + 任务登记）与 `ToolContext`（取消信号 / 工作目录 / 发起者身份） |

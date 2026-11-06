@@ -12,6 +12,7 @@ import sys
 import mcp
 
 import core.mcp.mcp_client as mcp_client
+import core.config as config
 
 
 class _Capture:
@@ -44,7 +45,7 @@ def _fake_stdio_client(seen: dict):
 def test_stdio_client_never_inherits_captured_stderr(monkeypatch, tmp_path):
     seen = {}
     monkeypatch.setattr(mcp_client._mcp_stdio, "stdio_client", _fake_stdio_client(seen))
-    monkeypatch.setattr(mcp_client, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(config.PATHS, "LOG_DIR", tmp_path)
     monkeypatch.setattr(sys, "stderr", _Capture())
 
     server = mcp_client.ClientManager._server_params("s", {"command": "x"})
@@ -65,7 +66,7 @@ def test_stdio_client_survives_unwritable_errlog(monkeypatch, tmp_path):
     blocker = tmp_path / "blocked"
     blocker.write_text("not a dir", encoding="utf-8")  # LOG_DIR 位置被文件占住 → mkdir 抛 OSError
     monkeypatch.setattr(mcp_client._mcp_stdio, "stdio_client", _fake_stdio_client(seen))
-    monkeypatch.setattr(mcp_client, "LOG_DIR", blocker)
+    monkeypatch.setattr(config.PATHS, "LOG_DIR", blocker)
 
     server = mcp_client.ClientManager._server_params("s", {"command": "x"})
 

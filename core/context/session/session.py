@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any
 
-from core.config import SESSION_DIR, SESSION_INDEX_FILE
+from core.config import PATHS
 from core.context.message import Message, as_message, content_text, is_synthetic_content
 from core.context.token import estimate_size
 from core.shared.logger import get_logger
@@ -142,7 +142,7 @@ class SessionManager:
             lines.append(json.dumps(session_dict, ensure_ascii=False))
 
         try:
-            SESSION_INDEX_FILE.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+            PATHS.SESSION_INDEX_FILE.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         except Exception as e:
             _LOGGER.exception(e)
             return False
@@ -150,7 +150,7 @@ class SessionManager:
 
     def _update_session_messages(self, append: bool = False) -> bool:
         """更新会话文件：rewrite 重写全量，append 只追加最后一条。"""
-        session_path = SESSION_DIR / self._current_session
+        session_path = PATHS.SESSION_DIR / self._current_session
         if not session_path.exists():
             session_path.touch()
         try:
@@ -177,7 +177,7 @@ class SessionManager:
         if self._current_session == session_id:
             self._current_session = ""
 
-        session_path = SESSION_DIR / session_id
+        session_path = PATHS.SESSION_DIR / session_id
         session_path.unlink(missing_ok=True)
         self.session_map.pop(session_id)
         self._update_session_index()
@@ -206,7 +206,7 @@ class SessionManager:
             self.load_session_list()
             self.session_map[self._current_session] = new_session
             if messages:  # 有历史才需要建档：内存与文件一致，否则重读即丢前缀
-                path = SESSION_DIR / self._current_session
+                path = PATHS.SESSION_DIR / self._current_session
                 path.touch()
                 self._update_session_messages(append=False)
                 self._update_session_index()
@@ -237,7 +237,7 @@ class SessionManager:
     def load_session_list(self) -> list[Session]:
         """加载会话索引中的全部会话（仅元数据），更新会话映射表。"""
         try:
-            with open(SESSION_INDEX_FILE, "r", encoding="utf-8") as f:
+            with open(PATHS.SESSION_INDEX_FILE, "r", encoding="utf-8") as f:
                 content_lines = f.readlines()
             sessions = []
             for line in content_lines:
@@ -263,7 +263,7 @@ class SessionManager:
                 self.session_map[self._current_session].messages = []
             self._current_session = session_id
 
-        path = SESSION_DIR / self._current_session
+        path = PATHS.SESSION_DIR / self._current_session
         if not path.exists():
             _LOGGER.error(f"Session file not found: {path}")
             return None

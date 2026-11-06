@@ -9,29 +9,30 @@ import json
 import threading
 from pathlib import Path
 
-import core.config as config
+from core.config import PATHS
 
 
 def _config_dirs() -> tuple[Path, ...]:
     """每次调用现取路径：入口 configure_mode() 可能已把 .nano-harness 根换到 home。"""
-    return (config.HARNESS_CONFIG_DIR, config.LOG_DIR, config.SKILL_DIR, config.EXTENSION_DIR,
-            config.MEMORY_DIR, config.SESSION_DIR, config.TOOL_RESULTS_DIR, config.MCP_DIR)
+    return (PATHS.HARNESS_CONFIG_DIR, PATHS.LOG_DIR, PATHS.SKILL_DIR,
+            PATHS.EXTENSION_DIR, PATHS.MEMORY_DIR, PATHS.SESSION_DIR,
+            PATHS.TOOL_RESULTS_DIR, PATHS.MCP_DIR)
 
 
 def _json_files() -> dict[Path, dict]:
     return {
-        config.HARNESS_SETTING_FILE: {},  # 默认值由 AgentConfig 提供，load_config 读取时补齐
-        config.SKILL_STATE_FILE: {"disabled": []},
-        config.PROVIDER_AUTH_FILE: {},
-        config.CUSTOM_PROVIDER_FILE: {},
-        config.CUSTOM_MODEL_FILE: {},
-        config.MCP_CONFIG_FILE: {"mcpServers": {}},
-        config.PERMISSION_FILE: {},
+        PATHS.HARNESS_SETTING_FILE: {},  # 默认值由 AgentConfig 提供，load_config 读取时补齐
+        PATHS.SKILL_STATE_FILE: {"disabled": []},
+        PATHS.PROVIDER_AUTH_FILE: {},
+        PATHS.CUSTOM_PROVIDER_FILE: {},
+        PATHS.CUSTOM_MODEL_FILE: {},
+        PATHS.MCP_CONFIG_FILE: {"mcpServers": {}},
+        PATHS.PERMISSION_FILE: {},
     }
 
 
 def _touch_files() -> tuple[Path, ...]:
-    return (config.SESSION_INDEX_FILE, config.CRON_TASK_FILE)
+    return (PATHS.SESSION_INDEX_FILE, PATHS.CRON_TASK_FILE)
 
 
 _booted = False

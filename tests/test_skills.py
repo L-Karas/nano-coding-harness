@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+import core.config as config
 from core.skill import skills as skills_mod
 
 
@@ -24,10 +25,10 @@ def _write_skill(
 def sources(tmp_path, monkeypatch):
     """把扫描来源与状态文件指到临时目录；测试后还原真实注册表 / 状态（conftest 已预扫）。"""
     dirs = {kind: tmp_path / kind for kind in ("global", "user", "project")}
-    monkeypatch.setattr(skills_mod, "SKILL_SOURCES",
-                        (("global", dirs["global"]), ("user", dirs["user"]),
-                         ("project", dirs["project"])))
-    monkeypatch.setattr(skills_mod, "SKILL_STATE_FILE", tmp_path / ".skills.json")
+    monkeypatch.setattr(skills_mod, "_skill_sources",
+                        lambda: (("global", dirs["global"]), ("user", dirs["user"]),
+                                 ("project", dirs["project"])))
+    monkeypatch.setattr(config.PATHS, "SKILL_STATE_FILE", tmp_path / ".skills.json")
     monkeypatch.setattr(skills_mod, "_DISABLED", set(), raising=False)
     monkeypatch.setattr(skills_mod, "_STATE_ERROR", None, raising=False)
     saved = dict(skills_mod.SKILL_REGISTRY)
@@ -150,14 +151,14 @@ def test_set_skill_enabled_filters_prompt_and_load(sources):
     assert not skills_mod.is_skill_enabled("p-skill")
     assert skills_mod.load_skills() is None
     assert "disabled" in skills_mod.load_skill("p-skill")
-    assert json.loads(skills_mod.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
+    assert json.loads(config.PATHS.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
         "disabled": ["p-skill"]}
 
     ok, message = skills_mod.set_skill_enabled("p-skill", True)
     assert ok and "Enabled" in message
     assert skills_mod.is_skill_enabled("p-skill")
     assert skills_mod.load_skills() == {"p-skill": skills_mod.SKILL_REGISTRY["p-skill"]}
-    assert json.loads(skills_mod.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
+    assert json.loads(config.PATHS.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
         "disabled": []}
 
 
@@ -168,19 +169,19 @@ def test_set_skill_enabled_rejects_unknown_skill(sources):
 
 
 def test_scan_prunes_disabled_names_that_no_longer_exist(sources):
-    skills_mod.SKILL_STATE_FILE.write_text(
+    config.PATHS.SKILL_STATE_FILE.write_text(
         json.dumps({"disabled": ["gone", "p-skill"]}), encoding="utf-8")
     _write_skill(sources["project"], "p-dir", "p-skill")
 
     skills_mod.scan_skills()
 
     assert not skills_mod.is_skill_enabled("p-skill")
-    assert json.loads(skills_mod.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
+    assert json.loads(config.PATHS.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
         "disabled": ["p-skill"]}
 
 
 def test_corrupt_state_file_fails_open_and_next_write_repairs(sources):
-    skills_mod.SKILL_STATE_FILE.write_text("{not json", encoding="utf-8")
+    config.PATHS.SKILL_STATE_FILE.write_text("{not json", encoding="utf-8")
     _write_skill(sources["project"], "p-dir", "p-skill")
 
     skills_mod.scan_skills()
@@ -193,7 +194,7 @@ def test_corrupt_state_file_fails_open_and_next_write_repairs(sources):
     assert ok
     assert skills_mod.skill_state_error() is None
     assert not skills_mod.is_skill_enabled("p-skill")
-    assert json.loads(skills_mod.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
+    assert json.loads(config.PATHS.SKILL_STATE_FILE.read_text(encoding="utf-8")) == {
         "disabled": ["p-skill"]}
 
 
@@ -204,4 +205,4 @@ def test_missing_state_file_means_all_enabled(sources):
 
     assert skills_mod.skill_state_error() is None
     assert skills_mod.is_skill_enabled("p-skill")
-    assert not skills_mod.SKILL_STATE_FILE.exists()
+    assert not config.PATHS.SKILL_STATE_FILE.exists()

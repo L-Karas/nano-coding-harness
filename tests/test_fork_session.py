@@ -3,8 +3,7 @@
 选中首条消息（前缀为空）不建会话文件/索引；未知 id 返回 None 且不动当前会话。"""
 import json
 
-
-import core.context.session.session as session_module
+import core.config as config
 from core.context.session.session import _TITLE_CHARS as MESSAGE_PREVIEW_CHARS
 
 
@@ -24,7 +23,7 @@ def _read_back(session_manager, session_id):
 
 def _index_ids(session_manager):
     """会话索引文件里的会话 id 列表（直接读文件，避免 load_session_list 重置内存会话）"""
-    path = session_module.SESSION_INDEX_FILE
+    path = config.PATHS.SESSION_INDEX_FILE
     return [json.loads(line)["id"] for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
@@ -69,12 +68,12 @@ def test_fork_session_from_first_user_message_creates_no_file_or_index(session_m
 
     assert forked is not None and forked.messages == []
     assert session_manager.current_session == forked.id
-    assert not (session_module.SESSION_DIR / forked.id).exists(), "空 fork 不应建会话文件"
+    assert not (config.PATHS.SESSION_DIR / forked.id).exists(), "空 fork 不应建会话文件"
     assert forked.id not in _index_ids(session_manager), "空 fork 不应写会话索引"
 
     # 首条消息落盘时才建档、入索引
     session_manager.add_message({"role": "user", "content": "u1-edited"})
-    assert (session_module.SESSION_DIR / forked.id).exists()
+    assert (config.PATHS.SESSION_DIR / forked.id).exists()
     assert forked.id in _index_ids(session_manager)
     assert [m.content for m in _read_back(session_manager, forked.id).messages] == ["u1-edited"]
 

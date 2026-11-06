@@ -14,7 +14,7 @@ from typing import Iterable, NamedTuple
 
 import core.extension.dispatcher as dispatcher
 import core.extension.registry as registry
-from core.config import EXTENSION_DIR
+from core.config import PATHS
 from core.extension.api import ExtensionAPI
 from core.extension.host import commit_extension
 from core.shared.file_io import atomic_write_text
@@ -58,7 +58,7 @@ def load_extensions(directory: Path | None = None) -> None:
         return
     _LOADING = True
     try:
-        target = directory or EXTENSION_DIR
+        target = directory or PATHS.EXTENSION_DIR
         if not target.exists():
             _LOADED = True
             return

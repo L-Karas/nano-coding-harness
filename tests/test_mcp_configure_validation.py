@@ -6,6 +6,7 @@ import json
 from mcp import StdioServerParameters
 from mcp.client.session_group import SseServerParameters, StreamableHttpParameters
 
+import core.config as config
 import core.mcp.mcp_client as mcp_client
 
 
@@ -13,14 +14,14 @@ def _configure(
     monkeypatch,
     tmp_path,
     name,
-    config,
+    server_config,
 ):
     config_file = tmp_path / ".mcp.json"
     config_file.write_text('{"mcpServers": {}}', encoding="utf-8")
-    monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", config_file)
+    monkeypatch.setattr(config.PATHS, "MCP_CONFIG_FILE", config_file)
     # 只测校验与落盘：别让 configure 真去建连（会 spawn npx 子进程）
     monkeypatch.setattr(mcp_client, "get_client_manager", lambda: None)
-    ok, message = mcp_client.configure_mcp_server(json.dumps({"mcpServers": {name: config}}))
+    ok, message = mcp_client.configure_mcp_server(json.dumps({"mcpServers": {name: server_config}}))
     return ok, message, json.loads(config_file.read_text(encoding="utf-8"))
 
 
@@ -63,7 +64,7 @@ def test_configure_keeps_existing_enabled_state(monkeypatch, tmp_path):
     config_file = tmp_path / ".mcp.json"
     config_file.write_text(json.dumps(
         {"mcpServers": {"s": {"command": "old", "enabled": False}}}), encoding="utf-8")
-    monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", config_file)
+    monkeypatch.setattr(config.PATHS, "MCP_CONFIG_FILE", config_file)
     monkeypatch.setattr(mcp_client, "get_client_manager", lambda: None)
 
     ok, message = mcp_client.configure_mcp_server(json.dumps(

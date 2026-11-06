@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
-from core.config import CONFIGMANAGER, CUSTOM_MODEL_FILE, CUSTOM_PROVIDER_FILE, PROVIDER_AUTH_FILE
+from core.config import CONFIGMANAGER, PATHS
 from core.shared.logger import get_logger
 
 _MODEL_LIST_PATH: Path = Path(__file__).parent / "models.json"
@@ -45,7 +45,7 @@ def _save_custom_models() -> None:
         }
         for provider, auth in _CUSTOM_PROVIDER_AUTH.items()
     }
-    _write_json(CUSTOM_MODEL_FILE, models)
+    _write_json(PATHS.CUSTOM_MODEL_FILE, models)
 
 
 def _load_custom_registry() -> tuple[dict, dict]:
@@ -57,11 +57,11 @@ def _load_custom_registry() -> tuple[dict, dict]:
     """
     global _CUSTOM_PROVIDER_AUTH
 
-    if not (CUSTOM_MODEL_FILE.exists() and CUSTOM_PROVIDER_FILE.exists()):
+    if not (PATHS.CUSTOM_MODEL_FILE.exists() and PATHS.CUSTOM_PROVIDER_FILE.exists()):
         return {}, {}
 
-    _CUSTOM_PROVIDER_AUTH = json.loads(CUSTOM_PROVIDER_FILE.read_text(encoding="utf-8"))
-    custom_models = json.loads(CUSTOM_MODEL_FILE.read_text(encoding="utf-8"))
+    _CUSTOM_PROVIDER_AUTH = json.loads(PATHS.CUSTOM_PROVIDER_FILE.read_text(encoding="utf-8"))
+    custom_models = json.loads(PATHS.CUSTOM_MODEL_FILE.read_text(encoding="utf-8"))
     models = {
         provider: {
             "base_url": entry.get("base_url", ""),
@@ -86,7 +86,7 @@ def load_model_registry() -> None:
     try:
         custom_models, custom_auth = _load_custom_registry()
         _MODEL_LIST = json.loads(_MODEL_LIST_PATH.read_text(encoding="utf-8"))
-        _PROVIDER_AUTH = json.loads(PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
+        _PROVIDER_AUTH = json.loads(PATHS.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
         _MODEL_LIST |= custom_models  # 自定义同名 provider 覆盖内置
         _PROVIDER_AUTH |= custom_auth
         _LOGGER.info(f"[Registry Models] providers: {list(_MODEL_LIST)}")
@@ -145,7 +145,7 @@ def configure_provider(provider: str, api_key: str) -> None:
     """写入 / 覆盖 provider 的 API key 并落盘。"""
     try:
         _PROVIDER_AUTH[provider] = {"api_key": api_key}
-        _write_json(PROVIDER_AUTH_FILE, _PROVIDER_AUTH)
+        _write_json(PATHS.PROVIDER_AUTH_FILE, _PROVIDER_AUTH)
     except Exception as e:
         _LOGGER.exception(f"[Configure Provider Error] {e}")
         raise
@@ -161,7 +161,7 @@ def unconfigure_provider(provider: str) -> None:
         return  # 幂等 no-op：未配置 / 已删（UI 对未配置行或重复按 Delete 都安全）
     try:
         _PROVIDER_AUTH.pop(provider)
-        _write_json(PROVIDER_AUTH_FILE, _PROVIDER_AUTH)
+        _write_json(PATHS.PROVIDER_AUTH_FILE, _PROVIDER_AUTH)
     except Exception as e:
         _LOGGER.error(f"[Unconfigure Provider Error] {e}")
         raise
@@ -194,7 +194,7 @@ def login_provider(provider: str, base_url: str, api_key: str = "") -> bool:
     try:
         _CUSTOM_PROVIDER_AUTH[provider] = {"base_url": base_url, "api_key": api_key}
         _MODEL_LIST[provider] = {"base_url": base_url, "model_list": {}}
-        _write_json(CUSTOM_PROVIDER_FILE, _CUSTOM_PROVIDER_AUTH)
+        _write_json(PATHS.CUSTOM_PROVIDER_FILE, _CUSTOM_PROVIDER_AUTH)
         _save_custom_models()
         _PROVIDER_AUTH[provider] = {"api_key": api_key}
         _LOGGER.info(f"[Login Provider] login {provider} success")
@@ -250,7 +250,7 @@ def logout_provider(provider: str) -> bool:
         _CUSTOM_PROVIDER_AUTH.pop(provider)
         _MODEL_LIST.pop(provider)
         _PROVIDER_AUTH.pop(provider, None)  # 从未配置该 provider 时无凭证可删
-        _write_json(CUSTOM_PROVIDER_FILE, _CUSTOM_PROVIDER_AUTH)
+        _write_json(PATHS.CUSTOM_PROVIDER_FILE, _CUSTOM_PROVIDER_AUTH)
         _save_custom_models()
         if _update_default_models(provider):
             _refresh_shared_clients()

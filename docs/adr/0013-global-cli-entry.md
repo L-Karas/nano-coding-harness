@@ -9,7 +9,7 @@ accepted
 （Windows 为 `%USERPROFILE%\.local\bin`，该目录需在 PATH 中）。
 CLI 从根目录 `main.py` 搬进 `core/cli.py`：顶层只 import 标准库，`main(default_mode=...)`
 先解析 `-dev/--dev` 与 `-prod/--production`（互斥），再 `configure_mode()`，最后才导入
-`core.agent_loop` 等导入期绑定路径常量的模块。仓库根 `main.py` 保留为薄壳，函数体内延迟导入
+`core.agent_loop` 等（当时）导入期绑定路径常量的模块。仓库根 `main.py` 保留为薄壳，函数体内延迟导入
 `core.cli` 并传 `default_mode="dev"`，因此 `uv run main.py` 行为不变。
 
 两个入口的缺省模式不同：全局命令缺省 `prod`（`~/.nano-harness`），仓库入口缺省 `dev`
@@ -23,6 +23,10 @@ temp / smoke 不进 site-packages；`--version` 在源码树内读 `pyproject.to
 
 已知限制：editable 安装下改依赖或版本号后需要 `uv tool install --editable . --force` 重装；
 prod 的权限 / 扩展 / MCP 配置跨项目全局共享，这是既有 prod 语义。
+
+> 注：路径绑定方式后由 [ADR-0014](0014-paths-snapshot.md) 改为 `core.config.PATHS` 快照，
+> 「先 `configure_mode()` 再导入其他 core 模块」的导入顺序要求不再必要；两个入口与缺省模式的
+> 决策不变。
 
 ## Considered Options
 

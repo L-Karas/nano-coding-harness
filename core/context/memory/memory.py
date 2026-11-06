@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, asdict
 from typing import Literal, Optional
 
-from core.config import MEMORY_DIR
+from core.config import PATHS
 from core.shared.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -47,7 +47,7 @@ class MemoryManager:
         return self._save_memory(memory), memory.id
 
     def _save_memory(self, memory: Memory) -> str:
-        path = MEMORY_DIR / f"{memory.id}.json"
+        path = PATHS.MEMORY_DIR / f"{memory.id}.json"
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(json.dumps(asdict(memory), indent=4, ensure_ascii=False))
@@ -60,7 +60,7 @@ class MemoryManager:
         if id in self.memories:
             return self.memories[id]
 
-        path = MEMORY_DIR / f"{id}.json"
+        path = PATHS.MEMORY_DIR / f"{id}.json"
         if not path.exists():
             _LOGGER.info(f"Memory {id} load error: memory {id} does not exist.")
             return None
@@ -69,11 +69,11 @@ class MemoryManager:
         return memory
 
     def load_memories(self) -> list[Memory]:
-        if not MEMORY_DIR.exists():
+        if not PATHS.MEMORY_DIR.exists():
             return []
 
         self.memories.clear()
-        for path in MEMORY_DIR.glob("*.json"):
+        for path in PATHS.MEMORY_DIR.glob("*.json"):
             try:
                 memory = Memory(**json.loads(path.read_text(encoding="utf-8")))
                 self.memories[memory.id] = memory
@@ -84,7 +84,7 @@ class MemoryManager:
         return list(self.memories.values())
 
     def delete_memory(self, id: str) -> bool:
-        path = MEMORY_DIR / f"{id}.json"
+        path = PATHS.MEMORY_DIR / f"{id}.json"
         if id not in self.memories or not path.exists():
             _LOGGER.info(f"Memory {id} delete error: memory {id} does not exist.")
             return False

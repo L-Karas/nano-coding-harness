@@ -1,11 +1,12 @@
-"""运行模式：-dev/-prod 解析、.nano-harness 根目录切换与导入顺序纪律。
+"""运行模式：-dev/-prod 解析、.nano-harness 根目录切换与 PATHS 快照身份。
 
-mode 是进程级、导入期常量（core.config 的路径全部在导入期派生），
-所以这里既测 configure_mode() 的重算结果，也用子进程锁住「未 configure 时默认 dev」。
+mode 只由 configure_mode() 改写 PATHS 快照的字段（对象身份不变），
+所以这里既测重算结果，也用子进程锁住「未 configure 时默认 dev」。
 """
 import json
 import subprocess
 import sys
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -16,17 +17,13 @@ from core.bootstrap import init_harness
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-_PATH_NAMES = (
-    "HARNESS_CONFIG_DIR", "LOG_DIR", "SKILL_DIR", "EXTENSION_DIR", "MEMORY_DIR",
-    "TOOL_RESULTS_DIR", "MCP_DIR", "SESSION_ROOT_DIR", "SESSION_DIR", "HARNESS_SETTING_FILE",
-    "SKILL_STATE_FILE", "PROVIDER_AUTH_FILE", "CUSTOM_PROVIDER_FILE", "CUSTOM_MODEL_FILE",
-    "SESSION_INDEX_FILE", "MCP_CONFIG_FILE", "CRON_TASK_FILE", "PERMISSION_FILE",
-)
+# 从 dataclass 字段派生：新增路径只改 core.config.Paths，这里不必同步
+_PATH_NAMES = tuple(f.name for f in fields(config.Paths) if f.name != "MODE")
 
 
 @pytest.fixture
 def restore_dev_mode():
-    """任何切到 prod 的用例结束后都回到 dev，避免污染后续用例的路径常量。"""
+    """任何切到 prod 的用例结束后都回到 dev，避免污染后续用例的路径快照。"""
     yield
     config.configure_mode("dev")
 
@@ -89,10 +86,10 @@ def test_parse_args_rejects_values_on_mode_flags(argv):
 
 
 def test_dev_mode_uses_project_dir(restore_dev_mode):
-    assert config.MODE == "dev"
+    assert config.PATHS.MODE == "dev"
     root = config.WORKDIR / config.HARNESS_DIR_NAME
-    assert config.HARNESS_CONFIG_DIR == root
-    assert config.SESSION_DIR == root / ".session" / config.format_workdir_name(config.WORKDIR)
+    assert config.PATHS.HARNESS_CONFIG_DIR == root
+    assert config.PATHS.SESSION_DIR == root / ".session" / config.format_workdir_name(config.WORKDIR)
 
 
 def test_configure_mode_same_mode_is_noop(monkeypatch):
@@ -106,15 +103,24 @@ def test_configure_mode_same_mode_is_noop(monkeypatch):
 def test_prod_mode_moves_every_path_to_home(fake_home, restore_dev_mode):
     config.configure_mode("prod")
     runtime_root = fake_home
-    assert config.MODE == "prod"
-    assert config.HARNESS_CONFIG_DIR == runtime_root
+    assert config.PATHS.MODE == "prod"
+    assert config.PATHS.HARNESS_CONFIG_DIR == runtime_root
     for name in _PATH_NAMES:
-        value = getattr(config, name)
+        value = getattr(config.PATHS, name)
         assert value == runtime_root or runtime_root in value.parents, f"{name} 未跟随 mode: {value}"
     # 会话目录仍按工作目录分目录，不会在 home 下把不同项目串在一起
-    assert config.SESSION_DIR == runtime_root / ".session" / config.format_workdir_name(config.WORKDIR)
+    assert config.PATHS.SESSION_DIR == runtime_root / ".session" / config.format_workdir_name(config.WORKDIR)
     # 项目级技能目录不受 mode 影响
     assert config.PROJECT_SKILL_DIR == config.WORKDIR / ".agents" / "skills"
+
+
+def test_early_imported_paths_follow_later_mode_switch(fake_home, restore_dev_mode):
+    """PATHS 对象身份稳定：早于 configure_mode 导入它的模块读到的仍是新 mode 的值。"""
+    early = config.PATHS  # 等价于 `from core.config import PATHS` 的导入期绑定
+    assert early.MODE == "dev"
+    config.configure_mode("prod")
+    assert early is config.PATHS
+    assert (early.MODE, early.LOG_DIR) == ("prod", fake_home / "log")
 
 
 def test_configure_mode_reloads_settings_from_new_root(fake_home, restore_dev_mode):
@@ -138,7 +144,7 @@ def test_init_harness_creates_tree_under_configured_root(fake_home, restore_dev_
 
 def test_unconfigured_import_defaults_to_dev():
     """入口必须在导入其他 core 模块前 configure；裸导入 core.config 永远是 dev。"""
-    code = "import core.config as c; print(c.MODE); print(c.HARNESS_CONFIG_DIR)"
+    code = "import core.config as c; print(c.PATHS.MODE); print(c.PATHS.HARNESS_CONFIG_DIR)"
     result = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT,
                             capture_output=True, text=True, check=True)
     mode, root = result.stdout.splitlines()[:2]
@@ -146,8 +152,16 @@ def test_unconfigured_import_defaults_to_dev():
     assert Path(root) == REPO_ROOT / ".nano-harness"
 
 
+def test_skill_user_source_follows_mode(fake_home, restore_dev_mode):
+    """技能 user 来源在扫描时现取，不能在导入期固化 dev 的 SKILL_DIR。"""
+    from core.skill.skills import _skill_sources
+
+    config.configure_mode("prod")
+    assert dict(_skill_sources())["user"] == fake_home / "skills"
+
+
 def test_importing_entry_point_loads_no_core_module():
-    """main.py 薄壳顶层不得加载 core.*：configure_mode 必须先于其他 core 模块。"""
+    """main.py 保持薄壳：顶层不加载 core.*（解析参数前的导入都会拖慢启动并引入副作用）。"""
     code = ("import sys, main; "
             "print(sorted(m for m in sys.modules if m == 'core' or m.startswith('core.')))")
     result = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT,
@@ -156,7 +170,7 @@ def test_importing_entry_point_loads_no_core_module():
 
 
 def test_importing_cli_module_loads_no_runtime_modules():
-    """core.cli 顶层只能 import 标准库：core.config 等必须在 configure_mode() 之后导入。"""
+    """core.cli 顶层只 import 标准库：`nh --version` / 参数错误不付完整运行时的启动成本。"""
     code = ("import sys, core.cli; "
             "print(sorted(m for m in sys.modules "
             "if m == 'core.config' or m.startswith('core.config.') or m == 'core.agent_loop'))")

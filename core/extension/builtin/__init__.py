@@ -5,7 +5,7 @@
 """
 from typing import Callable
 
-from core.config import PERMISSION_FILE
+from core.config import PATHS
 from core.extension.api import ExtensionAPI
 from core.extension.host import commit_extension
 import core.extension.registry as registry
@@ -25,7 +25,7 @@ def register_builtin_extensions(*, rules: Rules | None = None) -> None:
     先登记 observers、后登记 permission；实际派发顺序由 stage 决定（observer 先于 gate）。
     """
     if rules is None:
-        rules = load_rules(PERMISSION_FILE)
+        rules = load_rules(PATHS.PERMISSION_FILE)
     _register("builtin:observers", observers.register)
     _register("builtin:permission", lambda api: permission.register(api, rules))
 

@@ -18,8 +18,8 @@ from core.bootstrap import init_harness
 init_harness()
 
 from core.client.model import load_model_registry  # noqa: E402
+import core.config as config  # noqa: E402
 from core.config import AgentConfig  # noqa: E402
-import core.context.session.session as session_module  # noqa: E402
 from core.context.session.session import SessionManager  # noqa: E402
 from core.extension import reset_extensions  # noqa: E402
 from core.extension.builtin import permission, register_builtin_extensions  # noqa: E402
@@ -27,10 +27,15 @@ from core.extension.builtin.permission import Rules  # noqa: E402
 import core.skill.skills as skills_mod  # noqa: E402
 
 register_builtin_extensions(rules=Rules())
-# 测试不读写开发者真实的 .nano-harness/.skills.json；启动扫描后固定为全员启用
-skills_mod.SKILL_STATE_FILE = Path(
-    tempfile.mkdtemp(prefix="nano-harness-skills-")) / ".skills.json"
-skills_mod.scan_skills()
+# 启动扫描只在一次性临时状态文件上做：不读写开发者真实的 .nano-harness/.skills.json。
+# 扫描后立即还原 PATHS 字段，避免污染 test_mode 对派生结果的断言（后续用例自行隔离写入）。
+with tempfile.TemporaryDirectory(prefix="nano-harness-skills-") as _skills_tmp:
+    _saved_state_file = config.PATHS.SKILL_STATE_FILE
+    config.PATHS.SKILL_STATE_FILE = Path(_skills_tmp) / ".skills.json"
+    try:
+        skills_mod.scan_skills()
+    finally:
+        config.PATHS.SKILL_STATE_FILE = _saved_state_file
 skills_mod._DISABLED = set()
 skills_mod._STATE_ERROR = None
 load_model_registry()
@@ -39,8 +44,8 @@ load_model_registry()
 @pytest.fixture
 def session_manager(tmp_path, monkeypatch):
     """SessionManager 及落盘目录全部隔离到 tmp_path（会话测试共用）。"""
-    monkeypatch.setattr(session_module, "SESSION_DIR", tmp_path)
-    monkeypatch.setattr(session_module, "SESSION_INDEX_FILE", tmp_path / "session_index.jsonl")
+    monkeypatch.setattr(config.PATHS, "SESSION_DIR", tmp_path)
+    monkeypatch.setattr(config.PATHS, "SESSION_INDEX_FILE", tmp_path / "session_index.jsonl")
     return SessionManager()
 
 

@@ -2,11 +2,12 @@
 import json
 
 import core.client.model as model
+import core.config as config
 
 
 def test_login_model_saves_context_length_and_max_output(tmp_path, monkeypatch):
     custom_file = tmp_path / ".custom_models.json"
-    monkeypatch.setattr(model, "CUSTOM_MODEL_FILE", custom_file)
+    monkeypatch.setattr(config.PATHS, "CUSTOM_MODEL_FILE", custom_file)
     monkeypatch.setitem(model._CUSTOM_PROVIDER_AUTH, "smoke-provider",
                         {"base_url": "", "api_key": ""})
     monkeypatch.setitem(model._PROVIDER_AUTH, "smoke-provider", {"api_key": ""})
@@ -32,7 +33,7 @@ def test_login_model_saves_context_length_and_max_output(tmp_path, monkeypatch):
 def test_login_model_rejects_non_positive_context_length(tmp_path, monkeypatch):
     """注册表 context_length 是压缩/预算的唯一真源，非正值必须拒绝注册。"""
     custom_file = tmp_path / ".custom_models.json"
-    monkeypatch.setattr(model, "CUSTOM_MODEL_FILE", custom_file)
+    monkeypatch.setattr(config.PATHS, "CUSTOM_MODEL_FILE", custom_file)
     monkeypatch.setitem(model._CUSTOM_PROVIDER_AUTH, "smoke-provider",
                         {"base_url": "", "api_key": ""})
     monkeypatch.setitem(model._MODEL_LIST, "smoke-provider", {"base_url": "", "model_list": {}})
@@ -43,8 +44,8 @@ def test_login_model_rejects_non_positive_context_length(tmp_path, monkeypatch):
 
 def test_login_provider_rejects_builtin_name(tmp_path, monkeypatch):
     """回归：未配置的内置 provider 也属重名，不得被自定义 provider 覆盖注册。"""
-    monkeypatch.setattr(model, "CUSTOM_PROVIDER_FILE", tmp_path / ".custom_providers.json")
-    monkeypatch.setattr(model, "CUSTOM_MODEL_FILE", tmp_path / ".custom_models.json")
+    monkeypatch.setattr(config.PATHS, "CUSTOM_PROVIDER_FILE", tmp_path / ".custom_providers.json")
+    monkeypatch.setattr(config.PATHS, "CUSTOM_MODEL_FILE", tmp_path / ".custom_models.json")
     monkeypatch.setitem(model._MODEL_LIST, "Deepseek", {"base_url": "", "model_list": {}})
     monkeypatch.delitem(model._CUSTOM_PROVIDER_AUTH, "Deepseek", raising=False)
 
@@ -54,8 +55,8 @@ def test_login_provider_rejects_builtin_name(tmp_path, monkeypatch):
 
 def test_logout_provider_without_auth_key(tmp_path, monkeypatch):
     """回归：注销尚未配置 API key 的自定义 provider 必须整体成功（曾 KeyError 半途中断）。"""
-    monkeypatch.setattr(model, "CUSTOM_PROVIDER_FILE", tmp_path / ".custom_providers.json")
-    monkeypatch.setattr(model, "CUSTOM_MODEL_FILE", tmp_path / ".custom_models.json")
+    monkeypatch.setattr(config.PATHS, "CUSTOM_PROVIDER_FILE", tmp_path / ".custom_providers.json")
+    monkeypatch.setattr(config.PATHS, "CUSTOM_MODEL_FILE", tmp_path / ".custom_models.json")
     monkeypatch.setitem(model._CUSTOM_PROVIDER_AUTH, "smoke-provider",
                         {"base_url": "http://example.com/v1", "api_key": ""})
     monkeypatch.setitem(model._MODEL_LIST, "smoke-provider",

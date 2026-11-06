@@ -4,6 +4,7 @@ import re
 import pytest
 
 import core.context.compact.context_compact as compact_mod
+import core.config as config
 from core.context.compact import truncate_large_tool_outputs
 from core.context.truncate import truncate_tool_output
 from core.template import PERSIST_TOOL_MESSAGE_PREFIX, PERSIST_TOOL_MESSAGE_SUFFIX
@@ -13,7 +14,7 @@ from core.tools.base_tools.read import ReadFile
 @pytest.fixture
 def tool_results_dir(tmp_path, monkeypatch):
     """把落盘目录指向 tmp_path，避免污染真实 .nano-harness。"""
-    monkeypatch.setattr(compact_mod, "TOOL_RESULTS_DIR", tmp_path)
+    monkeypatch.setattr(config.PATHS, "TOOL_RESULTS_DIR", tmp_path)
     return tmp_path
 
 

@@ -17,8 +17,8 @@ def ctx(tmp_path, monkeypatch):
         "default_thinking_level": "max",
     }), encoding="utf-8")
     auth_file.write_text(json.dumps({"Qwen": {"api_key": "test-key"}}), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
-    monkeypatch.setattr(model, "PROVIDER_AUTH_FILE", auth_file)
+    monkeypatch.setattr(config_mod.PATHS, "HARNESS_SETTING_FILE", setting_file)
+    monkeypatch.setattr(config_mod.PATHS, "PROVIDER_AUTH_FILE", auth_file)
     monkeypatch.setattr(model, "AsyncOpenAI", FakeAsyncOpenAI)  # 不建真实连接
     mgr = config_mod.AgentConfigManager.load_config()
     monkeypatch.setattr(model, "CONFIGMANAGER", mgr)
@@ -159,7 +159,7 @@ def test_unconfigure_default_provider_resets_client_and_files(ctx):
 
     model.unconfigure_provider("Qwen")
 
-    assert "Qwen" not in json.loads(model.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
+    assert "Qwen" not in json.loads(config_mod.PATHS.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
     stored = json.loads(ctx.read_text(encoding="utf-8"))
     assert stored["default_model"] == "" and "default_provider" not in stored
     assert client.current_provider == "" and client.current_client_async is None, \
@@ -172,12 +172,12 @@ def test_unconfigure_non_default_and_repeat_is_noop(ctx):
     """回归：unconfigure 须幂等——删非默认 provider 不动默认模型配置；
     对未配置/已删的 provider 重复调用不得抛错。"""
     model.unconfigure_provider("Deepseek")  # auth 文件里没有 Deepseek：no-op
-    assert json.loads(model.PROVIDER_AUTH_FILE.read_text(encoding="utf-8")) == {
+    assert json.loads(config_mod.PATHS.PROVIDER_AUTH_FILE.read_text(encoding="utf-8")) == {
         "Qwen": {"api_key": "test-key"}}
     assert json.loads(ctx.read_text(encoding="utf-8"))["default_model"] == "Qwen:qwen3.8-max"
 
     model.unconfigure_provider("Qwen")  # 删默认：模型配置清空
-    assert "Qwen" not in json.loads(model.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
+    assert "Qwen" not in json.loads(config_mod.PATHS.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
     model.unconfigure_provider("Qwen")  # 已删：重复调用幂等
     assert json.loads(ctx.read_text(encoding="utf-8"))["default_model"] == ""
 
@@ -190,7 +190,7 @@ def test_unconfigure_settings_without_default_model_key(ctx):
 
     model.unconfigure_provider("Qwen")
 
-    assert "Qwen" not in json.loads(model.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
+    assert "Qwen" not in json.loads(config_mod.PATHS.PROVIDER_AUTH_FILE.read_text(encoding="utf-8"))
     assert json.loads(ctx.read_text(encoding="utf-8")) == {"default_thinking_level": "max"}
 
 

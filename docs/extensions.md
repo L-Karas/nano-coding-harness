@@ -332,11 +332,11 @@ async def redact_secrets(ctx):
 import json
 from datetime import datetime
 
-from core.config import LOG_DIR
+from core.config import PATHS
 
 
 def audit_tool_call(ctx):
-    path = LOG_DIR / "my_ext_audit.jsonl"  # 跟随当前模式的配置根（dev / prod）
+    path = PATHS.LOG_DIR / "my_ext_audit.jsonl"  # 跟随当前模式的配置根（dev / prod）
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps({

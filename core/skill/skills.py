@@ -8,7 +8,7 @@ from typing import Literal
 
 import yaml
 
-from core.config import SKILL_DIR, GLOBAL_SKILLS_DIR, PROJECT_SKILL_DIR, SKILL_STATE_FILE
+from core.config import GLOBAL_SKILLS_DIR, PATHS, PROJECT_SKILL_DIR
 from core.shared.logger import get_logger
 from core.template import SKILL_MESSAGE_TEMPLATE
 
@@ -16,12 +16,15 @@ _LOGGER = get_logger(__name__)
 
 SkillType = Literal["global", "user", "project"]
 
-# 扫描来源：顺序即优先级（靠后覆盖靠前），project > user > global
-SKILL_SOURCES: tuple[tuple[SkillType, Path], ...] = (
-    ("global", GLOBAL_SKILLS_DIR),
-    ("user", SKILL_DIR),
-    ("project", PROJECT_SKILL_DIR),
-)
+
+def _skill_sources() -> tuple[tuple[SkillType, Path], ...]:
+    """扫描来源：顺序即优先级（靠后覆盖靠前），project > user > global。
+
+    user 来源随 mode 变化，所以在扫描时从 PATHS 现取，不固化成模块级常量。
+    """
+    return (("global", GLOBAL_SKILLS_DIR), ("user", PATHS.SKILL_DIR),
+            ("project", PROJECT_SKILL_DIR))
+
 
 SKILL_REGISTRY: dict[str, "Skill"] = {}
 
@@ -59,26 +62,28 @@ def _parse_frontmatter(text: str, skill_dir: Path) -> tuple[dict, str]:
 
 def _read_state() -> tuple[set[str], str | None]:
     """读 .skills.json：缺失 = 空状态；损坏 / 结构非法 = 全部启用 + 可展示错误。"""
-    if not SKILL_STATE_FILE.exists():
+    state_file = PATHS.SKILL_STATE_FILE
+    if not state_file.exists():
         return set(), None
     try:
-        data = json.loads(SKILL_STATE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(state_file.read_text(encoding="utf-8"))
     except Exception as exc:
-        _LOGGER.error(f"[Skill] Read state {SKILL_STATE_FILE} error: {exc!r}")
+        _LOGGER.error(f"[Skill] Read state {state_file} error: {exc!r}")
         return set(), f"failed to read .skills.json: {exc}"
     if not isinstance(data, dict):
-        _LOGGER.error(f"[Skill] State {SKILL_STATE_FILE} is not an object")
+        _LOGGER.error(f"[Skill] State {state_file} is not an object")
         return set(), "invalid .skills.json: expected an object"
     disabled = data.get("disabled", [])
     if not isinstance(disabled, list) or not all(isinstance(name, str) for name in disabled):
-        _LOGGER.error(f"[Skill] State {SKILL_STATE_FILE} has invalid 'disabled' list")
+        _LOGGER.error(f"[Skill] State {state_file} has invalid 'disabled' list")
         return set(), "invalid .skills.json: 'disabled' must be a list of names"
     return set(disabled), None
 
 
 def _write_state(disabled: set[str]) -> None:
-    SKILL_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SKILL_STATE_FILE.write_text(
+    state_file = PATHS.SKILL_STATE_FILE
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(
         json.dumps({"disabled": sorted(disabled)}, ensure_ascii=False, indent=4),
         encoding="utf-8",
     )
@@ -98,7 +103,7 @@ def scan_skills() -> None:
     global _DISABLED
     SKILL_REGISTRY.clear()
 
-    for skill_type, skills_dir in SKILL_SOURCES:
+    for skill_type, skills_dir in _skill_sources():
         if not skills_dir.exists():
             continue
         for skill_directory in sorted(skills_dir.iterdir()):
@@ -131,7 +136,7 @@ def scan_skills() -> None:
     try:
         _write_state(_DISABLED)
     except OSError as exc:
-        _LOGGER.error(f"[Skill] Write state {SKILL_STATE_FILE} error: {exc!r}")
+        _LOGGER.error(f"[Skill] Write state {PATHS.SKILL_STATE_FILE} error: {exc!r}")
 
 
 def is_skill_enabled(name: str) -> bool:
@@ -166,7 +171,7 @@ def set_skill_enabled(name: str, enabled: bool) -> tuple[bool, str]:
     except Exception as exc:  # 文件系统 / 编码错误都回滚，不能让 UI 动作抛穿
         _DISABLED.clear()
         _DISABLED.update(before)
-        _LOGGER.error(f"[Skill] Write state {SKILL_STATE_FILE} error: {exc!r}")
+        _LOGGER.error(f"[Skill] Write state {PATHS.SKILL_STATE_FILE} error: {exc!r}")
         return False, f"Failed to save skill state: {exc}"
     _STATE_ERROR = None  # 成功写出合法状态即视为故障已修复
     return True, f"{action} skill '{name}'"

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import core.mcp.mcp_client as mcp_client
+import core.config as config
 
 
 @pytest.fixture
@@ -15,7 +16,7 @@ def config_file(tmp_path, monkeypatch):
         "on": {"command": "x"},
         "off": {"command": "y", "enabled": False},
     }}), encoding="utf-8")
-    monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", path)
+    monkeypatch.setattr(config.PATHS, "MCP_CONFIG_FILE", path)
     monkeypatch.setattr(mcp_client, "_reload_config_in_background", lambda: None)
     return path
 

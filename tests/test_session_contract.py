@@ -1,14 +1,14 @@
 """SessionManager 契约：Message 货币、只读 current_session、reset()、load_messages 无写副作用。"""
 import pytest
 
-import core.context.session.session as session_module
+import core.config as config
 from core.context.message import Message
 
 
 def test_load_messages_without_session_is_pure_read(session_manager):
     assert session_manager.load_messages() == []
     assert session_manager.current_session == ""
-    assert not (session_module.SESSION_INDEX_FILE).exists(), "读不应落索引"
+    assert not (config.PATHS.SESSION_INDEX_FILE).exists(), "读不应落索引"
 
 
 def test_current_session_is_read_only(session_manager):

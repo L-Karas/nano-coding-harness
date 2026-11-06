@@ -20,9 +20,9 @@ async def run(app, pilot) -> None:
     assert prompt._candidates == ["/settings"], prompt._candidates
     with tempfile.TemporaryDirectory() as tmp:  # 隔离：冒烟不写真实 .nano-harness/.settings.json
         setting_file = Path(tmp) / ".settings.json"
-        orig = config_mod.HARNESS_SETTING_FILE
+        orig = config_mod.PATHS.HARNESS_SETTING_FILE
         orig_cfg = config_mod.CONFIGMANAGER.config
-        config_mod.HARNESS_SETTING_FILE = setting_file
+        config_mod.PATHS.HARNESS_SETTING_FILE = setting_file
         import core.client as _client
         orig_models = _client.get_model_list
         _client.get_model_list = lambda custom_model=False: [("deepseek-chat", "deepseek"),
@@ -279,6 +279,6 @@ async def run(app, pilot) -> None:
             assert not isinstance(app.screen_stack[-1], SettingsScreen), "Esc 未关闭设置窗"
             print("[smoke] /settings OK: prefill, two-step Enter, Tab/↑/↓ browse, mouse click save/edit, Esc closes")
         finally:
-            config_mod.HARNESS_SETTING_FILE = orig
+            config_mod.PATHS.HARNESS_SETTING_FILE = orig
             config_mod.CONFIGMANAGER.config = orig_cfg
             _client.get_model_list = orig_models

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import core.extension.builtin as builtin_mod
+import core.config as config
 import core.extension.dispatcher as dispatcher
 from core.extension import ExtensionInfo, list_extensions
 from core.extension.builtin import observers, register_builtin_extensions
@@ -28,7 +29,7 @@ def test_register_without_rules_loads_permission_file(tmp_path, monkeypatch):
     rules_file = tmp_path / ".permissions.json"
     rules_file.write_text(json.dumps({"terminal": {"command": {"^curl": "deny"}}}),
                           encoding="utf-8")
-    monkeypatch.setattr(builtin_mod, "PERMISSION_FILE", rules_file)
+    monkeypatch.setattr(config.PATHS, "PERMISSION_FILE", rules_file)
     register_builtin_extensions()
     ctx = BeforeToolContext(tool_name="terminal", args={"command": "curl http://example.com"})
     asyncio.run(dispatcher.dispatch("before_tool", ctx))

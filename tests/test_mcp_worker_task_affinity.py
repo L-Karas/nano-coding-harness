@@ -20,6 +20,7 @@ from types import SimpleNamespace
 import anyio
 
 import core.mcp.mcp_client as mcp_client
+import core.config as config
 
 
 @contextlib.asynccontextmanager
@@ -97,7 +98,7 @@ def test_connect_and_disconnect_run_in_the_same_task(monkeypatch, tmp_path):
     configs = {"mcpServers": {"a": {"command": "a", "args": []},
                               "b": {"command": "b", "args": []}}}
     config_file.write_text(json.dumps(configs), encoding="utf-8")
-    monkeypatch.setattr(mcp_client, "MCP_CONFIG_FILE", config_file)
+    monkeypatch.setattr(config.PATHS, "MCP_CONFIG_FILE", config_file)
     group = _FakeGroup()
     monkeypatch.setattr(mcp_client, "ClientSessionGroup", lambda component_name_hook=None: group)
     _reset_worker()

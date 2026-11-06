@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-from core.config import CRON_TASK_FILE
+from core.config import PATHS
 from core.shared.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -127,15 +127,15 @@ def validate_cron(cron_expression: str) -> str | None:
 
 def save_durable_jobs():
     durable = [asdict(job) for job in SCHEDULED_JOBS.values() if job.durable]
-    CRON_TASK_FILE.write_text(json.dumps(durable, indent=4), encoding="utf-8")
+    PATHS.CRON_TASK_FILE.write_text(json.dumps(durable, indent=4), encoding="utf-8")
 
 
 def load_durable_jobs():
-    if not CRON_TASK_FILE.exists():
+    if not PATHS.CRON_TASK_FILE.exists():
         return
 
     try:
-        for job_data in json.loads(CRON_TASK_FILE.read_text(encoding="utf-8")):
+        for job_data in json.loads(PATHS.CRON_TASK_FILE.read_text(encoding="utf-8")):
             job = CronJob(**job_data)
             if not validate_cron(job.cron):
                 SCHEDULED_JOBS[job.id] = job

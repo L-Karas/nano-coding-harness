@@ -39,15 +39,15 @@ def test_init_harness_creates_files(tmp_path, monkeypatch):
 
 
 def test_extension_dir_is_bootstrapped():
-    assert config.EXTENSION_DIR in bootstrap_mod._config_dirs()
+    assert config.PATHS.EXTENSION_DIR in bootstrap_mod._config_dirs()
 
 
 def test_permission_file_is_bootstrapped():
-    assert config.PERMISSION_FILE in bootstrap_mod._json_files()
+    assert config.PATHS.PERMISSION_FILE in bootstrap_mod._json_files()
 
 
 def test_skill_state_file_is_bootstrapped():
-    assert config.SKILL_STATE_FILE in bootstrap_mod._json_files()
+    assert config.PATHS.SKILL_STATE_FILE in bootstrap_mod._json_files()
 
 
 def test_bootstrap_initializes_once_across_threads(monkeypatch):

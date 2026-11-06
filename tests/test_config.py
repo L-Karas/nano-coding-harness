@@ -102,7 +102,7 @@ def test_load_config_reads_threshold_keys(tmp_path, monkeypatch):
     setting_file = tmp_path / ".settings.json"
     setting_file.write_text(json.dumps({"compact_trigger_tokens": 300_000,
                                         "compact_reserve_tokens": 30_000}), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
+    monkeypatch.setattr(config_mod.PATHS, "HARNESS_SETTING_FILE", setting_file)
     cfg = AgentConfigManager.load_config().config
     assert (cfg.compact_trigger_tokens, cfg.compact_reserve_tokens) == (300_000, 30_000)
 
@@ -111,13 +111,13 @@ def test_load_config_ignores_legacy_threshold_keys(tmp_path, monkeypatch):
     """旧 key 已废弃：加载不报错，缺省回落到默认预算。"""
     setting_file = tmp_path / ".settings.json"
     setting_file.write_text(json.dumps({"compact_threshold": 0.5}), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
+    monkeypatch.setattr(config_mod.PATHS, "HARNESS_SETTING_FILE", setting_file)
     assert AgentConfigManager.load_config().config.compact_trigger_tokens == 500_000
 
 
 def test_manager_save_load_roundtrip(tmp_path, monkeypatch):
     setting_file = tmp_path / ".settings.json"
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", setting_file)
+    monkeypatch.setattr(config_mod.PATHS, "HARNESS_SETTING_FILE", setting_file)
     # save_config 会同步全局单例：换掉它，避免 p:m 配置泄漏到后续测试
     monkeypatch.setattr(config_mod, "CONFIGMANAGER", AgentConfigManager(AgentConfig()))
 
@@ -131,7 +131,7 @@ def test_manager_save_load_roundtrip(tmp_path, monkeypatch):
 
 
 def test_save_config_refreshes_runtime_singleton(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", tmp_path / ".settings.json")
+    monkeypatch.setattr(config_mod.PATHS, "HARNESS_SETTING_FILE", tmp_path / ".settings.json")
     monkeypatch.setattr(config_mod, "CONFIGMANAGER",
                         AgentConfigManager(AgentConfig(default_max_tokens=1_111)))
     AgentConfigManager(AgentConfig(default_max_tokens=2_222)).save_config()
@@ -139,7 +139,7 @@ def test_save_config_refreshes_runtime_singleton(tmp_path, monkeypatch):
 
 
 def test_load_missing_file_uses_defaults(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_mod, "HARNESS_SETTING_FILE", tmp_path / "nope.json")
+    monkeypatch.setattr(config_mod.PATHS, "HARNESS_SETTING_FILE", tmp_path / "nope.json")
     assert AgentConfigManager.load_config().config == AgentConfig()
 
 
@@ -170,7 +170,7 @@ def test_session_dir_is_scoped_by_workdir():
     assert "\\" not in name
     assert "/" not in name
     assert ":" not in name
-    assert config_mod.SESSION_ROOT_DIR == config_mod.HARNESS_CONFIG_DIR / ".session"
-    assert config_mod.SESSION_DIR.parent == config_mod.SESSION_ROOT_DIR
-    assert config_mod.SESSION_DIR.name == name
-    assert config_mod.SESSION_INDEX_FILE == config_mod.SESSION_DIR / "session_index.jsonl"
+    assert config_mod.PATHS.SESSION_ROOT_DIR == config_mod.PATHS.HARNESS_CONFIG_DIR / ".session"
+    assert config_mod.PATHS.SESSION_DIR.parent == config_mod.PATHS.SESSION_ROOT_DIR
+    assert config_mod.PATHS.SESSION_DIR.name == name
+    assert config_mod.PATHS.SESSION_INDEX_FILE == config_mod.PATHS.SESSION_DIR / "session_index.jsonl"
