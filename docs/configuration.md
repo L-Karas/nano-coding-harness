@@ -19,6 +19,7 @@
 
 两个入口共用 `core/cli.py`：全局命令 `nh` / `nano-harness` 缺省 `prod`，仓库根 `main.py`
 缺省 `dev`；`-dev/--dev` 与 `-prod/--production` 可在任一入口覆盖（互斥，同时给会报错）。
+安装与启动步骤见 [README 快速开始](../README.md#快速开始)。
 
 | 模式 | `.nano-harness/` 位置 | 说明 |
 | --- | --- | --- |

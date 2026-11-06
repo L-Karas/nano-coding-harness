@@ -16,10 +16,18 @@
 
 ## 快速开始
 
-```bash
-uv sync          # 安装依赖（requires-python >= 3.13；同时把 nh 装进 .venv）
+前置：Python 3.13+ 与 [uv](https://docs.astral.sh/uv/)（未安装时：macOS / Linux
+`curl -LsSf https://astral.sh/uv/install.sh | sh`，Windows `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`）。
 
-# 安装为全局命令（在仓库根执行）：nh / nano-harness 落到 uv 的 shim 目录，需在 PATH 中
+```bash
+# 1. 从 GitHub 拉取源码
+git clone https://github.com/L-Karas/nano-coding-harness.git
+cd nano-coding-harness
+
+# 2. 安装依赖（requires-python >= 3.13；同时把 nh 装进 .venv）
+uv sync
+
+# 3. 安装为全局命令（在仓库根执行）：nh / nano-harness 落到 uv 的 shim 目录，需在 PATH 中
 # Windows 默认 %USERPROFILE%\.local\bin，macOS / Linux 默认 ~/.local/bin
 uv tool install --editable .
 
@@ -31,10 +39,11 @@ uv run main.py               # 仓库内开发：dev（.nano-harness 在项目�
 uv run main.py --production  # prod：.nano-harness 在 home 目录（~/.nano-harness）
 ```
 
+仓库目录名是 `nano-coding-harness`，安装后的包名与命令是 `nano-harness` / `nh`。
 首次启动会按模式自动创建 `.nano-harness/` 配置与数据目录（见「配置目录」）。
 全局命令默认 `prod`，配置集中到 `~/.nano-harness`，项目目录保持干净；`-dev` / `-prod` 可在任一入口覆盖（互斥）。
-editable 安装直接使用仓库代码，改源码即时生效；改了依赖或版本后重装
-`uv tool install --editable . --force`，卸载 `uv tool uninstall nano-harness`。
+editable 安装直接使用仓库代码，`git pull` 后改源码即时生效；依赖或版本号有变动时重装
+`uv tool install --editable . --force`（仓库内 `uv run` 开发则跑 `uv sync`），卸载 `uv tool uninstall nano-harness`。
 模型未配置时界面可正常打开，先用 `/provider` 填 API Key，再 `/model` 选模型即可对话。
 
 ```bash

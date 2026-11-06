@@ -31,6 +31,9 @@ dependencies = [
     "tiktoken>=0.14.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/L-Karas/nano-coding-harness"
+
 [project.scripts]
 nh = "core.cli:main"
 nano-harness = "core.cli:main"
