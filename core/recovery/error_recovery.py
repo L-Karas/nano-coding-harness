@@ -22,7 +22,8 @@ class ErrorType(Enum):
 
 class RecoveryState:
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """初始化恢复状态计数。"""
         super().__init__()
         self.has_escalated = False
         self.recovery_count = 0
@@ -31,12 +32,28 @@ class RecoveryState:
 
 
 def retry_delay(attempt: int) -> float:
+    """计算第 attempt 次重试前的退避时间（指数增长 + 抖动）。
+
+    Args:
+        attempt: 重试序号（0 起始）。
+
+    Returns:
+        退避秒数，封顶 32 秒再加最多 25% 抖动。
+    """
     base = min(CONFIGMANAGER.config.base_retry_delay_ms * (2 ** attempt), 32000) / 1000
     return base + random.randint(0, int(base * 0.25))
 
 
 def get_error_type(error: Exception, provider: str = "") -> ErrorType:
-    """按异常文本与 provider 分类错误；provider 空时取主 client 的当前 provider。"""
+    """按异常文本与 provider 分类错误；provider 空时取主 client 的当前 provider。
+
+    Args:
+        error: 捕获到的异常。
+        provider: 提供方名称；空字符串表示自动取当前主模型。
+
+    Returns:
+        错误类型。
+    """
     error_msg = str(error).lower().strip()
     current_provider = provider or shared_model_client().current_provider
 
@@ -82,6 +99,19 @@ def get_error_type(error: Exception, provider: str = "") -> ErrorType:
 
 
 async def with_retry_async(fn: Callable, provider: str = ""):
+    """在可恢复错误上按指数退避重试；不可恢复错误立即上抛。
+
+    Args:
+        fn: 返回 awaitable 的调用。
+        provider: 提供方名称；空字符串表示自动取当前主模型。
+
+    Returns:
+        fn 的成功返回值。
+
+    Raises:
+        Exception: 不可恢复错误 / PromptTooLong 原样上抛。
+        RuntimeError: 达到最大重试次数仍失败。
+    """
     max_retries = CONFIGMANAGER.config.max_retries
     for attempt in range(max_retries):
         try:
@@ -100,4 +130,12 @@ async def with_retry_async(fn: Callable, provider: str = ""):
 
 
 def is_prompt_too_long_error(e: Exception) -> bool:
+    """判断异常是否为上下文超长错误。
+
+    Args:
+        e: 捕获到的异常。
+
+    Returns:
+        分类为 PromptTooLong 时为 True。
+    """
     return get_error_type(e) == ErrorType.PromptTooLong

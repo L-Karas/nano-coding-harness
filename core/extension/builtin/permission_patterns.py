@@ -18,7 +18,14 @@ __all__ = ["floor_denial", "is_destructive"]
 
 
 def floor_denial(command: str) -> str | None:
-    """命中地板时返回其展示标签（label，用于错误文案）；未命中返回 None。"""
+    """命中地板时返回其展示标签（label，用于错误文案）；未命中返回 None。
+
+    Args:
+        command: shell 命令原文。
+
+    Returns:
+        命中项的展示标签；未命中时返回 None。
+    """
     normalized = _normalize_command(command)
     for regex, label in FLOOR_PATTERNS:
         if regex.search(normalized):
@@ -27,7 +34,14 @@ def floor_denial(command: str) -> str | None:
 
 
 def is_destructive(command: str) -> bool:
-    """是否命中默认层危险命令（Manual 下触发确认；Yolo 下默认层被跳过）。"""
+    """是否命中默认层危险命令（Manual 下触发确认；Yolo 下默认层被跳过）。
+
+    Args:
+        command: shell 命令原文。
+
+    Returns:
+        命中任一危险模式时为 True。
+    """
     normalized = _normalize_command(command)
     return any(regex.search(normalized) for regex in DESTRUCTIVE_PATTERNS)
 
@@ -38,12 +52,26 @@ _COMMAND_START = _COMMAND_PREFIX + r"(?:[^\s]*[\\/])?"
 
 
 def _command_position(pattern: str) -> re.Pattern:
-    """命令位匹配：模式只在命令开头或分隔符后命中（允许前置 VAR=x 赋值与命令路径前缀）。"""
+    """命令位匹配：模式只在命令开头或分隔符后命中（允许前置 VAR=x 赋值与命令路径前缀）。
+
+    Args:
+        pattern: 命令位正则片段。
+
+    Returns:
+        编译后的正则对象。
+    """
     return re.compile(_COMMAND_START + pattern, re.IGNORECASE)
 
 
 def _substring_pattern(pattern: str) -> re.Pattern:
-    """大小写不敏感的子串匹配；模式首尾为字母/数字时要求单词边界（'sudo' 不命中 'sudoku'）。"""
+    """大小写不敏感的子串匹配；模式首尾为字母/数字时要求单词边界（'sudo' 不命中 'sudoku'）。
+
+    Args:
+        pattern: 子串模式。
+
+    Returns:
+        编译后的正则对象。
+    """
     left = r"(?<!\w)" if pattern[0].isalnum() else ""
     right = r"(?!\w)" if pattern[-1].isalnum() else ""
     return re.compile(left + re.escape(pattern) + right, re.IGNORECASE)
@@ -53,7 +81,14 @@ _SPACE_RUN_RE = re.compile(r"[ \t]+")
 
 
 def _normalize_command(command: str) -> str:
-    """折叠空白供匹配使用（调用方展示仍用原文）。"""
+    """折叠空白供匹配使用（调用方展示仍用原文）。
+
+    Args:
+        command: shell 命令原文。
+
+    Returns:
+        连续空格 / tab 折叠为单空格后的命令。
+    """
     return _SPACE_RUN_RE.sub(" ", command)
 
 

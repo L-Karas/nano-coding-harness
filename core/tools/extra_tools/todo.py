@@ -22,6 +22,14 @@ class TodoWrite(BaseTool):
     agent_type: set = {"main"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
+        """用本次提交的条目替换当前会话的 todo 列表。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            更新后的 todo 列表文本。
+        """
         return todo_write([
             TodoEntry(content=item.content, status=item.status) for item in self.todos
         ])

@@ -6,6 +6,7 @@
 
 
 def main() -> None:
+    """以 dev 模式启动 CLI。"""
     from core.cli import main as cli_main
     cli_main(default_mode="dev")
 

@@ -8,7 +8,9 @@ Context Compaction
 """
 import inspect
 import uuid
+from collections.abc import Callable
 from functools import wraps
+from typing import Any
 
 from core.client import (
     model_supports_vision,
@@ -31,11 +33,19 @@ from core.template import (
 _LOGGER = get_logger(__name__)
 
 
-def log_compact_step(func):
-    """给压缩步骤加开始/结束日志（同步/异步函数通用）。"""
+def log_compact_step(func: Callable) -> Callable:
+    """给压缩步骤加开始/结束日志（同步/异步函数通用）。
+
+    Args:
+        func: 被包装的同步或异步函数。
+
+    Returns:
+        包装后的函数。
+    """
     if inspect.iscoroutinefunction(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
+            """异步函数的日志包装。"""
             _LOGGER.info(f"Running {func.__name__} ...")
             try:
                 result = await func(*args, **kwargs)
@@ -49,6 +59,7 @@ def log_compact_step(func):
 
     @wraps(func)
     def sync_wrapper(*args, **kwargs):
+        """同步函数的日志包装。"""
         _LOGGER.info(f"Running {func.__name__} ...")
         try:
             result = func(*args, **kwargs)
@@ -65,11 +76,26 @@ READ_FILE_TOOL_NAME = "read_file"
 
 
 def _is_persisted_output(content: str) -> bool:
+    """判断工具输出是否已被 <persisted-output> 包裹。
+
+    Args:
+        content: 工具消息正文。
+
+    Returns:
+        是否为已落盘的包裹文本。
+    """
     return content.startswith(PERSIST_TOOL_MESSAGE_PREFIX) and content.endswith(PERSIST_TOOL_MESSAGE_SUFFIX)
 
 
 def _tool_names_by_call_id(messages: list) -> dict[str, str]:
-    """assistant.tool_calls → {tool_call_id: 工具名}；工具结果消息本身不带工具名字段。"""
+    """assistant.tool_calls → {tool_call_id: 工具名}；工具结果消息本身不带工具名字段。
+
+    Args:
+        messages: 会话消息列表。
+
+    Returns:
+        tool_call_id 到工具名的映射。
+    """
     names: dict[str, str] = {}
     for message in messages:
         for tool_call in message_get(message, "tool_calls") or []:
@@ -84,6 +110,14 @@ def persist_tool_output(tool_call_id: str, full_output: str, preview: str) -> st
     """全文落盘并返回内联替换文本（保存路径 + 预览）；已是 persisted 包裹时原样返回。
 
     preview 由调用方传入（调用方已按上限截断），保证内联正文有界。
+
+    Args:
+        tool_call_id: 对应的工具调用 id；为空时生成随机文件名。
+        full_output: 工具输出全文。
+        preview: 内联展示的截断预览。
+
+    Returns:
+        可直接作为工具消息正文的 persisted 包裹文本。
     """
     if _is_persisted_output(full_output):
         return full_output
@@ -101,6 +135,12 @@ def truncate_large_tool_outputs(messages: list) -> list:
     - read_file 输出已在工具侧截断并自带 offset 续读提示，不落盘、不二次截断；
     - 其余工具超限时全文落盘，正文回填 <persisted-output>（截断预览 + 保存路径），
       需要全文时可用 read_file <saved-path> offset=N 续读。
+
+    Args:
+        messages: 会话消息列表。
+
+    Returns:
+        同一消息列表（原地修改后）。
     """
     tool_names = _tool_names_by_call_id(messages)
     for message in messages:
@@ -113,13 +153,31 @@ def truncate_large_tool_outputs(messages: list) -> list:
             continue
         truncated_output, was_truncated = truncate_tool_output(content)
         if was_truncated:
-            message_set(message, "content", persist_tool_output(message_get(message, "tool_call_id", ""), content,
-                                                                preview=truncated_output))
+            message_set(
+                message, "content", persist_tool_output(
+                    message_get(message, "tool_call_id", ""), content,
+                    preview=truncated_output
+                )
+            )
 
     return messages
 
 
 def find_index_to_split(messages: list, reserve_tokens: int) -> int:
+    """找出压缩时保留尾部消息的切分下标。
+
+    优先按 turn（user 消息分界）切，保留从该 user 开始的后缀且不超过 reserve_tokens；
+    单个 turn 就超预算时退化为按 assistant 消息切，并保证 tool_calls 与对应 tool 结果
+    不被拆开。
+
+    Args:
+        messages: 会话消息列表。
+        reserve_tokens: 尾部保留的 token 预算。
+
+    Returns:
+        切分下标：messages[:index] 待总结，messages[index:] 保留；无法切分时返回
+        len(messages)。
+    """
     # 1. 优先按 turn（user 消息分界）切：从最早的 user 开始，保留部分不超过 reserve_tokens
     # 2. 单个 turn 就超预算时，退化为按 assistant 消息切：尽量多地保留 assistant - tool 组
     #    （tool_calls 与其对应的 tool 结果不得被拆开）
@@ -152,20 +210,29 @@ def find_index_to_split(messages: list, reserve_tokens: int) -> int:
 
 
 @log_compact_step
-async def summarize_history(messages: list, ctx=None, sub_model: bool = False) -> str:
-    """
-    Summarize history messages
+async def summarize_history(messages: list, ctx: Any = None, sub_model: bool = False) -> str:
+    """总结历史消息。
 
     sub_model=True 用子代理 client 总结（与子代理对话同模型，缓存命中）；
     默认用主 client（主流程 / 手动 /compact）。
+
+    Args:
+        messages: 待总结的消息列表。
+        ctx: 回合上下文，用于中断检查；手动 /compact 时为 None。
+        sub_model: True 使用子代理模型 client。
+
+    Returns:
+        模型生成的摘要文本。
     """
     summary_text = ""
     client = shared_sub_model_client() if sub_model else shared_model_client()
     vision = model_supports_vision(client)
-    request_messages = to_llm_messages(messages, vision=vision) + [{
-        "role": "user",
-        "content": SUMMARY_PROMPT_TEMPLATE,
-    }]
+    request_messages = to_llm_messages(messages, vision=vision) + [
+        {
+            "role": "user",
+            "content": SUMMARY_PROMPT_TEMPLATE,
+        }
+    ]
     stream = await client.get_model_client()(
         messages=request_messages,
         max_tokens=client.clamp_max_tokens(CONFIGMANAGER.config.summary_max_tokens),
@@ -189,7 +256,7 @@ async def summarize_history(messages: list, ctx=None, sub_model: bool = False) -
 @log_compact_step
 async def compact_history(
     messages: list,
-    ctx=None,
+    ctx: Any = None,
     auto_compact: bool = True,
     sub_model: bool = False,
 ) -> tuple[list, bool]:
@@ -198,9 +265,16 @@ async def compact_history(
     auto_compact=False（手动 /compact）跳过 token 阈值判断，直接压缩；未选择模型
     （无可用上下文窗口）仍然无法压缩。
 
+    Args:
+        messages: 待压缩的消息列表。
+        ctx: 回合上下文，用于中断检查；手动 /compact 时为 None。
+        auto_compact: True 先判断阈值并按 turn 切分；False 跳过阈值判断、总结全部消息。
+        sub_model: True 使用子代理模型 client。
+
     Returns:
-        (messages, compacted)：未触发压缩（低于阈值 / 无可用上下文窗口）时返回原 list 且
-        compacted=False；触发时返回新 list 且 compacted=True。
+        (messages, compacted)：空列表入参返回新的 []（compacted=False）；未触发压缩
+        （低于阈值 / 无可用上下文窗口）时返回原 list 且 compacted=False；触发时返回
+        新 list 且 compacted=True。
     """
     if not messages:
         return [], False
@@ -220,17 +294,24 @@ async def compact_history(
         to_summarize, tail = messages, []
     summary = await summarize_history(to_summarize, ctx, sub_model)
     compacted_messages = [
-        Message(role="user", content=f"<compacted_messages>\n{summary}\n</compacted_messages>")
-    ] + tail
+                             Message(role="user", content=f"<compacted_messages>\n{summary}\n</compacted_messages>")
+                         ] + tail
     return compacted_messages, True
 
 
-async def prepare_messages(messages: list, ctx=None, sub_model: bool = False) -> list:
-    """
-    Every LLM turn enters through the same context budget pipeline.
+async def prepare_messages(messages: list, ctx: Any = None, sub_model: bool = False) -> list:
+    """每轮 LLM 调用前的统一上下文预算管线。
 
     sub_model=True 时压缩总结用子代理 client（与对话同模型，缓存命中）；
     auto_compact 关闭时只裁剪工具结果，不做模型总结。
+
+    Args:
+        messages: 会话消息列表（原地处理）。
+        ctx: 回合上下文，用于中断检查。
+        sub_model: True 使用子代理模型 client。
+
+    Returns:
+        处理后的消息列表。
     """
     truncate_large_tool_outputs(messages)
     if CONFIGMANAGER.config.auto_compact:

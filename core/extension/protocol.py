@@ -32,7 +32,19 @@ def validate_registration(
     fail_closed: bool,
     builtin: bool,
 ) -> None:
-    """校验一次事件注册；任一参数非法立即抛错，由调用方决定如何处置。"""
+    """校验一次事件注册；任一参数非法立即抛错，由调用方决定如何处置。
+
+    Args:
+        event: 事件名。
+        callback: 事件回调。
+        stage: 派发阶段。
+        fail_closed: 回调异常时是否短路为拒绝。
+        builtin: 是否为内置扩展注册。
+
+    Raises:
+        ValueError: 事件名 / 阶段非法，或外部扩展尝试使用内置能力。
+        TypeError: 回调不可调用。
+    """
     if event not in EVENTS:
         raise ValueError(f"未知扩展事件: {event!r}（可用: {', '.join(EVENTS)}）")
     if not callable(callback):

@@ -19,7 +19,11 @@ _SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _source_version() -> str | None:
-    """源码树里的 pyproject 版本；editable 安装下 `--version` 因此跟随当前代码。"""
+    """源码树里的 pyproject 版本；editable 安装下 `--version` 因此跟随当前代码。
+
+    Returns:
+        源码版本号；读取失败时返回 None。
+    """
     try:
         with (_SOURCE_ROOT / "pyproject.toml").open("rb") as handle:
             return tomllib.load(handle)["project"]["version"]
@@ -28,6 +32,11 @@ def _source_version() -> str | None:
 
 
 def _dist_version() -> str | None:
+    """读取已安装发行版的版本号。
+
+    Returns:
+        发行版版本；未安装时返回 None。
+    """
     try:
         return importlib.metadata.version(_PACKAGE_NAME)
     except importlib.metadata.PackageNotFoundError:
@@ -35,12 +44,27 @@ def _dist_version() -> str | None:
 
 
 def version() -> str:
-    """版本来源优先级：源码树 pyproject → 发行版元数据 → 常量兜底。"""
+    """版本来源优先级：源码树 pyproject → 发行版元数据 → 常量兜底。
+
+    Returns:
+        最终版本号。
+    """
     return _source_version() or _dist_version() or _FALLBACK_VERSION
 
 
 def parse_args(argv: list[str] | None = None, *, default_mode: str = "prod") -> argparse.Namespace:
-    """解析参数；未知参数 / 同时给 -dev 与 -prod 一律报错（静默退回默认会把配置写错目录）。"""
+    """解析参数；未知参数 / 同时给 -dev 与 -prod 一律报错（静默退回默认会把配置写错目录）。
+
+    Args:
+        argv: 参数列表；None 时读取 sys.argv。
+        default_mode: 未显式指定模式时的默认值。
+
+    Returns:
+        解析后的参数命名空间。
+
+    Raises:
+        SystemExit: 参数非法或请求 --version。
+    """
     parser = argparse.ArgumentParser(
         allow_abbrev=False,
         prog=Path(sys.argv[0]).stem or "nano-harness",
@@ -58,7 +82,11 @@ def parse_args(argv: list[str] | None = None, *, default_mode: str = "prod") -> 
 
 
 def main(default_mode: str = "prod") -> None:
-    """入口：先解析参数定 mode，再导入运行时模块并启动。"""
+    """入口：先解析参数定 mode，再导入运行时模块并启动。
+
+    Args:
+        default_mode: 未显式指定模式时的默认值。
+    """
     args = parse_args(default_mode=default_mode)
 
     from core.config import configure_mode

@@ -20,7 +20,14 @@ _PS_UTF8_PREFIX = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 
 
 
 def _is_wsl_bash(path: str) -> bool:
-    """System32/Sysnative 下的 bash.exe 是 WSL 启动器：命令实际跑在 Linux 环境里。"""
+    """System32/Sysnative 下的 bash.exe 是 WSL 启动器：命令实际跑在 Linux 环境里。
+
+    Args:
+        path: bash 可执行文件路径。
+
+    Returns:
+        是否为 WSL 启动器。
+    """
     return bool(_WSL_BASH_RE.match(path.replace("/", "\\")))
 
 
@@ -28,7 +35,14 @@ ShellKind = Literal["bash", "pwsh", "powershell"]
 
 
 def shell_kind(shell: str | None) -> ShellKind | None:
-    """shell 类别：bash / pwsh / powershell；未知或 None 返回 None，调用方回退系统默认。"""
+    """shell 类别：bash / pwsh / powershell；未知或 None 返回 None，调用方回退系统默认。
+
+    Args:
+        shell: shell 可执行文件路径。
+
+    Returns:
+        shell 类别；无法识别时返回 None。
+    """
     if not shell:
         return None
     name = Path(shell).stem.lower()
@@ -46,6 +60,9 @@ def find_shell() -> str | None:
     """返回优先 shell 的可执行文件路径；None 表示无优先 shell，由 subprocess 走系统默认（cmd / sh）。
 
     结果进程内缓存：shell 探测是运行期不变量，terminal 与 build_guidelines 共享同一次探测结果。
+
+    Returns:
+        优先 shell 路径；无优先 shell 时返回 None。
     """
     bash = shutil.which("bash")
     # PATH 上的非 WSL bash（Git/MSYS2/Cygwin）与 Windows 工具链同环境，最优先
@@ -71,11 +88,27 @@ class ShellInvocation:
 
 
 def build_command_invocation(command: str) -> ShellInvocation:
-    """按 find_shell() 的优先 shell 显式调用；无优先 shell 时交给系统默认（Windows cmd / POSIX sh）。"""
+    """按 find_shell() 的优先 shell 显式调用；无优先 shell 时交给系统默认（Windows cmd / POSIX sh）。
+
+    Args:
+        command: 要执行的命令原文。
+
+    Returns:
+        已解析的启动方式。
+    """
     return _command_invocation(command, find_shell())
 
 
 def _command_invocation(command: str, shell: str | None) -> ShellInvocation:
+    """按指定 shell 构造命令启动方式。
+
+    Args:
+        command: 要执行的命令原文。
+        shell: shell 可执行文件路径；None 表示系统默认。
+
+    Returns:
+        已解析的启动方式。
+    """
     kind = shell_kind(shell)
     if kind == "bash":
         # WSL 启动器对 `-c` 的参数转发有历史坑，改用 `-s` 从 stdin 传脚本
@@ -89,7 +122,16 @@ def _command_invocation(command: str, shell: str | None) -> ShellInvocation:
 
 
 def _quote_argument(argument: str, shell: str | None) -> str:
-    """按目标 shell 的语法引用单个参数：bash/sh 用 POSIX 单引号，PowerShell 单引号内双写。"""
+    """按目标 shell 的语法引用单个参数：bash/sh 走 shlex.quote（无特殊字符时原样返回），
+    PowerShell 单引号内双写。
+
+    Args:
+        argument: 原始参数。
+        shell: shell 可执行文件路径。
+
+    Returns:
+        引用后的参数字符串。
+    """
     if shell_kind(shell) in ("pwsh", "powershell"):
         return "'" + argument.replace("'", "''") + "'"
     return shlex.quote(argument)
@@ -100,6 +142,14 @@ def build_argv_invocation(argv: Sequence[str], executable_path: str | None = Non
 
     无优先 shell 时不经 cmd 拼接（cmd 缺少可靠的单参数引用方案），保持 argv 分离直接启动；
     Windows 下 CreateProcess 需要完整路径，executable_path 用于替换 argv[0]。
+
+    Args:
+        argv: 参数列表。
+        executable_path: 用于替换 argv[0] 的可执行文件路径；仅在无优先 shell
+            （走系统默认启动）时生效。
+
+    Returns:
+        已解析的启动方式。
     """
     shell = find_shell()
     if shell is None:
@@ -121,6 +171,9 @@ def hidden_console_kwargs() -> dict[str, int]:
     terminal 工具同理），与 _set_terminal_title 写的标题抢同一个窗口；CREATE_NO_WINDOW 让子进程
     持有自己的隐藏控制台，标题互不干扰。stdin / stdout / stderr 已全部重定向，不需要共享父控制台；
     mcp SDK 的 stdio 传输同样以 CREATE_NO_WINDOW 启动 server。
+
+    Returns:
+        subprocess 的额外启动参数；非 Windows 返回空 dict。
     """
     if os.name != "nt":
         return {}
@@ -128,7 +181,15 @@ def hidden_console_kwargs() -> dict[str, int]:
 
 
 async def start_process(invocation: ShellInvocation, cwd: str | Path | None = None) -> asyncio.subprocess.Process:
-    """按 ShellInvocation 启动进程，WSL 的脚本经 stdin 传入。"""
+    """按 ShellInvocation 启动进程，WSL 的脚本经 stdin 传入。
+
+    Args:
+        invocation: 已解析的启动方式。
+        cwd: 子进程工作目录。
+
+    Returns:
+        已启动的异步子进程。
+    """
     # stdin=DEVNULL：子进程不得继承终端 stdin，否则交互命令会提示并抢读控制台，
     # 把鼠标转义序列回显到输入栏、吞掉 Esc（Textual 收不到按键）；WSL bash 用 stdin 传脚本。
     kwargs = dict(

@@ -29,6 +29,12 @@ def threadsafe_cancel(task: asyncio.Future) -> Callable[[], None]:
     """指名取消句柄：任何线程可调，把 task.cancel() 转投到 task 所属 loop。
 
     loop 已关闭时 call_soon_threadsafe 抛 RuntimeError，由 RuntimeState.cancel_work 吞掉。
+
+    Args:
+        task: 要取消的异步任务。
+
+    Returns:
+        可跨线程调用的取消回调。
     """
     loop = task.get_loop()
     return lambda: loop.call_soon_threadsafe(task.cancel)
@@ -51,7 +57,15 @@ _SLOW_SUBCMDS = {  # 这些命令只有跟了慢子命令才算慢：npm test �
 
 
 def is_slow_operation(tool_name: str, tool_args: dict) -> bool:
-    """粗判 terminal 命令会不会跑很久：只看命令词，宁可漏判也不误判。"""
+    """粗判 terminal 命令会不会跑很久：只看命令词，宁可漏判也不误判。
+
+    Args:
+        tool_name: 工具名。
+        tool_args: 工具参数。
+
+    Returns:
+        是否判定为慢操作。
+    """
     if tool_name != "terminal":
         return False
 
@@ -69,6 +83,15 @@ def is_slow_operation(tool_name: str, tool_args: dict) -> bool:
 
 
 def should_run_background(tool_name: str, tool_args: dict) -> bool:
+    """判断工具调用是否应转入后台执行。
+
+    Args:
+        tool_name: 工具名。
+        tool_args: 工具参数。
+
+    Returns:
+        显式要求、慢操作或子代理调用时为 True。
+    """
     if tool_name == _SUBAGENT_TOOL:
         # 子代理固定后台跑：主代理不等待结论，结果稍后经 background notification 注入
         return True
@@ -76,6 +99,14 @@ def should_run_background(tool_name: str, tool_args: dict) -> bool:
 
 
 def _bg_interrupted(tctx: ToolContext | None) -> bool:
+    """后台任务是否已收到中断信号。
+
+    Args:
+        tctx: 工具执行上下文（ToolContext：取消信号 / cwd / 视觉能力）。
+
+    Returns:
+        已中断时为 True。
+    """
     return bool(tctx and tctx.interrupted)
 
 
@@ -83,8 +114,19 @@ def start_background_task(
     tool_call: ChatCompletionMessageToolCallUnion,
     pool: ToolPool,
     tctx: ToolContext | None = None,
-    loop=None,
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> str:
+    """把一次工具调用转入后台执行。
+
+    Args:
+        tool_call: 模型返回的工具调用。
+        pool: 当前工具池。
+        tctx: 工具执行上下文（ToolContext：取消信号 / cwd / 视觉能力）。
+        loop: 运行事件循环；省略时取当前 running loop。
+
+    Returns:
+        后台任务 id。
+    """
     bg_id = RUNTIME_STATE.allocate_background_id()
     tool_args = json.loads(tool_call.function.arguments)
     tool_call_str = f"{tool_call.function.name}({', '.join(f'{k}={v}' for k, v in tool_args.items())})"
@@ -107,7 +149,12 @@ def start_background_task(
             # 防止误点 Background Tasks 条目把子代理一起停了。
             RUNTIME_STATE.attach_cancel(bg_id, threadsafe_cancel(task))
 
-        def done(t):
+        def done(t: asyncio.Task) -> None:
+            """任务完成回调：把结果或取消状态写回运行状态。
+
+            Args:
+                t: 已完成的后台任务。
+            """
             if t.cancelled():
                 result = ToolResult.cancelled(USER_INTERRUPT_PROMPT if _bg_interrupted(tctx)
                                               else BACKGROUND_CANCELLED_PROMPT)
@@ -121,7 +168,8 @@ def start_background_task(
             tctx.agent_run.track(task)  # Esc 时 ctx.cancel() 直接 task.cancel()
         return bg_id
 
-    def worker():
+    def worker() -> None:
+        """同步工具的后台线程入口。"""
         try:
             if _bg_interrupted(tctx):
                 result = ToolResult.cancelled(USER_INTERRUPT_PROMPT)
@@ -137,6 +185,11 @@ def start_background_task(
 
 
 def collect_background_results() -> list[str]:
+    """取出已完成的后台任务并格式化为通知消息。
+
+    Returns:
+        注入会话的通知文本列表。
+    """
     done = RUNTIME_STATE.pop_completed_backgrounds()
     _LOGGER.info(f"[Collect Background Results] {[item.id for item in done]}")
 

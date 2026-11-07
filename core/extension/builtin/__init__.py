@@ -23,6 +23,9 @@ def register_builtin_extensions(*, rules: Rules | None = None) -> None:
     """注册内置观察者与权限门；rules 为 None 时从 .permissions.json 加载。
 
     先登记 observers、后登记 permission；实际派发顺序由 stage 决定（observer 先于 gate）。
+
+    Args:
+        rules: 权限规则；None 时从 PATHS.PERMISSION_FILE 加载。
     """
     if rules is None:
         rules = load_rules(PATHS.PERMISSION_FILE)
@@ -31,7 +34,12 @@ def register_builtin_extensions(*, rules: Rules | None = None) -> None:
 
 
 def _register(module_name: str, register: Callable[[ExtensionAPI], None]) -> None:
-    """用内置模式缓冲注册一个扩展，正常返回后一次性提交到派发器并登记。"""
+    """用内置模式缓冲注册一个扩展，正常返回后一次性提交到派发器并登记。
+
+    Args:
+        module_name: 注册来源模块名。
+        register: 接收 ExtensionAPI 的注册函数。
+    """
     api = _BuiltinExtensionAPI()
     register(api)
     registered = commit_extension(api, module_name)

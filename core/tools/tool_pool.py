@@ -1,4 +1,4 @@
-from typing import Any, Literal, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 from core.runtime_context import ToolContext
 from core.shared.logger import get_logger
@@ -40,38 +40,93 @@ class _McpEntry:
     def __init__(
         self,
         schema: dict,
-        sync_handler,
-        async_handler,
-    ):
+        sync_handler: Callable[..., Any],
+        async_handler: Callable[..., Any],
+    ) -> None:
+        """记录 MCP 工具的 schema 与两种执行入口。
+
+        Args:
+            schema: OpenAI function schema。
+            sync_handler: 同步执行函数。
+            async_handler: 异步执行函数。
+        """
         self.schema = schema
         self._sync_handler = sync_handler
         self._async_handler = async_handler
 
     def execute_sync(self, args: dict, tctx: ToolContext | None) -> str | ToolResult:
+        """调用 MCP 工具的同步实现。
+
+        Args:
+            args: 工具参数。
+            tctx: 运行时上下文；本入口未使用。
+
+        Returns:
+            工具结果。
+        """
         return self._sync_handler(**args)
 
     async def execute_async(self, args: dict, tctx: ToolContext | None) -> str | ToolResult:
+        """调用 MCP 工具的异步实现。
+
+        Args:
+            args: 工具参数。
+            tctx: 运行时上下文；提供 agent run。
+
+        Returns:
+            工具结果。
+        """
         return await self._async_handler(ctx=tctx.agent_run if tctx else None, **args)
 
 
 class ToolPool:
     """装配好的一组 Tool：取 schema 与执行调用的唯一入口。"""
 
-    def __init__(self, entries: Mapping[str, type[BaseTool] | _McpEntry]):
+    def __init__(self, entries: Mapping[str, type[BaseTool] | _McpEntry]) -> None:
+        """用工具名到实现的映射初始化 pool。
+
+        Args:
+            entries: 工具名与内置 / MCP 实现的映射。
+        """
         self._entries: dict[str, type[BaseTool] | _McpEntry] = dict(entries)
 
     def __len__(self) -> int:
+        """返回 pool 中的工具数量。
+
+        Returns:
+            工具数量。
+        """
         return len(self._entries)
 
     def schemas(self) -> list[dict[str, Any]]:
+        """返回全部工具的 OpenAI function schema。
+
+        Returns:
+            schema 列表。
+        """
         return [entry.to_openai_tool() if isinstance(entry, type) else entry.schema
                 for entry in self._entries.values()]
 
     def has(self, name: str) -> bool:
+        """判断工具是否存在。
+
+        Args:
+            name: 工具名。
+
+        Returns:
+            存在时为 True。
+        """
         return name in self._entries
 
     def has_native_async(self, name: str) -> bool:
-        """该工具是否有原生异步实现（缺省 arun 仍是同步实现，不应挂到事件循环上跑）。"""
+        """该工具是否有原生异步实现（缺省 arun 仍是同步实现，不应挂到事件循环上跑）。
+
+        Args:
+            name: 工具名。
+
+        Returns:
+            有原生异步实现时为 True；未知工具返回 False。
+        """
         entry = self._entries.get(name)
         if entry is None:
             return False
@@ -80,7 +135,14 @@ class ToolPool:
         return entry.arun is not BaseTool.arun
 
     def is_parallel_safe(self, name: str) -> bool:
-        """该工具是否声明可与同轮兄弟调用并发执行；未声明或未知工具一律 False。"""
+        """该工具是否声明可与同轮兄弟调用并发执行；未声明或未知工具一律 False。
+
+        Args:
+            name: 工具名。
+
+        Returns:
+            可并发执行时为 True。
+        """
         entry = self._entries.get(name)
         if entry is None:
             return False
@@ -94,6 +156,16 @@ class ToolPool:
         args: dict,
         tctx: ToolContext | None = None,
     ) -> ToolResult:
+        """异步执行工具并把异常统一转成错误结果。
+
+        Args:
+            name: 工具名。
+            args: 工具参数。
+            tctx: 运行时上下文。
+
+        Returns:
+            工具结果；未知工具或执行异常时返回错误结果。
+        """
         entry = self._entries.get(name)
         if entry is None:
             return ToolResult.unknown(name)
@@ -115,6 +187,16 @@ class ToolPool:
         args: dict,
         tctx: ToolContext | None = None,
     ) -> ToolResult:
+        """同步执行工具并把异常统一转成错误结果。
+
+        Args:
+            name: 工具名。
+            args: 工具参数。
+            tctx: 运行时上下文。
+
+        Returns:
+            工具结果；未知工具或执行异常时返回错误结果。
+        """
         entry = self._entries.get(name)
         if entry is None:
             return ToolResult.unknown(name)
@@ -135,7 +217,16 @@ def assemble_tool_pool(
         enable_experimental: bool = False,
         exclude: frozenset[str] = frozenset(),
 ) -> ToolPool:
-    """Merge builtin tools + all MCP tools into a single ToolPool."""
+    """合并内置工具与全部 MCP 工具，装配成一个 ToolPool。
+
+    Args:
+        agent_type: 目标代理类型，用于过滤工具。
+        enable_experimental: 是否包含 experimental 工具。
+        exclude: 要排除的工具名集合。
+
+    Returns:
+        装配后的 ToolPool。
+    """
     entries: dict[str, type[BaseTool] | _McpEntry] = {
         name: cls for name, cls in _TOOLS.items()
         if name not in exclude

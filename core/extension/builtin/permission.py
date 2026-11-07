@@ -48,7 +48,14 @@ class Rules:
 
 
 def load_rules(path: Path) -> Rules:
-    """读取并校验规则文件；文件缺失或整体非法时返回空规则（不抛异常）。"""
+    """读取并校验规则文件；文件缺失或整体非法时返回空规则（不抛异常）。
+
+    Args:
+        path: 规则文件路径。
+
+    Returns:
+        解析出的规则集；文件不可用或内容非法时为空规则。
+    """
     if not path.exists():
         return Rules()
     try:
@@ -70,13 +77,30 @@ def load_rules(path: Path) -> Rules:
 
 
 def match_command(rules: Rules, command: str) -> list[tuple[str, str]]:
-    """按文件顺序返回命令规则的全部命中 (action, 正则原文)。"""
+    """按文件顺序返回命令规则的全部命中 (action, 正则原文)。
+
+    Args:
+        rules: 已解析的规则集。
+        command: shell 命令原文。
+
+    Returns:
+        (action, 正则原文) 列表。
+    """
     return [(action, pattern.pattern) for pattern, action in rules.terminal
             if pattern.search(command)]
 
 
 def match_path(rules: Rules, tool_name: str, relative_path: str) -> list[tuple[str, str]]:
-    """按文件顺序返回该工具 path 规则的全部命中 (action, 正则原文)。"""
+    """按文件顺序返回该工具 path 规则的全部命中 (action, 正则原文)。
+
+    Args:
+        rules: 已解析的规则集。
+        tool_name: 文件工具名。
+        relative_path: 用于匹配的路径串（工作区相对路径；图片 URL 时直接传 URL 原文）。
+
+    Returns:
+        (action, 正则原文) 列表。
+    """
     return [(action, pattern.pattern) for pattern, action in rules.paths.get(tool_name, [])
             if pattern.search(relative_path)]
 
@@ -85,7 +109,14 @@ _SEVERITY = {"deny": 0, "ask": 1, "allow": 2}
 
 
 def resolve_matches(matches: list[tuple[str, str]]) -> tuple[str, str] | None:
-    """按 deny > ask > allow 取最严；同 severity 取列表中最后一条；空列表返回 None。"""
+    """按 deny > ask > allow 取最严；同 severity 取列表中最后一条；空列表返回 None。
+
+    Args:
+        matches: (action, 正则原文) 列表。
+
+    Returns:
+        胜出的 (action, 正则原文)；无命中时返回 None。
+    """
     winner = None
     for match in matches:
         if winner is None or _SEVERITY[match[0]] <= _SEVERITY[winner[0]]:
@@ -94,11 +125,27 @@ def resolve_matches(matches: list[tuple[str, str]]) -> tuple[str, str] | None:
 
 
 def external_directory_action(rules: Rules, tool_name: str) -> str | None:
-    """返回该工具的越界目录策略；未配置或工具未覆盖时返回 None。"""
+    """返回该工具的越界目录策略；未配置或工具未覆盖时返回 None。
+
+    Args:
+        rules: 已解析的规则集。
+        tool_name: 工具名。
+
+    Returns:
+        越界访问策略 action；未配置时返回 None。
+    """
     return rules.external_directory.get(tool_name)
 
 
 def _parse_sections(data: dict) -> Rules:
+    """解析所有工具段并汇总为规则集。
+
+    Args:
+        data: 规则文件顶层对象。
+
+    Returns:
+        解析出的 Rules。
+    """
     rules = Rules()
     for tool_name, section in data.items():
         if tool_name in _PATTERN_KEYS:
@@ -109,7 +156,13 @@ def _parse_sections(data: dict) -> Rules:
 
 
 def _parse_tool_section(tool_name: str, section: object, rules: Rules) -> None:
-    """解析一个工具段：external_directory + command/path 规则表；非法条目只丢自身。"""
+    """解析一个工具段：external_directory + command/path 规则表；非法条目只丢自身。
+
+    Args:
+        tool_name: 工具名。
+        section: 该工具的配置对象。
+        rules: 汇总目标规则集。
+    """
     pattern_key = _PATTERN_KEYS[tool_name]
     if not isinstance(section, dict):
         _LOGGER.error(f"[Permission] {tool_name} 段必须是对象，忽略该段")
@@ -140,7 +193,15 @@ def _parse_tool_section(tool_name: str, section: object, rules: Rules) -> None:
 
 
 def _parse_pattern_table(label: str, table: object) -> list[tuple[re.Pattern, str]]:
-    """解析 `{正则: action}` 表并逐条校验；非法条目只丢自身，其余照常返回。"""
+    """解析 `{正则: action}` 表并逐条校验；非法条目只丢自身，其余照常返回。
+
+    Args:
+        label: 配置段标签，用于日志。
+        table: `{正则: action}` 映射。
+
+    Returns:
+        编译后的 (正则, action) 列表。
+    """
     if not isinstance(table, dict):
         _LOGGER.error(f"[Permission] {label} 必须是对象，忽略该表")
         return []
@@ -163,7 +224,14 @@ _REDIRECT_PREFIX_RE = re.compile(r"^(?:&|[0-9])?(?:>>?|<)\s*")
 
 
 def _clean_token(raw: str) -> str:
-    """剥掉 token 外层的重定向前缀、引号与尾部命令分隔符，贴近真实路径。"""
+    """剥掉 token 外层的重定向前缀、引号与尾部命令分隔符，贴近真实路径。
+
+    Args:
+        raw: shell 词法切分出的原始 token。
+
+    Returns:
+        清理后的 token。
+    """
     token = raw.strip().rstrip(";")
     token = _REDIRECT_PREFIX_RE.sub("", token).strip()
     if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
@@ -172,7 +240,14 @@ def _clean_token(raw: str) -> str:
 
 
 def _split_tokens(command: str) -> list[str]:
-    """按 shell 词法切分；引号不闭合等非法输入退化为空白切分。"""
+    """按 shell 词法切分；引号不闭合等非法输入退化为空白切分。
+
+    Args:
+        command: shell 命令原文。
+
+    Returns:
+        切分后的 token 列表。
+    """
     try:
         return shlex.split(command, posix=False)
     except ValueError:
@@ -180,7 +255,15 @@ def _split_tokens(command: str) -> list[str]:
 
 
 def _is_bare_cd(tokens: list[str], index: int) -> bool:
-    """裸 `cd` / `cd -`：目标由 shell 解析（家目录、上次目录），token 级看不到，按越界处理。"""
+    """裸 `cd` / `cd -`：目标由 shell 解析（家目录、上次目录），token 级看不到，按越界处理。
+
+    Args:
+        tokens: 已切分的命令 token。
+        index: `cd` 所在下标。
+
+    Returns:
+        是否为没有显式目标目录的 cd。
+    """
     following = _clean_token(tokens[index + 1]) if index + 1 < len(tokens) else ""
     return (not following or following == "-"
             or following.startswith(("&&", "||", "|", "&", ";")))
@@ -190,6 +273,12 @@ def _command_path_candidates(command: str) -> Iterator[str]:
     """从 shell 命令提取可能是路径的候选：独立 token + `=` 后的值（`--file=/etc/x`）。
 
     尽力而为的文本解析：变量拼接、脚本内部路径、粘连 flag（`-o/tmp/x`）不覆盖。
+
+    Args:
+        command: shell 命令原文。
+
+    Yields:
+        可能是路径的候选字符串。
     """
     tokens = _split_tokens(command)
     for index, raw in enumerate(tokens):
@@ -212,34 +301,79 @@ _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(?:/|$)")
 
 
 def _msys_drive_to_windows(path: str) -> str:
-    """Windows 上将 /e/foo 还原为 e:/foo；其余路径原样返回。"""
+    """Windows 上将 /e/foo 还原为 e:/foo；其余路径原样返回。
+
+    Args:
+        path: 待转换的路径。
+
+    Returns:
+        转换后的路径；非 Windows 或非 MSYS 盘符写法原样返回。
+    """
     if os.name != "nt":
         return path
     return _MSYS_DRIVE_RE.sub(lambda match: f"{match.group(1)}:/", path, count=1)
 
 
 def _workdir(ctx: BeforeToolContext) -> Path:
-    """调用方工作目录（`ToolContext.cwd`，缺省 `WORKDIR`）；resolve 与文件工具的路径解析口径一致。"""
+    """调用方工作目录（`ToolContext.cwd`，缺省 `WORKDIR`）；resolve 与文件工具的路径解析口径一致。
+
+    Args:
+        ctx: before_tool 事件上下文。
+
+    Returns:
+        解析为绝对路径的工作目录。
+    """
     return (ctx.cwd or WORKDIR).resolve()
 
 
 def _resolve_path(raw: str, workdir: Path) -> Path:
-    """按工具口径解析路径：相对路径基于工作目录，符号链接解析到真实位置。"""
+    """按工具口径解析路径：相对路径基于工作目录，符号链接解析到真实位置。
+
+    Args:
+        raw: 原始路径。
+        workdir: 工作目录。
+
+    Returns:
+        解析后的绝对路径。
+    """
     return (workdir / raw).resolve()
 
 
 def _is_http_url(path: str) -> bool:
-    """图片 URL 不是本地文件系统访问：跳过越界判定。"""
+    """图片 URL 不是本地文件系统访问：跳过越界判定。
+
+    Args:
+        path: 待判断的路径或 URL。
+
+    Returns:
+        scheme 为 http / https 时为 True。
+    """
     return urlsplit(path).scheme.lower() in ("http", "https")
 
 
 def _is_outside_workdir(path: str, workdir: Path) -> bool:
-    """路径是否落在调用方工作目录之外。"""
+    """路径是否落在调用方工作目录之外。
+
+    Args:
+        path: 待判断的路径。
+        workdir: 工作目录。
+
+    Returns:
+        路径解析后不在 workdir 下时为 True。
+    """
     return not _resolve_path(path, workdir).is_relative_to(workdir)
 
 
 def _relative_path(resolved: Path, workdir: Path) -> str:
-    """path 规则的匹配串：工作区相对 POSIX 路径；跨盘符没有相对形式，退化为绝对路径。"""
+    """path 规则的匹配串：工作区相对 POSIX 路径；跨盘符没有相对形式，退化为绝对路径。
+
+    Args:
+        resolved: 已解析的绝对路径。
+        workdir: 工作目录。
+
+    Returns:
+        用于 path 规则匹配的路径字符串。
+    """
     try:
         return Path(os.path.relpath(resolved, workdir)).as_posix()
     except ValueError:
@@ -247,7 +381,15 @@ def _relative_path(resolved: Path, workdir: Path) -> str:
 
 
 def _outside_paths(command: str, workdir: Path) -> list[str]:
-    """命令中显式引用、且解析到调用方工作目录之外的路径（去重、保持出现顺序）。"""
+    """命令中显式引用、且解析到调用方工作目录之外的路径（去重、保持出现顺序）。
+
+    Args:
+        command: shell 命令原文。
+        workdir: 工作目录。
+
+    Returns:
+        越界路径的原始候选列表。
+    """
     outside = []
     for candidate in _command_path_candidates(command):
         expanded = os.path.expandvars(os.path.expanduser(candidate))
@@ -261,7 +403,14 @@ def _outside_paths(command: str, workdir: Path) -> list[str]:
 
 
 def _outside_listing(paths: list[str]) -> str:
-    """越界路径清单（确认卡 details 与规则 deny 文案共用）：最多三条，其余只报数量。"""
+    """越界路径清单（确认卡 details 与规则 deny 文案共用）：最多三条，其余只报数量。
+
+    Args:
+        paths: 越界路径列表。
+
+    Returns:
+        多行 Markdown 清单。
+    """
     shown = paths[:_MAX_SHOWN_OUTSIDE_PATHS]
     listing = "\n".join(f"- {path}" for path in shown)
     if len(paths) > len(shown):
@@ -270,8 +419,15 @@ def _outside_listing(paths: list[str]) -> str:
 
 
 def _confirm(question: str, details: list[str]) -> bool:
-    """通过 UI 面板询问用户（details 为触发数据段落，单独样式展示），
-    确认（y/yes）返回 True，其余一律拒绝"""
+    """通过 UI 面板询问用户（details 为触发数据段落，单独样式展示）。
+
+    Args:
+        question: 确认问题。
+        details: 触发数据段落。
+
+    Returns:
+        用户输入 y / yes 时为 True，其余一律为 False。
+    """
     return ask_permission(question, details).strip().lower() in ("y", "yes")
 
 
@@ -287,7 +443,15 @@ class RuleVote:
 
 def _call_summary(tool_name: str, args: dict) -> str:
     """裁决卡中的调用摘要：terminal / 文件工具与工具卡参数行同构
-    （`command: <命令原文>` / `path: <路径>`），其余回显参数。"""
+    （`command: <命令原文>` / `path: <路径>`），其余回显参数。
+
+    Args:
+        tool_name: 工具名。
+        args: 工具参数。
+
+    Returns:
+        单行调用摘要。
+    """
     if tool_name == "terminal":
         return f"command: {args.get('command', '')}"
     if tool_name in _FILE_TOOLS:
@@ -300,6 +464,13 @@ def _rule_vote(rules: Rules, ctx: BeforeToolContext) -> RuleVote:
 
     文件工具 path 规则按工作区相对路径匹配；external_directory 仅在路径越界时参与，
     其命中追加在直接规则之后（同 severity 取最后一条），胜出时 details 带上触发数据。
+
+    Args:
+        rules: 已解析的规则集。
+        ctx: before_tool 事件上下文。
+
+    Returns:
+        规则层的决定票；无命中时 decision 为 None。
     """
     tool_name, args = ctx.tool_name, ctx.args
     outside_match: tuple[str, str] | None = None
@@ -341,7 +512,15 @@ def _rule_vote(rules: Rules, ctx: BeforeToolContext) -> RuleVote:
 
 def _card_details(details: list[str], summary: str) -> list[str]:
     """确认卡触发数据段落：规则层段落在前，调用摘要去重后追加
-    （文件工具的摘要行就是它自己的 `path:` 触发数据）。"""
+    （文件工具的摘要行就是它自己的 `path:` 触发数据）。
+
+    Args:
+        details: 规则层触发数据。
+        summary: 调用摘要。
+
+    Returns:
+        合并后的触发数据列表。
+    """
     details = list(details)
     if summary not in details:
         details.append(summary)
@@ -353,7 +532,13 @@ def _apply_votes(ctx: BeforeToolContext, extension_votes: Iterable[Decision],
     """用户表态：动作唯一时采用；不唯一时弹冲突卡，拒绝统一收口为 Permission denied by user。
 
     extension_votes 为扩展决定票；规则票由 rule_vote 提供。rule_vote.details 是规则层越界
-    命中的触发数据（路径清单 / path 行），与调用摘要同进确认卡。"""
+    命中的触发数据（路径清单 / path 行），与调用摘要同进确认卡。
+
+    Args:
+        ctx: before_tool 事件上下文。
+        extension_votes: 扩展提交的决定票。
+        rule_vote: 规则层的决定票与触发数据。
+    """
     votes = ([rule_vote.decision] if rule_vote.decision is not None
              else []) + list(extension_votes)
     summary = _call_summary(ctx.tool_name, ctx.args)
@@ -380,6 +565,11 @@ def _apply_votes(ctx: BeforeToolContext, extension_votes: Iterable[Decision],
 
 
 def _block_by_user(ctx: BeforeToolContext) -> None:
+    """用户拒绝时写入统一的拦截原因。
+
+    Args:
+        ctx: before_tool 事件上下文。
+    """
     ctx._set_blocked("Permission denied by user")
 
 
@@ -387,7 +577,11 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
     """默认层：无任何用户表态时生效。
 
     Manual（含未实现的 LLM / Decision Model）对危险命令与越界访问询问；
-    Yolo 在 gate 里已提前放行，不会走到这里。"""
+    Yolo 在 gate 里已提前放行，不会走到这里。
+
+    Args:
+        ctx: before_tool 事件上下文。
+    """
     tool_name, args = ctx.tool_name, ctx.args
     if tool_name == "terminal":
         command = args.get("command", "")
@@ -414,9 +608,21 @@ def _apply_defaults(ctx: BeforeToolContext) -> None:
 
 
 def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
-    """构造权限门回调：地板 → 规则/扩展表态 → 默认层；Yolo 只留地板。"""
+    """构造权限门回调：地板 → 规则/扩展表态 → 默认层；Yolo 只留地板。
+
+    Args:
+        rules: 已解析的规则集。
+
+    Returns:
+        gate 阶段的 before_tool 回调。
+    """
 
     def gate(ctx: BeforeToolContext) -> None:
+        """对一次工具调用执行权限裁决。
+
+        Args:
+            ctx: before_tool 事件上下文。
+        """
         if ctx.tool_name == "terminal":
             denial = floor_denial(ctx.args.get("command", ""))
             if denial is not None:
@@ -440,5 +646,10 @@ def build_gate(rules: Rules) -> Callable[[BeforeToolContext], None]:
 
 
 def register(api: ExtensionAPI, rules: Rules) -> None:
-    """注册内置权限门：固定 gate 阶段并声明 fail-closed。"""
+    """注册内置权限门：固定 gate 阶段并声明 fail-closed。
+
+    Args:
+        api: 内置扩展注册缓冲对象。
+        rules: 已解析的规则集。
+    """
     api.on("before_tool", build_gate(rules), stage="gate", fail_closed=True)

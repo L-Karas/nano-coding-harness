@@ -18,6 +18,17 @@ class ScheduleCron(BaseTool):
     agent_type: set = {"main"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
+        """注册一个 cron 任务。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            任务注册结果文本。
+
+        Raises:
+            Exception: cron 表达式非法。
+        """
         return cron_scheduler.run_schedule_cron(
             self.cron_expression,
             self.prompt,
@@ -32,6 +43,14 @@ class ListCrons(BaseTool):
     parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
+        """列出当前登记的全部 cron 任务。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            任务列表文本。
+        """
         return cron_scheduler.run_list_crons()
 
 
@@ -42,4 +61,12 @@ class CancelCron(BaseTool):
     agent_type: set = {"main"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
+        """按 id 取消一个 cron 任务。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            取消结果文本。
+        """
         return cron_scheduler.run_cancel_cron(self.job_id)

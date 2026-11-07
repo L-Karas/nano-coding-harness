@@ -13,7 +13,15 @@ from pathlib import Path
 
 
 def iter_files(root: Path, skip_hidden_and_ignored: bool = True) -> Iterator[Path]:
-    """枚举 `root` 下的文件（不含目录）；`skip_hidden_and_ignored` 时跳过隐藏与 `.gitignore` 命中项。"""
+    """枚举 `root` 下的文件（不含目录）；`skip_hidden_and_ignored` 时跳过隐藏与 `.gitignore` 命中项。
+
+    Args:
+        root: 遍历根目录。
+        skip_hidden_and_ignored: 是否跳过隐藏与 git-ignored 路径。
+
+    Yields:
+        候选文件路径（不跟随符号链接）。
+    """
     rules = _IgnoreRules(root) if skip_hidden_and_ignored else None
 
     for dirpath, dirnames, filenames in os.walk(root):
@@ -31,18 +39,41 @@ def iter_files(root: Path, skip_hidden_and_ignored: bool = True) -> Iterator[Pat
 
 
 def is_hidden(rel: str) -> bool:
-    """相对路径里是否有 `.` 开头的片段（`.` / `..` 不算）。"""
+    """相对路径里是否有 `.` 开头的片段（`.` / `..` 不算）。
+
+    Args:
+        rel: `/` 分隔的相对路径。
+
+    Returns:
+        是否包含隐藏片段。
+    """
     return any(part.startswith(".") and part not in (".", "..") for part in rel.split("/"))
 
 
 def relpath(root: Path, path: str | Path) -> str:
-    """相对 `root` 的 `/` 分隔路径；`root` 自身返回空串。"""
+    """相对 `root` 的 `/` 分隔路径；`root` 自身返回空串。
+
+    Args:
+        root: 基准目录。
+        path: 目标路径。
+
+    Returns:
+        POSIX 风格的相对路径。
+    """
     rel = Path(os.path.relpath(path, root)).as_posix()
     return "" if rel == "." else rel
 
 
 def _join(dir_rel: str, name: str) -> str:
-    """拼 `/` 路径；任一侧为空时返回另一侧（`_join("", "a") == "a"`，`_join("a", "") == "a"`）。"""
+    """拼 `/` 路径；任一侧为空时返回另一侧（`_join("", "a") == "a"`，`_join("a", "") == "a"`）。
+
+    Args:
+        dir_rel: 目录相对路径。
+        name: 文件名。
+
+    Returns:
+        拼接后的路径。
+    """
     if not dir_rel:
         return name
     return f"{dir_rel}/{name}" if name else dir_rel
@@ -51,7 +82,12 @@ def _join(dir_rel: str, name: str) -> str:
 class _IgnoreRules:
     """最小 .gitignore 语义：注释 / 空行 / `!` 取反 / 结尾 `/` 仅目录 / 含 `/` 锚定 / 通配符 / 子目录叠加。"""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path) -> None:
+        """加载从仓库根到 root 父目录的所有 `.gitignore`。
+
+        Args:
+            root: 遍历根目录。
+        """
         self._repo = _repo_root(root)
         self._prefix = relpath(self._repo, root) if self._repo is not None else ""
         self._rules: list[_Rule] = []
@@ -64,11 +100,24 @@ class _IgnoreRules:
             self._load("/".join(parts[:i]))
 
     def load(self, dir_rel: str) -> None:
-        """读 `dir_rel` 目录下的 .gitignore；遍历顺序（浅→深）保证后写规则覆盖先写。"""
+        """读 `dir_rel` 目录下的 .gitignore；遍历顺序（浅→深）保证后写规则覆盖先写。
+
+        Args:
+            dir_rel: 相对遍历根目录的目录路径。
+        """
         if self._repo is not None:
             self._load(_join(self._prefix, dir_rel))
 
     def ignored(self, rel: str, is_dir: bool) -> bool:
+        """判断路径是否被 .gitignore 忽略。
+
+        Args:
+            rel: 相对遍历根目录的路径。
+            is_dir: 该路径是否为目录。
+
+        Returns:
+            是否命中忽略规则。
+        """
         if self._repo is None:
             return False
         path = _join(self._prefix, rel)
@@ -79,7 +128,11 @@ class _IgnoreRules:
         return ignored
 
     def _load(self, repo_rel: str) -> None:
-        """`repo_rel` 相对仓库根。"""
+        """读取指定目录下的 .gitignore 并追加规则。
+
+        Args:
+            repo_rel: 相对仓库根的目录路径。
+        """
         if self._repo is None:
             return
         base = self._repo / repo_rel if repo_rel else self._repo
@@ -93,6 +146,14 @@ class _IgnoreRules:
 
 
 def _repo_root(root: Path) -> Path | None:
+    """向上查找包含 .git 的仓库根目录。
+
+    Args:
+        root: 起始目录。
+
+    Returns:
+        仓库根目录；不在 git 仓库内时返回 None。
+    """
     for path in (root, *root.parents):
         if (path / ".git").exists():
             return path
@@ -109,6 +170,15 @@ class _Rule:
     anchored: bool
 
     def matches(self, path: str, is_dir: bool) -> bool:
+        """判断仓库相对路径是否命中本条规则。
+
+        Args:
+            path: 相对仓库根的路径。
+            is_dir: 该路径是否为目录。
+
+        Returns:
+            是否命中。
+        """
         if self.dir_only and not is_dir:
             return False
         if self.base:
@@ -121,6 +191,15 @@ class _Rule:
 
 
 def _parse_rule(line: str, base: str) -> _Rule | None:
+    """解析一条 .gitignore 规则。
+
+    Args:
+        line: 原始规则行。
+        base: 规则所在目录相对仓库根的路径。
+
+    Returns:
+        解析出的规则；空行 / 注释返回 None。
+    """
     line = line.strip()
     if not line or line.startswith("#"):
         return None

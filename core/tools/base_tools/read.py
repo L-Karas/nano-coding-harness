@@ -34,6 +34,19 @@ class ReadFile(BaseTool):
     parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str | ToolResult:
+        """同步读取文件、文档或图片。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与 vision 能力。
+
+        Returns:
+            文本内容、截断后的文本、"(Empty file)" 占位或图片 ToolResult。
+
+        Raises:
+            ValueError: URL 后缀不是受支持的图片格式。
+            FileNotFoundError: 文件不存在。
+            UnicodeDecodeError: 文本文件不是 UTF-8 编码。
+        """
         vision_enabled = vision.supports_vision(tctx)
         if vision.is_http_url(self.path):
             return vision.url_image_result(self.path, vision=vision_enabled)
@@ -51,6 +64,19 @@ class ReadFile(BaseTool):
         return _slice_content(content.splitlines(), self.limit, self.offset) or "(Empty file)"
 
     async def arun(self, tctx: ToolContext | None = None) -> str | ToolResult:
+        """异步读取文件、文档或图片。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与 vision 能力。
+
+        Returns:
+            文本内容、截断后的文本、"(Empty file)" 占位或图片 ToolResult。
+
+        Raises:
+            ValueError: URL 后缀不是受支持的图片格式。
+            FileNotFoundError: 文件不存在。
+            UnicodeDecodeError: 文本文件不是 UTF-8 编码。
+        """
         vision_enabled = vision.supports_vision(tctx)
         if vision.is_http_url(self.path):
             return vision.url_image_result(self.path, vision=vision_enabled)
@@ -69,7 +95,16 @@ class ReadFile(BaseTool):
 
 
 def _slice_content(lines: list[str], limit: Optional[int], offset: Optional[int]) -> str:
-    """薄包装：保留模块级 MAX_OUTPUT_BYTES 供测试 / 调用方调整，逻辑在 core.context.truncate。"""
+    """薄包装：保留模块级 MAX_OUTPUT_BYTES 供测试 / 调用方调整，逻辑在 core.context.truncate。
+
+    Args:
+        lines: 文件内容行。
+        limit: 最大返回行数。
+        offset: 起始行号（1 起始）。
+
+    Returns:
+        截断后的文本。
+    """
     text, _ = truncate_lines(
         lines,
         limit,

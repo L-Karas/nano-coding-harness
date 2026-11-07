@@ -32,7 +32,12 @@ _LOGGER = get_logger(__name__)
 
 
 def _write_json(path: Path, data: dict) -> None:
-    """统一 JSON 落盘格式（UTF-8 / 中文不转义 / 4 空格缩进）；异常由调用方处理。"""
+    """统一 JSON 落盘格式（UTF-8 / 中文不转义 / 4 空格缩进）；异常由调用方处理。
+
+    Args:
+        path: 目标文件路径。
+        data: 待序列化并写入的 JSON 数据。
+    """
     path.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
 
 
@@ -77,7 +82,11 @@ def _load_custom_registry() -> tuple[dict, dict]:
 
 
 def load_model_registry() -> None:
-    """加载内置 + 自定义注册表；由 core.bootstrap 在启动时调用（测试重调以模拟重启）。"""
+    """加载内置 + 自定义注册表；由 core.bootstrap 在启动时调用（测试重调以模拟重启）。
+
+    Raises:
+        FileNotFoundError: 内置 models.json 不存在。
+    """
     global _MODEL_LIST, _PROVIDER_AUTH
 
     if not _MODEL_LIST_PATH.exists():
@@ -102,8 +111,12 @@ def _update_default_models(provider: str, model: str = "") -> bool:
     默认模型配置统一为 "provider:model"：模型注销按整串精确匹配，provider 注销按
     "provider:" 前缀匹配。
 
+    Args:
+        provider: 提供方名称。
+        model: 要注销的模型名；省略时按 provider 注销处理。
+
     Returns:
-        返回是否更新了默认模型配置
+        返回是否更新了默认模型配置。
     """
     updated = False
     for key in ("default_model", "default_sub_model", "default_fallback_model"):
@@ -142,7 +155,12 @@ def get_provider_list(custom_provider: bool = False) -> list[tuple[str, bool]]:
 
 
 def configure_provider(provider: str, api_key: str) -> None:
-    """写入 / 覆盖 provider 的 API key 并落盘。"""
+    """写入 / 覆盖 provider 的 API key 并落盘。
+
+    Args:
+        provider: 提供方名称。
+        api_key: 要保存的 API key。
+    """
     try:
         _PROVIDER_AUTH[provider] = {"api_key": api_key}
         _write_json(PATHS.PROVIDER_AUTH_FILE, _PROVIDER_AUTH)
@@ -156,6 +174,9 @@ def unconfigure_provider(provider: str) -> None:
 
     自定义 provider 仅失去凭证，注册信息保留。默认模型配置（provider:model）仍引用该
     provider 时一并清空并复位共享 client，避免默认配置继续指向已删凭证。
+
+    Args:
+        provider: 要移除凭证的提供方名称。
     """
     if provider not in _PROVIDER_AUTH:
         return  # 幂等 no-op：未配置 / 已删（UI 对未配置行或重复按 Delete 都安全）
@@ -187,7 +208,16 @@ def get_model_list(custom_model: bool = False) -> list[tuple[str, str]]:
 
 
 def login_provider(provider: str, base_url: str, api_key: str = "") -> bool:
-    """注册自定义 provider（无需重启即生效）。名称与内置 / 已有 provider 冲突时返回 False。"""
+    """注册自定义 provider（无需重启即生效）。名称与内置 / 已有 provider 冲突时返回 False。
+
+    Args:
+        provider: 自定义提供方名称。
+        base_url: OpenAI 兼容接口的 base URL。
+        api_key: 初始 API key；可为空，之后再用 configure_provider 写入。
+
+    Returns:
+        是否注册成功。
+    """
     if provider in _MODEL_LIST:
         _LOGGER.error(f"[Login Provider Error] {provider} exists")
         return False
@@ -212,7 +242,19 @@ def login_model(
     context_length: int = 0,
     max_output: Optional[int] = None,
 ) -> bool:
-    """在已注册的自定义 provider 下注册模型并落盘。context_length 必须为正（压缩/预算的真源）。"""
+    """在已注册的自定义 provider 下注册模型并落盘。context_length 必须为正（压缩/预算的真源）。
+
+    Args:
+        provider: 已注册的自定义提供方名称。
+        model: 模型名称。
+        thinking: 是否支持思考 / reasoning。
+        vision: 是否支持图像输入。
+        context_length: 上下文窗口长度，必须为正数。
+        max_output: 最大输出 token 数；None 表示无固定上限。
+
+    Returns:
+        是否注册成功。
+    """
     if provider not in _CUSTOM_PROVIDER_AUTH:
         _LOGGER.error(f"[Login Model Error] {provider} is not a custom provider")
         return False
@@ -242,7 +284,14 @@ def login_model(
 
 
 def logout_provider(provider: str) -> bool:
-    """注销自定义 provider（连带其模型与凭证），清理引用它的默认模型配置。"""
+    """注销自定义 provider（连带其模型与凭证），清理引用它的默认模型配置。
+
+    Args:
+        provider: 要注销的自定义提供方名称。
+
+    Returns:
+        是否注销成功。
+    """
     if provider not in _CUSTOM_PROVIDER_AUTH:
         _LOGGER.error(f"[Logout Provider Error] {provider} does not exist")
         return False
@@ -262,7 +311,15 @@ def logout_provider(provider: str) -> bool:
 
 
 def logout_model(provider: str, model: str) -> bool:
-    """在自定义 provider 下注销模型，清理引用它的默认模型配置。"""
+    """在自定义 provider 下注销模型，清理引用它的默认模型配置。
+
+    Args:
+        provider: 模型所属的自定义提供方名称。
+        model: 要注销的模型名称。
+
+    Returns:
+        是否注销成功。
+    """
     if provider not in _CUSTOM_PROVIDER_AUTH:
         _LOGGER.error(f"[Logout Model Error] {provider} does not exist")
         return False
@@ -288,6 +345,12 @@ def logout_model(provider: str, model: str) -> bool:
 class ModelClient:
 
     def __init__(self, sub_model: bool = False) -> None:
+        """初始化客户端并按默认配置建立连接。
+
+        Args:
+            sub_model: True 优先 default_sub_model（未配置时回退 default_model 与其档位）；
+                False 使用 default_model。
+        """
         self._sub_model = sub_model
         self.current_provider = ""
         self.current_model = ""
@@ -297,43 +360,79 @@ class ModelClient:
         self.init_client()
 
     def _model_config(self) -> dict[str, Any]:
-        """当前模型在 _MODEL_LIST 中的注册配置。"""
+        """当前模型在 _MODEL_LIST 中的注册配置。
+
+        Returns:
+            模型注册配置字典。
+        """
         return _MODEL_LIST[self.current_provider]["model_list"][self.current_model]
 
     def _require_selection(self) -> None:
+        """校验已选择 provider 与 model。
+
+        Raises:
+            RuntimeError: 尚未设置 provider 或 model。
+        """
         if not self.current_provider or not self.current_model:
             message = "Please set provider and model"
             _LOGGER.info(message)
             raise RuntimeError(message)
 
     def load_context_length(self) -> int:
-        """加载当前模型注册表中的上下文长度，未选择模型时返回 0。"""
+        """加载当前模型注册表中的上下文长度，未选择模型时返回 0。
+
+        Returns:
+            上下文窗口长度；未选择模型时为 0。
+        """
         if not (self.current_provider and self.current_model):
             return 0
         return self._model_config()["context_length"]
 
     def load_max_output(self) -> Optional[int]:
-        """当前模型注册表声明的最大输出；未选择 / 为空（无固定上限）时返回 None。"""
+        """当前模型注册表声明的最大输出；未选择 / 为空（无固定上限）时返回 None。
+
+        Returns:
+            最大输出 token 数，或 None。
+        """
         if not (self.current_provider and self.current_model):
             return None
         return self._model_config().get("max_output") or None
 
     def supports_vision(self) -> bool:
-        """当前模型是否声明支持图像输入；未选择模型时为 False。"""
+        """当前模型是否声明支持图像输入；未选择模型时为 False。
+
+        Returns:
+            支持图像输入时为 True。
+        """
         if not (self.current_provider and self.current_model):
             return False
         return bool(self._model_config().get("vision", False))
 
     def compact_trigger_tokens(self) -> int:
-        """当前模型的上下文压缩触发阈值（优先配置值，最终不超过窗口 80%）。"""
+        """当前模型的上下文压缩触发阈值（优先配置值，最终不超过窗口 80%）。
+
+        Returns:
+            压缩触发阈值；无可用上下文窗口时为 0。
+        """
         return CONFIGMANAGER.config.resolve_compact_trigger_tokens(self.load_context_length())
 
     def compact_reserve_tokens(self) -> int:
-        """压缩后保留的最近消息 token 预算（绝对值，封顶压缩阈值）。"""
+        """压缩后保留的最近消息 token 预算（绝对值，封顶压缩阈值）。
+
+        Returns:
+            保留预算 token 数。
+        """
         return CONFIGMANAGER.config.resolve_compact_reserve_tokens(self.compact_trigger_tokens())
 
     def clamp_max_tokens(self, requested: int) -> int:
-        """把单次调用的 max_tokens 钳制到当前模型固定最大输出；无固定上限时不钳制。"""
+        """把单次调用的 max_tokens 钳制到当前模型固定最大输出；无固定上限时不钳制。
+
+        Args:
+            requested: 期望的 max_tokens。
+
+        Returns:
+            钳制后的 max_tokens。
+        """
         return CONFIGMANAGER.config.clamp_max_tokens(requested, self.load_max_output())
 
     def init_client(self) -> None:
@@ -361,6 +460,12 @@ class ModelClient:
         self.set_model_client(provider, model, thinking)
 
     def _init_model_client(self) -> None:
+        """用当前 provider 的凭证与 base_url 重建异步 OpenAI client。
+
+        Raises:
+            RuntimeError: 尚未选择 provider 或 model。
+            KeyError: 当前 provider 没有可用的注册配置或 API key。
+        """
         self._require_selection()
         api_key = _PROVIDER_AUTH[self.current_provider]["api_key"]
         base_url = _MODEL_LIST[self.current_provider]["base_url"]
@@ -371,6 +476,9 @@ class ModelClient:
 
         map 值为 false = 该模型不支持此档：thinking 照开、请求时不传 reasoning_effort；
         未知键（如旧版误存的 API 值）不得 KeyError。
+
+        Args:
+            thinking_level: 空字符串关闭思考；否则为 thinking_level_map 中的档位键。
         """
         if not thinking_level:
             self.current_thinking_level = ""
@@ -387,14 +495,24 @@ class ModelClient:
         model: str,
         thinking_level: str = "max",
     ) -> None:
-        """只切换当前会话的内存 client；默认模型 / 提供方 / 思考档位仅 /settings 能改，不落盘。"""
+        """只切换当前会话的内存 client；默认模型 / 提供方 / 思考档位仅 /settings 能改，不落盘。
+
+        Args:
+            provider: 提供方名称。
+            model: 模型名称。
+            thinking_level: 初始思考档位，缺省为 "max"。
+        """
         self.current_provider = provider
         self.current_model = model
         self.set_thinking_level(thinking_level)
         self._init_model_client()
 
     def _request_kwargs(self) -> dict[str, Any]:
-        """thinking 开启才带 extra_body；档位映射值 false 或已关思考时不传 reasoning_effort。"""
+        """thinking 开启才带 extra_body；档位映射值 false 或已关思考时不传 reasoning_effort。
+
+        Returns:
+            追加到请求中的参数 dict。
+        """
         if not self.current_model_thinking:
             return {}
         kwargs: dict[str, Any] = {"extra_body": {"thinking": {"type": "enabled"}}}
@@ -405,7 +523,11 @@ class ModelClient:
         return kwargs
 
     def get_model_client(self) -> Callable[..., Any]:
-        """返回已绑定 model / thinking 参数的异步 chat.completions.create 调用入口。"""
+        """返回已绑定 model / thinking 参数的异步 chat.completions.create 调用入口。
+
+        Returns:
+            可直接传入 messages 等参数的异步调用入口。
+        """
         self._require_selection()
         request_args = self._request_kwargs()
         _LOGGER.info(f"Model: {self.current_model}({self.current_provider}), "
@@ -414,8 +536,15 @@ class ModelClient:
                        model=self.current_model, **request_args)
 
 
-def model_supports_vision(client) -> bool:
-    """client 的当前模型能否接收图片；未声明该能力的测试替身按支持处理。"""
+def model_supports_vision(client: Any) -> bool:
+    """client 的当前模型能否接收图片；未声明该能力的测试替身按支持处理。
+
+    Args:
+        client: 模型客户端；可提供 supports_vision 方法或属性。
+
+    Returns:
+        是否支持图像输入。
+    """
     supports = getattr(client, "supports_vision", None)
     if callable(supports):
         return bool(supports())
@@ -434,6 +563,11 @@ _SUB_CLIENT: Optional[ModelClient] = None
 
 
 def shared_model_client() -> ModelClient:
+    """返回进程内共享的主模型客户端（首次调用时惰性创建）。
+
+    Returns:
+        使用 default_model 配置的 ModelClient 实例。
+    """
     global _CLIENT
     if _CLIENT is None:
         _CLIENT = ModelClient()
@@ -441,6 +575,11 @@ def shared_model_client() -> ModelClient:
 
 
 def shared_sub_model_client() -> ModelClient:
+    """返回进程内共享的子 agent 模型客户端（首次调用时惰性创建）。
+
+    Returns:
+        使用 default_sub_model（未配置时回退 default_model）配置的 ModelClient 实例。
+    """
     global _SUB_CLIENT
     if _SUB_CLIENT is None:
         _SUB_CLIENT = ModelClient(sub_model=True)

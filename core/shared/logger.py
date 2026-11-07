@@ -10,7 +10,14 @@ file_formatter = logging.Formatter(
 
 
 def get_logger(module_name: str = ".log") -> logging.Logger:
-    """按模块名返回 logger；同名调用幂等（不会重复挂 handler、重复写日志）。"""
+    """按模块名返回 logger；同名调用幂等（不会重复挂 handler、重复写日志）。
+
+    Args:
+        module_name: 模块名，取最后一段作为日志文件名。
+
+    Returns:
+        已配置文件 handler 的 logger。
+    """
     name = module_name.split(".")[-1]
     logger = logging.getLogger(f"{name}_log")
     if not logger.handlers:

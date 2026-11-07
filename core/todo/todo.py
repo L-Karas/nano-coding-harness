@@ -6,7 +6,14 @@ _LOGGER = get_logger(__name__)
 
 
 def todo_write(todos: list[TodoEntry]) -> str:
-    """整体替换当前 todo 清单并回显；参数校验由 ToolPool（TodoWrite 模型）负责。"""
+    """整体替换当前 todo 清单并回显；参数校验由 ToolPool（TodoWrite 模型）负责。
+
+    Args:
+        todos: 新的 todo 条目。
+
+    Returns:
+        更新后的 todo 列表文本。
+    """
     todo_messages = [
         TODO_ITEM_MESSAGE_TEMPLATE.format(content=todo.content, status=todo.status)
         for todo in todos

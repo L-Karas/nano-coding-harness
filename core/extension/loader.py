@@ -52,6 +52,9 @@ def load_extensions(directory: Path | None = None) -> None:
     清单合法的扩展无论 enabled 都会 import + register（保持注册顺序稳定），
     enabled 决定模块是否参与派发；清单缺失 / 非法仍按未加载处理。
     目录级异常时允许调用方重试：已处理过的文件夹会跳过，避免重复注册。
+
+    Args:
+        directory: 扩展根目录；省略时使用 PATHS.EXTENSION_DIR。
     """
     global _LOADED, _LOADING
     if _LOADED or _LOADING:
@@ -72,7 +75,16 @@ def load_extensions(directory: Path | None = None) -> None:
             events: Iterable[str] = (),
             error: bool = False,
         ) -> None:
-            """登记本目录的扫描结果；外部扩展来源固定为 user。"""
+            """登记本目录的扫描结果；外部扩展来源固定为 user。
+
+            Args:
+                folder: 扩展目录。
+                description: 清单描述。
+                enabled: 是否参与派发。
+                detail: 失败或组合展示文案。
+                events: 已注册事件名。
+                error: 是否加载失败。
+            """
             registry.record(folder.name, "user", enabled=enabled, detail=detail,
                             events=events, description=description, error=error)
 
@@ -125,7 +137,14 @@ def reset() -> None:
 
 
 def toggle_extension(name: str) -> ToggleResult:
-    """翻转一个扩展的 enabled，并即时切换派发开关。"""
+    """翻转一个扩展的 enabled，并即时切换派发开关。
+
+    Args:
+        name: 扩展目录名。
+
+    Returns:
+        启停操作结果；扩展未加载时 ok=False。
+    """
     folder = _FOLDERS.get(name)
     if folder is None:
         return ToggleResult(
@@ -144,7 +163,17 @@ def _apply_enabled(
         state: _ManifestState,
         enabled: bool,
 ) -> ToggleResult:
-    """写入 enabled 并在写盘成功后切换派发；失败时不改变运行态。"""
+    """写入 enabled 并在写盘成功后切换派发；失败时不改变运行态。
+
+    Args:
+        name: 扩展目录名。
+        folder: 扩展目录路径。
+        state: 当前清单状态。
+        enabled: 目标启用状态。
+
+    Returns:
+        启停操作结果。
+    """
     entry = _entry(name)
     if entry is None:
         return ToggleResult(
@@ -182,7 +211,14 @@ def _apply_enabled(
 
 
 def _entry(name: str) -> registry.ExtensionInfo | None:
-    """从登记表取当前 user 扩展条目；不存在时返回 None。"""
+    """从登记表取当前 user 扩展条目；不存在时返回 None。
+
+    Args:
+        name: 扩展目录名。
+
+    Returns:
+        对应的登记条目；不存在时返回 None。
+    """
     return next((entry for entry in registry.list_extensions()
                  if entry.origin == "user" and entry.name == name), None)
 
@@ -191,6 +227,13 @@ def _manifest_state(folder: Path) -> _ManifestState:
     """解析清单：reason=None 表示合法；enabled 为严格布尔 true 的使用开关。
 
     描述与完整 data 在清单解析成功后一并返回；缺清单 / 非法清单返回空串与空 dict。
+
+    Args:
+        folder: 扩展目录路径。
+
+    Returns:
+        每次调用都返回 _ManifestState；reason 为 None 表示清单可解析，enabled 仅在
+        enabled 严格为 true 时为 True；reason 非 None 时 description 为空串、data 为空 dict。
     """
     manifest = folder / "extension.json"
     if not manifest.exists():
@@ -212,7 +255,15 @@ def _manifest_state(folder: Path) -> _ManifestState:
 
 
 def _manifest_description(value: object, folder_name: str) -> str:
-    """可选展示描述：仅接受字符串；空串 / 非字符串视为无描述，连续空白折叠成单空格。"""
+    """可选展示描述：仅接受字符串；空串 / 非字符串视为无描述，连续空白折叠成单空格。
+
+    Args:
+        value: 清单中的 description 字段。
+        folder_name: 扩展目录名，用于日志。
+
+    Returns:
+        折叠空白后的描述；无有效描述时为空字符串。
+    """
     if value is None:
         return ""
     if not isinstance(value, str):
@@ -222,22 +273,53 @@ def _manifest_description(value: object, folder_name: str) -> str:
 
 
 def _failure_detail(enabled: bool, reason: str) -> str:
-    """加载失败时的展示文案：配置禁用时同时保留用户关闭状态。"""
+    """加载失败时的展示文案：配置禁用时同时保留用户关闭状态。
+
+    Args:
+        enabled: 清单是否声明启用。
+        reason: 失败原因。
+
+    Returns:
+        带启用状态的失败文案。
+    """
     return reason if enabled else f"disabled · {reason}"
 
 
 def _module_name(folder_name: str) -> str:
-    """扩展目录名 → 进程内模块名。"""
+    """扩展目录名 → 进程内模块名。
+
+    Args:
+        folder_name: 扩展目录名。
+
+    Returns:
+        进程内模块名。
+    """
     return f"nano_extension_{folder_name}"
 
 
 def _write_manifest(path: Path, data: dict) -> None:
-    """原子写回 extension.json：保留全部字段与键顺序，规范化 indent=4。"""
+    """原子写回 extension.json：保留全部字段与键顺序，规范化 indent=4。
+
+    Args:
+        path: 清单文件路径。
+        data: 完整清单数据。
+    """
     atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=4) + "\n")
 
 
 def _load_extension(folder: Path) -> list[str] | None:
-    """按包加载单个扩展；register 失败时回滚并上抛，缺 register 返回 None。"""
+    """按包加载单个扩展；register 失败时回滚并上抛，缺 register 返回 None。
+
+    Args:
+        folder: 扩展目录路径。
+
+    Returns:
+        已注册事件名列表；缺少可调用 register 时返回 None。
+
+    Raises:
+        TypeError: register(api) 不是同步函数。
+        Exception: 模块导入 / register 调用 / 提交注册失败（原样上抛）。
+    """
     module_name = _module_name(folder.name)
     try:
         spec = spec_from_file_location(
@@ -271,7 +353,11 @@ def _load_extension(folder: Path) -> list[str] | None:
 
 
 def _purge_modules(module_name: str) -> None:
-    """移除扩展主模块及其子模块，避免失败 / reset 后残留旧代码。"""
+    """移除扩展主模块及其子模块，避免失败 / reset 后残留旧代码。
+
+    Args:
+        module_name: 扩展模块名。
+    """
     for name in [name for name in sys.modules
                  if name == module_name or name.startswith(f"{module_name}.")]:
         sys.modules.pop(name, None)

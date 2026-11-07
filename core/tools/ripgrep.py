@@ -10,11 +10,24 @@ from core.runtime_context import ToolContext
 
 
 def has_ripgrep() -> bool:
+    """检查 PATH 上是否有 ripgrep。
+
+    Returns:
+        rg 可执行文件存在时为 True。
+    """
     return bool(shutil.which("rg"))
 
 
 async def run_rg(args: list[str], tctx: ToolContext | None = None) -> tuple[str, str, int]:
-    """跑 `rg <args>`，返回 `(stdout, stderr, returncode)`；取消时先 terminate，超时再 kill。"""
+    """跑 `rg <args>`，返回 `(stdout, stderr, returncode)`；取消时先 terminate，超时再 kill。
+
+    Args:
+        args: 传给 rg 的参数列表。
+        tctx: 运行时上下文；用于取消检查。
+
+    Returns:
+        (stdout, stderr, returncode)。
+    """
     process = await asyncio.create_subprocess_exec(
         "rg", *args,
         stdout=asyncio.subprocess.PIPE,

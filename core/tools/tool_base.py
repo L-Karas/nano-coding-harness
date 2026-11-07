@@ -25,17 +25,33 @@ class BaseTool(BaseModel):
 
     @classmethod
     def to_openai_tool(cls) -> dict[str, Any]:
-        """
-        get tool name
+        """返回工具的 OpenAI function schema。
+
+        Returns:
+            可直接交给模型的 function schema。
         """
         return to_openai_tool(cls)
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        """同步入口：子类覆写 run / arun 之一；缺省用 asyncio.run 跑异步实现（同步消费者所在线程无事件循环）。"""
+        """同步入口：子类覆写 run / arun 之一；缺省用 asyncio.run 跑异步实现（同步消费者所在线程无事件循环）。
+
+        Args:
+            tctx: 运行时上下文。
+
+        Returns:
+            工具结果文本。
+        """
         return asyncio.run(self.arun(tctx))
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
-        """异步入口：缺省做取消检查后委托同步实现。"""
+        """异步入口：缺省做取消检查后委托同步实现。
+
+        Args:
+            tctx: 运行时上下文。
+
+        Returns:
+            工具结果文本。
+        """
         if tctx is not None:
             tctx.raise_if_cancelled()
         return self.run(tctx)

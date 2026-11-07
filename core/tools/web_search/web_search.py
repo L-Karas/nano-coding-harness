@@ -21,6 +21,14 @@ class WebSearch(BaseTool):
     parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """按提供方优先级执行网页搜索。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            格式化的搜索结果；全部提供方失败时返回最后一条错误信息。
+        """
         try:
             if PROVIDER_STATE.firecrawl_enabled:
                 ok, result = await firecrawl_search(self.query, self.max_results)
@@ -44,6 +52,15 @@ class WebSearch(BaseTool):
 
 
 async def firecrawl_search(query: str, max_results: int = 10) -> tuple[bool, str]:
+    """调用 Firecrawl 搜索接口。
+
+    Args:
+        query: 搜索关键词。
+        max_results: 最大结果数。
+
+    Returns:
+        (是否成功, 格式化结果或错误信息)。
+    """
     url = "https://api.firecrawl.dev/v2/search"
     payload = {
         "query": query,
@@ -77,6 +94,15 @@ async def firecrawl_search(query: str, max_results: int = 10) -> tuple[bool, str
 
 
 async def tavily_search(query: str, max_results: int = 10) -> tuple[bool, str]:
+    """调用 Tavily 搜索接口。
+
+    Args:
+        query: 搜索关键词。
+        max_results: 最大结果数。
+
+    Returns:
+        (是否成功, 格式化结果或错误信息)。
+    """
     url = "https://api.tavily.com/search"
     payload = {
         "query": query,
@@ -107,6 +133,15 @@ async def tavily_search(query: str, max_results: int = 10) -> tuple[bool, str]:
 
 
 async def exa_search(query: str, max_results: int = 10) -> tuple[bool, str]:
+    """调用 Exa 搜索接口。
+
+    Args:
+        query: 搜索关键词。
+        max_results: 最大结果数。
+
+    Returns:
+        (是否成功, 格式化结果或错误信息)。
+    """
     url = "https://api.exa.ai/search"
     payload = {
         "query": query,
@@ -140,6 +175,15 @@ async def exa_search(query: str, max_results: int = 10) -> tuple[bool, str]:
 
 
 async def ddgs_search(query: str, max_results: int = 10) -> tuple[bool, str]:
+    """调用 ddgs 搜索接口（在线程中执行同步客户端）。
+
+    Args:
+        query: 搜索关键词。
+        max_results: 最大结果数。
+
+    Returns:
+        (是否成功, 格式化结果或错误信息)。
+    """
     import ddgs
 
     try:

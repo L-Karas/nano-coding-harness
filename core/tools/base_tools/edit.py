@@ -25,6 +25,19 @@ class EditFile(BaseTool):
     # 不覆写 run：BaseTool.run 即 asyncio.run(arun)，同步与异步入口只有一套语义。
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """把文件中唯一匹配的 old_text 替换为 new_text。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与取消检查。
+
+        Returns:
+            编辑结果文本；内容无变化时返回 "No changes to ..."。
+
+        Raises:
+            ValueError: old_text 为空、未找到或出现多次。
+            FileNotFoundError: 目标文件不存在。
+            OSError: 写入 / 替换失败。
+        """
         path = resolve_path(self.path, tctx.cwd if tctx else None)
         if not self.old_text:
             raise ValueError("old_text must not be empty")

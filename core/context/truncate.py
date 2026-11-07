@@ -19,7 +19,16 @@ def truncate_lines(
 ) -> tuple[str, bool]:
     """行数 / 字节上限，任一先到即停；停处附截断提示，offset 指向下一条未完整返回的行。
 
-    返回 (文本, 是否截断)。offset 是行粒度：被切掉的行尾无法用它续读，需要时用 terminal 读。
+    offset 是行粒度：被切掉的行尾无法用它续读，需要时用 terminal 读。
+
+    Args:
+        lines: 待截断的文本行。
+        limit: 最大保留行数；None 表示不限制行数。
+        offset: 起始行号（1 起始）；None 或旧版 0 起始值按第 1 行处理。
+        max_bytes: 最大保留字节数（UTF-8）。
+
+    Returns:
+        (文本, 是否截断)；截断时文本末尾附续读提示。
     """
     offset = max(int(offset or 1) - 1, 0)  # 1 起始转 0 起始（None/旧 0 起始调用方 → 0）
     limit = int(limit) if limit is not None else None
@@ -61,7 +70,17 @@ def truncate_tool_output(
     offset: Optional[int] = 1,
     max_bytes: int = MAX_OUTPUT_BYTES,
 ) -> tuple[str, bool]:
-    """通用工具输出截断入口：按行数 / 字节上限截断，返回 (文本, 是否截断)。"""
+    """通用工具输出截断入口：按行数 / 字节上限截断。
+
+    Args:
+        text: 工具输出全文。
+        limit: 最大保留行数。
+        offset: 起始行号（1 起始）。
+        max_bytes: 最大保留字节数（UTF-8）。
+
+    Returns:
+        (截断后的文本, 是否发生截断)。
+    """
     return truncate_lines(
         text.splitlines(),
         limit,

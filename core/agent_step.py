@@ -13,7 +13,7 @@ from typing import Callable, ContextManager
 from openai.types.chat import ChatCompletionMessageToolCall
 
 from core.background_task import should_run_background, start_background_task
-from core.client import model_supports_vision
+from core.client import ModelClient, model_supports_vision
 from core.context import to_llm_messages
 from core.extension import (
     AfterLLMContext,
@@ -40,20 +40,41 @@ _LOGGER = get_logger(__name__)
 
 
 def _noop(*_args, **_kwargs) -> None:
+    """渲染槽的默认 no-op 实现。"""
     pass
 
 
 def _null_cm() -> ContextManager:
+    """渲染槽的默认空上下文。
+
+    Returns:
+        不执行任何操作的上下文管理器。
+    """
     return nullcontext()
 
 
 def _tool_message(tool_call_id: str, content: str) -> dict:
-    """tool 角色消息：每个 tool_call_id 必须有且仅有一条结果消息。"""
+    """tool 角色消息：每个 tool_call_id 必须有且仅有一条结果消息。
+
+    Args:
+        tool_call_id: 对应的工具调用 id。
+        content: 工具结果正文。
+
+    Returns:
+        tool 角色的消息 dict。
+    """
     return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
 
 
 def _call_name(tool_call: dict) -> str:
-    """从原始 tool_call 取工具名（不依赖参数 JSON 解析）。"""
+    """从原始 tool_call 取工具名（不依赖参数 JSON 解析）。
+
+    Args:
+        tool_call: 原始工具调用。
+
+    Returns:
+        工具名；缺失时为空字符串。
+    """
     return (tool_call.get("function") or {}).get("name", "")
 
 
@@ -97,14 +118,28 @@ async def run_agent_step(
         history: list[dict],
         system_prompt: str,
         *,
-        client,
+        client: ModelClient,
         pool: ToolPool,
         tctx: ToolContext,
         max_tokens: int,
         policy: StepPolicy = StepPolicy(),
         renderer: StepRenderer = StepRenderer(),
 ) -> StepOutcome:
-    """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展（含权限门）→ 执行 → 扩展）。"""
+    """一次模型调用（扩展 → 重试请求 → 流式解析 → 扩展）与其工具派发（扩展（含权限门）→ 执行 → 扩展）。
+
+    Args:
+        history: 不含 system 的消息历史。
+        system_prompt: 本次调用的 system 提示。
+        client: 模型客户端。
+        pool: 当前工具池。
+        tctx: 工具执行上下文（ToolContext：取消信号 / cwd / 视觉能力）。
+        max_tokens: 本次调用的 max_tokens。
+        policy: step 行为开关。
+        renderer: 渲染槽。
+
+    Returns:
+        本轮模型输出与工具结果的 StepOutcome。
+    """
     tools = pool.schemas()
     vision = model_supports_vision(client)
     messages = [{"role": "system", "content": system_prompt}] + to_llm_messages(history, vision=vision)
@@ -218,6 +253,16 @@ async def _prepare_tool_call(
 
     立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 outcome 返回，其余留给执行阶段；
     定型结果与真实执行结果一样走 after_tool 与结果渲染。
+
+    Args:
+        tool_call: 单次工具调用。
+        pool: 当前工具池。
+        tctx: 工具执行上下文（ToolContext：取消信号 / cwd / 视觉能力）。
+        policy: step 行为开关。
+        renderer: 渲染槽。
+
+    Returns:
+        带定型结果或待执行状态的中间态。
     """
     tool_call_id = tool_call.get("id", "")
     item = _PreparedCall(tool_call_id, tool_name=_call_name(tool_call))
@@ -262,7 +307,14 @@ async def _prepare_tool_call(
 
 
 def _preview_diff(item: _PreparedCall) -> list[tuple[str, int, str]] | str:
-    """执行前预览 write / edit 将产生的变化行；失败记日志并返回空串。"""
+    """执行前预览 write / edit 将产生的变化行；失败记日志并返回空串。
+
+    Args:
+        item: 已准备的工具调用。
+
+    Returns:
+        变化行列表或空字符串。
+    """
     if item.tool_name not in DIFF_TOOLS:
         return ""
     try:
@@ -275,7 +327,15 @@ def _preview_diff(item: _PreparedCall) -> list[tuple[str, int, str]] | str:
 
 
 def _image_followup_message(attachments: list[ImageAttachment], vision: bool) -> dict:
-    """把本轮读取的图片汇总成一条 user 注入消息：来源列表与 image part 同序。"""
+    """把本轮读取的图片汇总成一条 user 注入消息：来源列表与 image part 同序。
+
+    Args:
+        attachments: 本轮返回的图片附件。
+        vision: 当前模型是否支持图片输入。
+
+    Returns:
+        带注入前后缀的 user 消息。
+    """
     lines = ["The following images were returned by tools for visual inspection (in order):"]
     lines += [f"{index}. {attachment.source}" for index, attachment in enumerate(attachments, 1)]
     if not vision:
@@ -301,6 +361,17 @@ async def _run_tools(
 
     每组三段：准备（串行，含扩展 / 权限 / 后台路由）→ 执行（组内并发）→ 收尾（串行，按原调用
     顺序回填消息、触发 after_tool 与渲染）。所有结局（含中断 / 解析失败 / 拦截 / 后台占位）都走收尾段。
+
+    Args:
+        tool_calls: 本轮 assistant 返回的 tool_calls。
+        pool: 当前工具池。
+        tctx: 工具执行上下文（ToolContext：取消信号 / cwd / 视觉能力）。
+        policy: step 行为开关。
+        renderer: 渲染槽。
+        vision: 当前模型是否支持图片输入。
+
+    Returns:
+        (tool 结果消息列表, 额外注入消息列表)。
     """
     results: list[dict] = []
     injected: list[dict] = []
@@ -392,10 +463,28 @@ async def _run_tools(
 
 
 def group_parallel_tool_calls(tool_calls: list[dict], pool: ToolPool) -> list[list[dict]]:
-    """按工具声明的 parallel_safe 分组：连续的并发安全工具合成一组（组内可并发执行），
-    其余工具各自单成一组的屏障，组间保持串行。"""
+    """按工具声明的 parallel_safe 分组。
+
+    连续的并发安全工具合成一组（组内可并发执行），其余工具各自单成一组的屏障，
+    组间保持串行。
+
+    Args:
+        tool_calls: 本轮 tool_calls。
+        pool: 当前工具池。
+
+    Returns:
+        保持原调用顺序的调用分组。
+    """
 
     def is_parallel(tool_call: dict) -> bool:
+        """该调用是否可与其他调用并发执行。
+
+        Args:
+            tool_call: 单次工具调用。
+
+        Returns:
+            工具声明 parallel_safe 时为 True。
+        """
         return pool.is_parallel_safe(_call_name(tool_call))
 
     groups: list[list[dict]] = []

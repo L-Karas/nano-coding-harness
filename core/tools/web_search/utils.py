@@ -31,6 +31,16 @@ def format_search_result(
         search_results: list[dict],
         provider: Literal["firecrawl", "tavily", "exa", "brave_search", "ddgs"]
 ) -> str:
+    """把不同提供方的搜索结果归一为统一的 Markdown 文本。
+
+    Args:
+        search_results: 提供方返回的结果列表。
+        provider: 结果所属的搜索提供方。
+
+    Returns:
+        以分隔线连接的格式化结果；无结果时为 "(no search result)"；
+        brave_search 未实现，返回空串。
+    """
     if not search_results:
         return "(no search result)"
     if provider == "brave_search":  # 未实现：保持旧行为返回空串
@@ -56,4 +66,10 @@ def format_search_result(
 
 def update_provider_state(provider: Literal["firecrawl", "tavily", "exa", "brave_search"],
                           enable: bool) -> None:
+    """切换某个搜索提供方的进程内启用状态。
+
+    Args:
+        provider: 提供方名称。
+        enable: 是否启用。
+    """
     setattr(PROVIDER_STATE, f"{provider}_enabled", enable)

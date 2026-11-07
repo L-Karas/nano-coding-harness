@@ -14,10 +14,20 @@ from core.template import (
 
 
 def _get_message_id() -> str:
+    """生成唯一的 message id。
+
+    Returns:
+        形如 ``message-<uuid>`` 的标识。
+    """
     return f"message-{uuid.uuid4().hex}"
 
 
 def _get_timestamp() -> str:
+    """生成消息时间戳（本地时间，秒级）。
+
+    Returns:
+        格式为 ``YYYY-MM-DD HH:MM:SS`` 的时间字符串。
+    """
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -39,21 +49,43 @@ class Message:
 
 
 def as_message(message: "Message | dict") -> Message:
-    """把 StepOutcome / 扩展注入的 dict 归一为 Message；已是 Message 原样返回。"""
+    """把 StepOutcome / 扩展注入的 dict 归一为 Message；已是 Message 原样返回。
+
+    Args:
+        message: Message 或待转换的消息 dict。
+
+    Returns:
+        归一后的 Message。
+    """
     if isinstance(message, Message):
         return message
     return Message(**message)
 
 
 def message_get(message: "Message | dict", key: str, default: Any = None) -> Any:
-    """Message / dict 统一读取：compact 与 to_llm_messages 共用。"""
+    """Message / dict 统一读取：compact 与 to_llm_messages 共用。
+
+    Args:
+        message: Message 或消息 dict。
+        key: 字段名。
+        default: 字段缺失时的默认值。
+
+    Returns:
+        字段值；缺失时返回 default。
+    """
     if isinstance(message, Message):
         return getattr(message, key, default)
     return message.get(key, default)
 
 
 def message_set(message: "Message | dict", key: str, value: Any) -> None:
-    """Message / dict 统一原地写入。"""
+    """Message / dict 统一原地写入。
+
+    Args:
+        message: Message 或消息 dict。
+        key: 字段名。
+        value: 要写入的值。
+    """
     if isinstance(message, Message):
         setattr(message, key, value)
     else:
@@ -61,7 +93,14 @@ def message_set(message: "Message | dict", key: str, value: Any) -> None:
 
 
 def content_text(content: Any) -> str:
-    """把消息 content（str 或 OpenAI content 数组）压平为文本：数组只保留 text part。"""
+    """把消息 content（str 或 OpenAI content 数组）压平为文本：数组只保留 text part。
+
+    Args:
+        content: 消息内容。
+
+    Returns:
+        压平后的文本；非文本内容返回空字符串。
+    """
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -74,7 +113,14 @@ def content_text(content: Any) -> str:
 
 
 def is_injected_content(content: Any) -> bool:
-    """是否为内部注入消息（按 <injection_messages> 前后缀识别）；支持 content 数组。"""
+    """是否为内部注入消息（按 <injection_messages> 前后缀识别）；支持 content 数组。
+
+    Args:
+        content: 消息内容，字符串或 content part 数组。
+
+    Returns:
+        是否为内部注入消息。
+    """
     text = content_text(content).strip()
     return (text.startswith(INJECTION_MESSAGES_PREFIX.strip())
             and text.endswith(INJECTION_MESSAGES_SUFFIX.strip()))
@@ -85,12 +131,26 @@ def is_synthetic_content(content: Any) -> bool:
 
     `/skills` 产生的技能调用（[Invoke skill '<name>']，可附补充信息）是用户主动发起的
     消息，不算合成：它可作会话标题，也保留在 fork 列表中。其余 < / [ 开头内容仍跳过。
+
+    Args:
+        content: 消息内容，字符串或 content part 数组。
+
+    Returns:
+        是否为合成用户消息。
     """
     text = content_text(content).lstrip()
     return text.startswith(("<", "[")) and not text.startswith(SKILL_INVOCATION_PREFIX)
 
 
 def _has_image_part(content: Any) -> bool:
+    """content 数组是否包含 image_url part。
+
+    Args:
+        content: 消息内容。
+
+    Returns:
+        是否包含图片 part。
+    """
     return isinstance(content, list) and any(
         isinstance(part, dict) and part.get("type") == "image_url" for part in content
     )
@@ -101,6 +161,13 @@ def to_llm_messages(messages: list, *, vision: bool = True) -> list[dict]:
 
     vision=False 时，含 image_url part 的消息整条替换为 IMAGE_OMITTED_MESSAGE；
     会话里保存的消息不被修改。
+
+    Args:
+        messages: 会话消息列表。
+        vision: 是否允许向模型发送图片；False 时用文本占位替换图片消息。
+
+    Returns:
+        仅含 API 字段的消息 dict 列表。
     """
     view = []
     for message in messages:

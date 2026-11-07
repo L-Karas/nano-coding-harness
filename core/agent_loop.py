@@ -39,7 +39,11 @@ MAIN_STEP_POLICY = StepPolicy(
 
 
 def _main_renderer() -> StepRenderer:
-    """从 UI port 组装 step 的渲染槽；headless 时端口默认 no-op（ADR-0005）。"""
+    """从 UI port 组装 step 的渲染槽；headless 时端口默认 no-op（ADR-0005）。
+
+    Returns:
+        绑定到交互端口的 StepRenderer。
+    """
     return StepRenderer(
         on_text=interaction.stream_assistant_response,
         on_tool_call=interaction.render_tool_call,
@@ -52,33 +56,69 @@ def _main_renderer() -> StepRenderer:
 
 class AgentRuntime:
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """初始化回合驱动器。"""
         self._turns = TurnRunner()
 
     @property
     def current_context(self) -> AgentRunContext | None:
-        """当前回合的上下文（无回合时 None）；只读，供测试 / UI 观察回合生命周期。"""
+        """当前回合的上下文（无回合时 None）；只读，供测试 / UI 观察回合生命周期。
+
+        Returns:
+            当前回合上下文或 None。
+        """
         return self._turns.current_context
 
     def interrupt(self) -> bool:
+        """中断当前回合。
+
+        Returns:
+            是否成功投递中断；无进行中的回合时返回 False。
+        """
         return self._turns.interrupt()
 
     def is_running(self) -> bool:
         """是否有回合（run / compact，含 auto_loop 的 cron / 后台自动回合）已登记且未结束；
-        UI 的 Esc 据此判断可否中断：auto_loop 直接跑 runtime，不经过 UI 的 _busy。"""
+        UI 的 Esc 据此判断可否中断：auto_loop 直接跑 runtime，不经过 UI 的 _busy。
+
+        Returns:
+            有回合已登记且未结束时为 True。
+        """
         return self._turns.is_running()
 
-    def run_turn(self, prepare: Callable[[], bool] | None = None) -> bool:
-        """跑一次完整 agent 回合（阻塞至结束）；prepare 在锁内、提交前执行，返回 False 则跳过。"""
+    def run_turn(self, prepare: Callable[[], bool] | None = None) -> bool | None:
+        """跑一次完整 agent 回合（阻塞至结束）。
+
+        Args:
+            prepare: 锁内、提交前执行的准备回调；返回 False 时跳过。
+
+        Returns:
+            prepare 返回 False 而跳过时为 False；回合实际执行时返回 run() 的 None。
+        """
         return self._turns.run(self.run, prepare=prepare)
 
     def run_compact(self) -> bool:
-        """手动压缩当前会话（阻塞至结束，与 agent 回合串行）。"""
+        """手动压缩当前会话（阻塞至结束，与 agent 回合串行）。
+
+        Returns:
+            是否实际执行压缩。
+        """
         return self._turns.run(self.compact)
 
     async def compact(self, ctx: AgentRunContext) -> bool:
-        """压缩当前会话上下文（UI 的 /compact）：ctx 由 TurnRunner 提供，压缩期间 Esc 可中断；
-        中断不落会话。返回是否实际压缩；未选模型（无法压缩）时不回写会话。"""
+        """压缩当前会话上下文（UI 的 /compact）：ctx 由 TurnRunner 提供，压缩期间 Esc 可中断。
+
+        中断不落会话；未选模型（无法压缩）时不回写会话。
+
+        Args:
+            ctx: 当前回合上下文。
+
+        Returns:
+            是否实际压缩。
+
+        Raises:
+            AgentInterrupted: 压缩期间被用户中断。
+        """
         try:
             messages, compacted = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
             if compacted:
@@ -88,7 +128,17 @@ class AgentRuntime:
             ctx.raise_if_cancelled()
             raise
 
-    async def run(self, ctx: AgentRunContext):
+    async def run(self, ctx: AgentRunContext) -> None:
+        """跑完整 agent 回合：消费 cron / 后台结果，循环执行 step，直到无工具调用或提前结束。
+
+        提前结束包括模型报错、扩展中止、续写重试耗尽。
+
+        Args:
+            ctx: 当前回合上下文。
+
+        Raises:
+            AgentInterrupted: 回合被用户中断。
+        """
         state = RecoveryState()
         max_tokens = CONFIGMANAGER.config.default_max_tokens
 
@@ -183,7 +233,11 @@ class AgentRuntime:
 
 
 def inject_background_notifications() -> list[str]:
-    """把已完成的后台任务结果写成注入消息（UI 回放会跳过它，只喂模型）；返回注入了哪些通知。"""
+    """把已完成的后台任务结果写成注入消息（UI 回放会跳过它，只喂模型）。
+
+    Returns:
+        本次注入的通知文本列表。
+    """
     notes = collect_background_results()
     if notes:
         SESSION_MANAGER.add_message({
@@ -193,15 +247,24 @@ def inject_background_notifications() -> list[str]:
     return notes
 
 
-def auto_loop(agent: AgentRuntime):
+def auto_loop(agent: AgentRuntime) -> None:
     """每秒轮询：定时任务到期 / 后台任务完成 → 注入消息并自动开一轮。
 
     prepare 在 TurnRunner 的锁内执行：等锁期间运行中的回合可能已自行消费（run() 循环顶部
-    会消费 cron 队列并注入后台结果），故拿到锁后再取一次，避免重复注入 / 空跑。"""
+    会消费 cron 队列并注入后台结果），故拿到锁后再取一次，避免重复注入 / 空跑。
+
+    Args:
+        agent: 目标 runtime。
+    """
     while True:
         time.sleep(1)
 
         def _prepare() -> bool:
+            """锁内检查是否有到期 cron 或已完成后台任务。
+
+            Returns:
+                有需要处理的工作时为 True。
+            """
             fired = consume_cron_queue()
             for job in fired:
                 SESSION_MANAGER.add_message({
@@ -226,11 +289,16 @@ def auto_loop(agent: AgentRuntime):
 
 
 def start_agent_runtime() -> AgentRuntime:
-    """先 bootstrap 初始化，再建 runtime 并起 MCP 预热 / 自动回合轮询线程（各一次）；调用方拿它做中断收口。"""
+    """先 bootstrap 初始化，再建 runtime 并起 MCP 预热 / 自动回合轮询线程（各一次）；调用方拿它做中断收口。
+
+    Returns:
+        已启动的 AgentRuntime。
+    """
     bootstrap()
     runtime = AgentRuntime()
 
     def _warmup() -> None:
+        """后台预热 MCP 连接。"""
         from core.mcp.mcp_client import warmup
         warmup()
 
@@ -251,9 +319,20 @@ def make_agent_turn(runtime: AgentRuntime) -> Callable[[str], None]:
     由 Textual UI 在后台线程调用；query 已由 UI 写入会话管理器，此处不使用。
     阻塞是契约：UI 的 _turn_worker 靠它判断忙碌态，并把逃逸异常上屏。
     runtime.interrupt() 可在回合中途取消（UI 的 Esc，权限确认优先，见 ui_textual）。
+
+    Args:
+        runtime: 目标 runtime。
+
+    Returns:
+        接收用户 query 的回合处理函数。
     """
 
     def agent_turn(_query: str) -> None:
+        """跑一轮完整 agent 回合（阻塞）。
+
+        Args:
+            _query: 用户输入；已由 UI 写入会话，此处不使用。
+        """
         try:
             runtime.run_turn()  # 阻塞至回合结束（TurnRunner 内部取锁串行）
         except AgentInterrupted:

@@ -15,7 +15,7 @@ from core.client import shared_sub_model_client, model_supports_vision
 from core.config import CONFIGMANAGER, WORKDIR
 from core.context.compact import prepare_messages
 from core.context.prompt import build_system_prompt
-from core.runtime_context import ToolContext
+from core.runtime_context import AgentRunContext, ToolContext
 from core.runtime_state import DEFAULT_SUBAGENT_ROLE, RUNTIME_STATE
 from core.shared.logger import get_logger
 
@@ -24,11 +24,17 @@ _LOGGER = get_logger(__name__)
 
 
 def _set_phase(agent_id: str, phase: str, detail: str = "") -> None:
-    """右栏数据源：阶段与正在跑的工具名（"thinking" / "tool"）。"""
+    """右栏数据源：阶段与正在跑的工具名（"thinking" / "tool"）。
+
+    Args:
+        agent_id: 子代理 id。
+        phase: 当前阶段。
+        detail: 阶段详情，通常是工具名。
+    """
     RUNTIME_STATE.update_subagent(agent_id, phase, detail)
 
 
-async def spawn_subagent(description: str, ctx=None, goal: str = "",
+async def spawn_subagent(description: str, ctx: AgentRunContext | None = None, goal: str = "",
                          working_directory: Path | None = None,
                          role: str = DEFAULT_SUBAGENT_ROLE) -> str:
     """在调用方 loop 上跑完一个子代理，返回它的最终文本结论。
@@ -38,6 +44,19 @@ async def spawn_subagent(description: str, ctx=None, goal: str = "",
     ctx 为父回合的 AgentRunContext：每轮模型调用前协作式检查取消（Esc），
     透传给 step 的工具执行使中断能到达子进程；每轮调用前走与主代理相同的
     上下文预算管线（prepare_messages，作用于不含 system 的 history）。
+
+    Args:
+        description: 子代理任务描述。
+        ctx: 父回合上下文；提供中断检查。
+        goal: 右栏展开时展示的简短目标。
+        working_directory: 子代理工作目录；省略时使用 WORKDIR。
+        role: 右栏展示的角色标签。
+
+    Returns:
+        子代理的最终文本结论；达到轮数上限时返回说明文本。
+
+    Raises:
+        AgentInterrupted: 父回合被用户中断。
     """
     from core.agent_step import StepPolicy, StepRenderer, run_agent_step
     from core.tools import assemble_tool_pool

@@ -26,6 +26,18 @@ class WriteFile(BaseTool):
     # 不覆写 run：BaseTool.run 即 asyncio.run(arun)，同步与异步入口只有一套语义。
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """写入完整文件内容，按需创建父目录。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与取消检查。
+
+        Returns:
+            写入结果文本；内容无变化时返回 "No changes to ..."。
+
+        Raises:
+            IsADirectoryError: 目标路径是目录。
+            OSError: 写入 / 替换失败。
+        """
         path = resolve_path(self.path, tctx.cwd if tctx else None)
         if path.is_dir():
             raise IsADirectoryError(f"is a directory: {self.path}")
@@ -45,7 +57,14 @@ class WriteFile(BaseTool):
 
 
 async def _read_existing(path: Path) -> str | None:
-    """原样读取已存在的文件（保留 \\r\\n，用于判断无变化与沿用换行风格）；读不到就按新文件处理。"""
+    """原样读取已存在的文件（保留 \\r\\n，用于判断无变化与沿用换行风格）；读不到就按新文件处理。
+
+    Args:
+        path: 目标文件路径。
+
+    Returns:
+        文件原文；不存在或不可读时返回 None。
+    """
     try:
         async with aiofiles.open(path, mode="r", encoding="utf-8", newline="") as f:
             return await f.read()

@@ -22,18 +22,40 @@ _PIPE_IN_CELL_RE = re.compile(r"(\\*)[|]")
 
 
 def _escape_table_cell(value: object) -> str:
-    """转义 Markdown 表格单元格：竖线拆列、换行断行，都会破坏表格结构。"""
+    """转义 Markdown 表格单元格：竖线拆列、换行断行，都会破坏表格结构。
+
+    Args:
+        value: 单元格原始值。
+
+    Returns:
+        可安全嵌入表格的字符串。
+    """
     text = str(value).replace("\r\n", "\n").replace("\r", "\n")
     text = _PIPE_IN_CELL_RE.sub(lambda match: match.group(1) * 2 + r"\|", text)
     return text.replace("\n", "<br>")
 
 
 def _row(*cells: object) -> str:
-    """转义各单元格并拼成表格行（列数与表头对齐由调用方负责）。"""
+    """转义各单元格并拼成表格行（列数与表头对齐由调用方负责）。
+
+    Args:
+        cells: 该行的各列值。
+
+    Returns:
+        Markdown 表格行。
+    """
     return "|" + "|".join(_escape_table_cell(cell) for cell in cells) + "|"
 
 
 def build_tools_table(tools: list[dict] | None = None) -> str:
+    """构建系统提示中的工具表格。
+
+    Args:
+        tools: OpenAI function schema 列表；为空时返回 "(none)"。
+
+    Returns:
+        Markdown 表格文本。
+    """
     if not tools:
         return "(none)"
     sections = ["|Tool|Description|", "|---|---|"]
@@ -45,6 +67,11 @@ def build_tools_table(tools: list[dict] | None = None) -> str:
 
 
 def build_memories_table() -> str:
+    """构建系统提示中的记忆表格。
+
+    Returns:
+        Markdown 表格文本；无记忆时返回 "(none)"。
+    """
     memories = MEMORY_MANAGER.load_memories()
     if not memories:
         return "(none)"
@@ -56,6 +83,11 @@ def build_memories_table() -> str:
 
 
 def build_skills_table() -> str:
+    """构建系统提示中的技能表格。
+
+    Returns:
+        Markdown 表格文本；无技能时返回 "(none)"。
+    """
     skills = load_skills()
     if not skills:
         return "(none)"
@@ -68,7 +100,11 @@ def build_skills_table() -> str:
 
 @cache
 def build_guidelines() -> str:
-    """shell / 平台指南：运行期不变量，进程内只构建一次。"""
+    """shell / 平台指南：运行期不变量，进程内只构建一次。
+
+    Returns:
+        以换行连接的指南条目。
+    """
     # 函数级导入打破循环：core.tools 包初始化会经 subagent → core.sub_agent 回头导入本模块
     from core.tools.shell import find_shell, shell_kind
 
@@ -95,6 +131,16 @@ def build_system_prompt(
         tools: list[dict] | None = None,
         work_directory: Path | None = None
 ) -> str:
+    """按代理类型组装系统提示。
+
+    Args:
+        agent_type: ``main`` 使用主代理模板；``sub-agent`` 使用子代理模板。
+        tools: 工具 schema 列表，用于生成工具表格。
+        work_directory: 工作目录；省略时使用全局 WORKDIR。
+
+    Returns:
+        组装完成的系统提示文本。
+    """
     tools = tools or []
     _LOGGER.debug(f"Building system prompt for {agent_type}, {len(tools)} tools")
     tools_table = build_tools_table(tools)

@@ -27,6 +27,17 @@ class SpawnSubagent(BaseTool):
     parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """在后台启动子代理并返回启动确认文本。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与所属 agent run。
+
+        Returns:
+            子代理启动结果文本。
+
+        Raises:
+            ValueError: 指定的工作目录不存在或不是目录。
+        """
         base = tctx.cwd if tctx and tctx.cwd else WORKDIR
         work_dir = base
         if self.working_directory:

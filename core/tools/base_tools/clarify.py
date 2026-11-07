@@ -31,5 +31,12 @@ class Clarify(BaseTool):
     agent_type: set = {"main", "sub-agent"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        """经交互端口弹出澄清列表并阻塞等待作答；无 UI / 取消时返回 "[User cancelled]"。"""
+        """经交互端口弹出澄清列表并阻塞等待作答。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            用户选择的答案；无 UI 或取消时返回 "[User cancelled]"。
+        """
         return ask_clarify(self.options, self.multi_select) or "[User cancelled]"

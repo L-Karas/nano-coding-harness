@@ -20,6 +20,14 @@ class WebExtract(BaseTool):
     parallel_safe: bool = True
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """按提供方优先级提取网页正文。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            提取到的正文；全部提供方失败时返回错误信息或 "(No content)"。
+        """
         if not self.url:
             return NO_CONTENT
 
@@ -52,6 +60,17 @@ class WebExtract(BaseTool):
 
 
 async def defuddle_extract(url: str) -> tuple[bool, str]:
+    """通过 npx defuddle 提取网页正文。
+
+    Args:
+        url: 目标网页 URL。
+
+    Returns:
+        (是否成功, 正文或错误信息)。
+
+    Raises:
+        Exception: npx 启动失败等非 RuntimeError 异常原样上抛。
+    """
     try:
         npx = shutil.which("npx")
         if not npx:
@@ -73,6 +92,14 @@ async def defuddle_extract(url: str) -> tuple[bool, str]:
 
 
 async def firecrawl_extract(url: str) -> tuple[bool, str]:
+    """调用 Firecrawl 抓取接口。
+
+    Args:
+        url: 目标网页 URL。
+
+    Returns:
+        (是否成功, 正文或错误信息)。
+    """
     api_url = "https://api.firecrawl.dev/v2/scrape"
     payload = {
         "url": url,
@@ -110,6 +137,14 @@ async def firecrawl_extract(url: str) -> tuple[bool, str]:
 
 
 async def tavily_extrack(url: str) -> tuple[bool, str]:
+    """调用 Tavily 提取接口。
+
+    Args:
+        url: 目标网页 URL。
+
+    Returns:
+        (是否成功, 正文或错误信息)。
+    """
     api_url = "https://api.tavily.com/extract"
     payload = {
         "urls": [url],
@@ -142,6 +177,14 @@ async def tavily_extrack(url: str) -> tuple[bool, str]:
 
 
 async def exa_extract(url: str) -> tuple[bool, str]:
+    """调用 Exa 内容提取接口。
+
+    Args:
+        url: 目标网页 URL。
+
+    Returns:
+        (是否成功, 正文或错误信息)。
+    """
     api_url = "https://api.exa.ai/contents"
     headers = {
         "content-type": "application/json",
@@ -173,6 +216,14 @@ async def exa_extract(url: str) -> tuple[bool, str]:
 
 
 async def ddgs_extract(url: str) -> tuple[bool, str]:
+    """调用 ddgs 提取接口（在线程中执行同步客户端）。
+
+    Args:
+        url: 目标网页 URL。
+
+    Returns:
+        (True, 正文)；失败不返回失败元组，异常原样上抛给调用方兜底。
+    """
     import ddgs
     try:
         with ddgs.DDGS() as client:

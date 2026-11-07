@@ -68,12 +68,36 @@ class Grep(BaseTool):
     parallel_safe: bool = True
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        """同步入口：不起子进程，直接走 Python 回退分支。"""
+        """同步入口：不起子进程，直接走 Python 回退分支。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录。
+
+        Returns:
+            匹配记录文本；无命中时为 "(No matches)"。
+
+        Raises:
+            re.error: pattern 不是合法的 Python 正则。
+            Exception: 搜索路径不存在或越出工作目录。
+        """
         path = _validate_path(self.path, tctx.cwd if tctx else None)
         query = _Query(self.pattern, self.file_pattern, self.skip_hidden_and_ignored)
         return _format_matches(_search_python(path, query))
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """异步搜索；优先使用 ripgrep，未安装时回退 Python 分支。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与取消检查。
+
+        Returns:
+            匹配记录文本；无命中时为 "(No matches)"，rg 部分失败时末尾追加一行
+            "(Search incomplete: ...)"。
+
+        Raises:
+            re.error: pattern 不是合法的 Python 正则。
+            Exception: 搜索路径不存在或越出工作目录。
+        """
         if tctx:
             tctx.raise_if_cancelled()
 
@@ -91,7 +115,15 @@ class Grep(BaseTool):
 
 
 def _search_python(root: Path, query: _Query) -> list[_Match]:
-    """回退分支：枚举候选文件后逐文件流式匹配。"""
+    """回退分支：枚举候选文件后逐文件流式匹配。
+
+    Args:
+        root: 搜索根路径或单个文件。
+        query: 本次搜索参数。
+
+    Returns:
+        匹配记录列表。
+    """
     regex = re.compile(query.pattern)
     paths = (root,) if root.is_file() else iter_files(root, query.skip_hidden_and_ignored)
     matches: list[_Match] = []
@@ -108,7 +140,15 @@ def _search_python(root: Path, query: _Query) -> list[_Match]:
 def _search_file(path: Path, regex: re.Pattern[str]) -> list[_Match]:
     """逐行匹配：`\\r` 留在行内（`$` 不匹配 CRLF），遇到含 NUL 的行就把整个文件当二进制丢掉。
 
-    编码由文件头 2 字节决定：UTF-16 BOM 走 `utf-16`（rg 也这么转码），其余 `utf-8-sig` 剥文件开头 BOM。"""
+    编码由文件头 2 字节决定：UTF-16 BOM 走 `utf-16`（rg 也这么转码），其余 `utf-8-sig` 剥文件开头 BOM。
+
+    Args:
+        path: 待搜索文件。
+        regex: 已编译的匹配模式。
+
+    Returns:
+        该文件的匹配记录；二进制或不可读文件返回空列表。
+    """
     matches: list[_Match] = []
     file_path = str(path)
 
@@ -130,7 +170,15 @@ def _search_file(path: Path, regex: re.Pattern[str]) -> list[_Match]:
 
 
 def _normalize_line(content: str, line_no: int) -> str:
-    """两引擎共用：去掉行尾 CR（保持单行记录），BOM 只在第 1 行去掉。"""
+    """两引擎共用：去掉行尾 CR（保持单行记录），BOM 只在第 1 行去掉。
+
+    Args:
+        content: 原始行内容。
+        line_no: 1 起始行号。
+
+    Returns:
+        规范化后的行内容。
+    """
     content = content.rstrip("\r")
     return content.removeprefix("\ufeff") if line_no == 1 else content
 
@@ -138,7 +186,16 @@ def _normalize_line(content: str, line_no: int) -> str:
 async def _search_ripgrep(tctx: ToolContext | None, root: Path,
                           query: _Query) -> tuple[list[_Match], str | None]:
     """rg 分支：不传 `--glob`（会盖掉 ignore / hidden 规则）；`skip_hidden_and_ignored=false`
-    放开隐藏与忽略（同 glob）。"""
+    放开隐藏与忽略（同 glob）。
+
+    Args:
+        tctx: 运行时上下文；用于取消检查。
+        root: 搜索根路径。
+        query: 本次搜索参数。
+
+    Returns:
+        (匹配记录, 可能的警告文案)。
+    """
     command = ["--no-heading", "-n", "-H"]
     if not query.skip_hidden_and_ignored:
         command += ["--no-ignore", "--hidden"]
@@ -156,21 +213,52 @@ async def _search_ripgrep(tctx: ToolContext | None, root: Path,
 
 
 def _keep_match(match: _Match, root: Path, query: _Query) -> bool:
-    """记录过滤：先 `file_pattern`；`skip_hidden_and_ignored` 时还要求相对路径里没有隐藏片段——rg 会搜
-    `.gitignore` 白名单放出来的隐藏文件（`--hidden` 的文档行为），回退分支却始终不枚举它们。"""
+    """记录过滤：先 `file_pattern`；`skip_hidden_and_ignored` 时还要求相对路径里没有隐藏片段。
+
+    rg 会搜 `.gitignore` 白名单放出来的隐藏文件（`--hidden` 的文档行为），回退分支却始终不
+    枚举它们，这里用于对齐两者。
+
+    Args:
+        match: 单条命中记录。
+        root: 搜索根路径。
+        query: 本次搜索参数。
+
+    Returns:
+        是否保留该命中。
+    """
     if not Path(match.path).match(query.file_pattern):
         return False
     return not (query.skip_hidden_and_ignored and is_hidden(relpath(root, match.path)))
 
 
 def _rg_error(returncode: int, stderr: str) -> str | None:
-    """退出码 2 = 部分路径不可读 / 语法不被 rg 接受：返回原因，交由调用方降级成警告。"""
+    """退出码 2 = 部分路径不可读 / 语法不被 rg 接受：返回原因，交由调用方降级成警告。
+
+    Args:
+        returncode: rg 退出码。
+        stderr: rg 标准错误输出。
+
+    Returns:
+        错误原因；退出码 0 / 1 时返回 None。
+    """
     if returncode in (0, 1):
         return None
     return next((line.strip() for line in stderr.splitlines() if line.strip()), "unknown error")
 
 
 def _validate_path(path: str = "", cwd: Path | None = None) -> Path:
+    """解析并校验搜索路径位于工作目录内。
+
+    Args:
+        path: 待搜索路径；空字符串表示工作目录。
+        cwd: 调用方工作目录。
+
+    Returns:
+        解析后的绝对路径。
+
+    Raises:
+        Exception: 路径不存在或越出工作目录。
+    """
     base = (cwd or WORKDIR).resolve()
     path = (base / Path(path)).resolve()  # 绝对路径也解析：`..` / 符号链接不得绕过下面的边界检查
 
@@ -184,7 +272,14 @@ def _validate_path(path: str = "", cwd: Path | None = None) -> Path:
 
 
 def _parse_match(lines: list[str]) -> list[_Match]:
-    """`path:line:content` → `_Match`；内容规范化交给 `_normalize_line`。"""
+    """`path:line:content` → `_Match`；内容规范化交给 `_normalize_line`。
+
+    Args:
+        lines: rg 输出的行列表。
+
+    Returns:
+        解析出的匹配记录。
+    """
     matches = []
     for line in lines:
         m = _MATCH_RE.match(line)
@@ -197,7 +292,14 @@ def _parse_match(lines: list[str]) -> list[_Match]:
 
 
 def _format_matches(matches: list[_Match]) -> str:
-    """`path:line:content` 单行记录，按路径 / 行号排序；无命中回占位符，超限时末行提示。"""
+    """`path:line:content` 单行记录，按路径 / 行号排序；无命中回占位符，超限时末行提示。
+
+    Args:
+        matches: 匹配记录列表。
+
+    Returns:
+        格式化后的文本。
+    """
     if not matches:
         return "(No matches)"
 

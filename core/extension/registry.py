@@ -29,7 +29,11 @@ class ExtensionInfo:
 
     @property
     def status(self) -> ExtensionStatus:
-        """展示状态：已启用 / 用户禁用 / 加载或注册失败。"""
+        """展示状态：已启用 / 用户禁用 / 加载或注册失败。
+
+        Returns:
+            enabled / disabled / error。
+        """
         if self.error:
             return "error"
         return "enabled" if self.enabled else "disabled"
@@ -49,7 +53,17 @@ def record(
         description: str = "",
         error: bool = False,
 ) -> None:
-    """登记一条扩展；同名同源原地替换，不同来源同名各自保留。"""
+    """登记一条扩展；同名同源原地替换，不同来源同名各自保留。
+
+    Args:
+        name: 扩展名。
+        origin: 来源（user / builtin）。
+        enabled: 当前是否参与派发。
+        detail: 失败或组合展示文案。
+        events: 已注册的事件名。
+        description: 清单里的可选展示描述。
+        error: 是否加载 / 注册失败。
+    """
     info = ExtensionInfo(
         name=name,
         origin=origin,
@@ -67,7 +81,11 @@ def record(
 
 
 def list_extensions() -> list[ExtensionInfo]:
-    """返回排序后的快照：builtin 在前，同来源按名称（忽略大小写）排序。"""
+    """返回排序后的快照：builtin 在前，同来源按名称（忽略大小写）排序。
+
+    Returns:
+        当前登记表的排序副本。
+    """
     return sorted(_ENTRIES, key=lambda entry: (entry.origin != "builtin", entry.name.casefold()))
 
 
@@ -77,7 +95,14 @@ def reset() -> None:
 
 
 def _unique_events(events: Iterable[str]) -> tuple[str, ...]:
-    """事件名按首次出现顺序去重（保留注册顺序）。"""
+    """事件名按首次出现顺序去重（保留注册顺序）。
+
+    Args:
+        events: 原始事件名序列。
+
+    Returns:
+        去重后的事件名元组。
+    """
     seen: set[str] = set()
     unique: list[str] = []
     for event in events:

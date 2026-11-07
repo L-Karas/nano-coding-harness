@@ -19,7 +19,14 @@ _POSIX = os.name == "posix"
 
 
 def normalize_newlines(text: str) -> str:
-    """CRLF → LF；单独出现的 \\r 不动（与 read_file 的换行归一保持一致）。"""
+    """CRLF → LF；单独出现的 \\r 不动（与 read_file 的换行归一保持一致）。
+
+    Args:
+        text: 原始文本。
+
+    Returns:
+        归一化换行后的文本。
+    """
     return text.replace("\r\n", "\n")
 
 
@@ -27,6 +34,13 @@ def match_eol(text: str, source: str | None) -> str:
     """把 LF 文本改成 source 文件的换行风格；source 为 None（新建 / 读不到）时保持 LF。
 
     CRLF 行占多数就用 CRLF，平局与纯 LF 都算 LF（与 edit_file 的旧行为一致）。
+
+    Args:
+        text: 已按 LF 归一化的文本。
+        source: 原文件内容；None 表示新建或读不到。
+
+    Returns:
+        适配目标换行风格的文本。
     """
     if source is None:
         return text
@@ -39,6 +53,15 @@ def _create_temp(path: Path) -> Path:
 
     用 `open(..., "x")` 而不是 `mkstemp`：前者按 0o666&~umask 建文件，后者固定 0600，
     会让新建的产物对同机其他用户不可读。
+
+    Args:
+        path: 目标文件路径。
+
+    Returns:
+        同目录下新建的临时文件路径。
+
+    Raises:
+        FileExistsError: 连续尝试后仍无法创建临时文件。
     """
     for _ in range(100):
         tmp = path.with_name(f".{path.name}.{os.urandom(6).hex()}.tmp")
@@ -54,6 +77,10 @@ def _preserve_mode(src: Path, tmp: Path) -> None:
     """覆盖已有文件时把临时文件的 mode 改成原文件的（0755 脚本不能悄悄变成 0644/0600）。
 
     Windows 只有只读位，交给 os.replace 的报错处理即可。
+
+    Args:
+        src: 原文件路径。
+        tmp: 临时文件路径。
     """
     if not _POSIX:
         return
@@ -69,6 +96,14 @@ async def atomic_write(path: Path, text: str, tctx: ToolContext | None = None) -
     """把 text 原样写进 path（不做换行翻译，换行风格由调用方决定）。
 
     目标文件要么是旧内容、要么是新内容：进程中途被杀不会留下半截文件。
+
+    Args:
+        path: 目标文件路径。
+        text: 要写入的文本。
+        tctx: 运行时上下文；用于取消检查。
+
+    Raises:
+        OSError: 写入或替换失败。
     """
     tmp = None
     try:
@@ -96,7 +131,15 @@ async def atomic_write(path: Path, text: str, tctx: ToolContext | None = None) -
 
 
 def atomic_write_text(path: Path, text: str) -> None:
-    """`atomic_write` 的同步版本，供启动 / UI 配置写回等无事件循环场景使用。"""
+    """`atomic_write` 的同步版本，供启动 / UI 配置写回等无事件循环场景使用。
+
+    Args:
+        path: 目标文件路径。
+        text: 要写入的文本。
+
+    Raises:
+        OSError: 写入或替换失败。
+    """
     tmp = None
     try:
         tmp = _create_temp(path)

@@ -50,7 +50,17 @@ if tuple(EVENT_SPECS) != EVENTS:  # 防止新增事件时只改 protocol 漏掉�
 
 
 def spec_for(event: str) -> EventSpec:
-    """按事件名取规格；未知事件立即报错，避免 dispatch 静默 no-op。"""
+    """按事件名取规格；未知事件立即报错，避免 dispatch 静默 no-op。
+
+    Args:
+        event: 事件名。
+
+    Returns:
+        对应的事件规格。
+
+    Raises:
+        ValueError: 事件名未在 EVENT_SPECS 中登记。
+    """
     try:
         return EVENT_SPECS[event]
     except KeyError:

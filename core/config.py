@@ -14,6 +14,15 @@ def format_workdir_name(workdir: Path) -> str:
 
     例：``E:\\AI-Programs\\nano-harness`` → ``E__AI-Programs_nano-harness``。
     映射是有损的（``E:\\a_b`` 与 ``E:\\a/b`` 同名）；``workdir`` 须为绝对路径。
+
+    Args:
+        workdir: 工作目录绝对路径。
+
+    Returns:
+        可安全用作单层目录名的字符串。
+
+    Raises:
+        ValueError: workdir 不是绝对路径。
     """
     if not workdir.is_absolute():
         raise ValueError(f"workdir must be absolute: {workdir}")
@@ -72,6 +81,12 @@ class Paths:
         """按 mode 派生全部路径。
 
         WORKDIR 不受 mode 影响：它始终是项目根（工具沙箱、系统提示词、@ 补全、会话目录键）。
+
+        Args:
+            mode: 运行模式（dev / prod）。
+
+        Returns:
+            按 mode 派生出的路径表。
         """
         root = (WORKDIR if mode == "dev" else Path.home()) / HARNESS_DIR_NAME
         session_root = root / ".session"
@@ -101,7 +116,11 @@ class Paths:
 
     def replace_with(self, other: "Paths") -> None:
         """原地换成另一份快照（全量覆盖，不是键级合并）：保持 PATHS 对象身份，
-        已导入该对象的模块自动看到新值。"""
+        已导入该对象的模块自动看到新值。
+
+        Args:
+            other: 新的路径快照。
+        """
         for field in fields(self):
             setattr(self, field.name, getattr(other, field.name))
 
@@ -164,6 +183,12 @@ class AgentConfig(BaseModel):
         兜底 = max(1, context_length × 80%)：最终阈值不超过兜底（窗口过小时保底 1），
         防止用户配置过大。优先使用 compact_trigger_tokens；超过兜底时再尝试
         context_length - escalated_max_tokens；仍超过兜底时使用兜底。
+
+        Args:
+            context_length: 当前模型的上下文窗口。
+
+        Returns:
+            有效的压缩触发阈值；无可用窗口时为 0。
         """
         if context_length <= 0:
             return 0
@@ -177,26 +202,52 @@ class AgentConfig(BaseModel):
         return min(fallback_tokens, reserve_tokens)
 
     def resolve_compact_reserve_tokens(self, compact_trigger_tokens: int) -> int:
-        """有效保留预算（绝对 token 数），封顶有效压缩阈值。"""
+        """有效保留预算（绝对 token 数），封顶有效压缩阈值。
+
+        Args:
+            compact_trigger_tokens: 有效压缩阈值。
+
+        Returns:
+            压缩后保留最近消息的 token 预算。
+        """
         return min(self.compact_reserve_tokens, compact_trigger_tokens)
 
     def clamp_max_tokens(self, requested: int, max_output: Optional[int]) -> int:
-        """单次调用 max_tokens 钳制到模型固定最大输出；max_output 为空时不钳制（由 输入+输出<上下文 约束）。"""
+        """单次调用 max_tokens 钳制到模型固定最大输出；max_output 为空时不钳制（由 输入+输出<上下文 约束）。
+
+        Args:
+            requested: 期望的 max_tokens。
+            max_output: 模型声明的最大输出；None 表示无固定上限。
+
+        Returns:
+            钳制后的 max_tokens。
+        """
         return int(requested) if max_output is None else max(1, min(int(requested), int(max_output)))
 
 
 class AgentConfigManager:
 
-    def __init__(self, config: AgentConfig):
+    def __init__(self, config: AgentConfig) -> None:
+        """用给定配置初始化管理器。
+
+        Args:
+            config: 初始配置。
+        """
         self.config = config
 
-    def save_config(self):
+    def save_config(self) -> None:
+        """把当前配置写入 settings 文件并同步运行中的单例。"""
         setting_json = self.config.model_dump_json(ensure_ascii=False, indent=4)
         PATHS.HARNESS_SETTING_FILE.write_text(setting_json, encoding="utf-8")
         CONFIGMANAGER.config = self.config  # 同步运行中的单例；消费方持有 manager 引用，需改属性而非重新绑定
 
     @classmethod
     def load_config(cls) -> "AgentConfigManager":
+        """从磁盘加载配置；文件不存在时返回默认配置。
+
+        Returns:
+            配置管理器实例。
+        """
         if not PATHS.HARNESS_SETTING_FILE.exists():
             return cls(config=AgentConfig())
 
@@ -212,6 +263,12 @@ def configure_mode(mode: Mode) -> None:
 
     可以在任何时刻调用：`PATHS` 的对象身份不变，消费方即使早于本调用导入了它也仍读新值。
     重复设置同一模式是空操作（不重载 AgentConfig，避免丢掉内存中未落盘的修改）。
+
+    Args:
+        mode: 目标运行模式（dev / prod）。
+
+    Raises:
+        ValueError: mode 不是 dev / prod。
     """
     if mode not in ("dev", "prod"):
         raise ValueError(f"unknown mode: {mode!r}")

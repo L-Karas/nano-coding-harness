@@ -10,31 +10,53 @@ class AgentInterrupted(asyncio.CancelledError):
 
 class AgentRunContext:
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """初始化取消信号与已跟踪任务集合。"""
         self.cancelled = asyncio.Event()
         # asyncio.Task（本回合工具协程）或 concurrent.futures.Future（后台任务的跨线程桥）：
         # 两者都有 cancel/done/cancelled/exception，cancel() 对后者经 _chain_future 传回内层 task
         self.tasks: set = set()
 
     @property
-    def interrupted(self):
+    def interrupted(self) -> bool:
+        """取消信号是否已置位。
+
+        Returns:
+            已请求中断时为 True。
+        """
         return self.cancelled.is_set()
 
-    def raise_if_cancelled(self):
+    def raise_if_cancelled(self) -> None:
+        """已请求中断时抛出 AgentInterrupted。
+
+        Raises:
+            AgentInterrupted: 用户已中断当前回合。
+        """
         if self.cancelled.is_set():
             raise AgentInterrupted("User interrupted")
 
-    def track(self, task: asyncio.Future | concurrent.futures.Future):
+    def track(self, task: asyncio.Future | concurrent.futures.Future) -> None:
+        """登记一个可取消任务，完成时自动移除。
+
+        Args:
+            task: 回合内的异步任务或跨线程 Future。
+        """
         self.tasks.add(task)
 
-        def done(t):
+        def done(t: asyncio.Future | concurrent.futures.Future) -> None:
+            """任务完成回调：移除跟踪并取走异常，避免未消费告警。
+
+            Args:
+                t: 已完成的任务。
+            """
             self.tasks.discard(t)
             if not t.cancelled():
                 t.exception()
 
         task.add_done_callback(done)
 
-    def cancel(self):
+    def cancel(self) -> None:
+        """置位取消信号并取消所有已跟踪任务。"""
         self.cancelled.set()
         for task in list(self.tasks):
             # concurrent.futures.Future.cancel() 会同步跑 done 回调删除 task，
@@ -51,10 +73,19 @@ class ToolContext:
     vision: bool = True
 
     def raise_if_cancelled(self) -> None:
+        """已请求中断时抛出 AgentInterrupted；无回合上下文时为空操作。
+
+        Raises:
+            AgentInterrupted: 用户已中断当前回合。
+        """
         if self.agent_run is not None:
             self.agent_run.raise_if_cancelled()
 
     @property
     def interrupted(self) -> bool:
-        """取消信号是否已置位；无回合上下文时为 False。"""
+        """取消信号是否已置位；无回合上下文时为 False。
+
+        Returns:
+            已请求中断时为 True。
+        """
         return self.agent_run is not None and self.agent_run.interrupted

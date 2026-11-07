@@ -6,7 +6,14 @@ from pydantic import BaseModel
 
 
 def _to_text(data: bytes) -> str:
-    """Decode tool output: git and most unix tools emit UTF-8, native Windows tools the locale codec."""
+    """解码工具输出：优先 UTF-8，失败时回退本机 locale 编码。
+
+    Args:
+        data: 原始字节。
+
+    Returns:
+        解码后的文本；全部编码失败时按 UTF-8 有损解码。
+    """
     for enc in ("utf-8", locale.getpreferredencoding()):
         try:
             return data.decode(enc)
@@ -16,7 +23,15 @@ def _to_text(data: bytes) -> str:
 
 
 def _inline_refs(schema: dict, defs: dict) -> dict:
-    """Replace #/$defs/X references recursively so the schema is self-contained."""
+    """递归展开 #/$defs/X 引用，使 schema 自包含。
+
+    Args:
+        schema: 待处理的 schema 片段。
+        defs: 当前 schema 的 $defs 映射。
+
+    Returns:
+        展开引用后的 schema 片段。
+    """
     if isinstance(schema, dict):
         if (ref := schema.get("$ref")) and ref.startswith("#/$defs/"):
             return _inline_refs(defs[ref.removeprefix("#/$defs/")], defs)
@@ -27,6 +42,14 @@ def _inline_refs(schema: dict, defs: dict) -> dict:
 
 
 def _json_schema_to_openai_params(schema: dict) -> dict:
+    """把 JSON Schema 收敛为 OpenAI function parameters。
+
+    Args:
+        schema: 完整 JSON Schema。
+
+    Returns:
+        仅含 type / properties / required 的参数 schema。
+    """
     return {
         "type": "object",
         "properties": _inline_refs(schema.get("properties", {}), schema.get("$defs", {})),
@@ -35,16 +58,26 @@ def _json_schema_to_openai_params(schema: dict) -> dict:
 
 
 def _camel_to_snake(name: str) -> str:
-    """
-    Converts a camel-case string to snake-case
+    """把 CamelCase 名称转换为 snake_case。
+
+    Args:
+        name: 原始名称。
+
+    Returns:
+        snake_case 名称。
     """
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
 
 def to_openai_tool(model: type[BaseModel]) -> dict[str, Any]:
-    """
-    Convert pydantic model to openai tool schema.
+    """把 pydantic 模型转换为 OpenAI tool schema。
+
+    Args:
+        model: 工具模型类。
+
+    Returns:
+        含 name / description / parameters 的 function schema。
     """
     tool_schema = model.model_json_schema(by_alias=True)
 

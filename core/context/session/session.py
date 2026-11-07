@@ -26,20 +26,44 @@ _TITLE_CHARS = 30  # 会话标题 / fork 标题的截断长度（fork 列表的�
 
 
 def _get_timestamp() -> str:
+    """生成会话时间戳（本地时间，秒级）。
+
+    Returns:
+        格式为 ``YYYY-MM-DD HH:MM:SS`` 的时间字符串。
+    """
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _get_session_id() -> str:
+    """生成基于当前时间与随机串的会话文件名。
+
+    Returns:
+        形如 ``session-<时间>-<uuid>.json`` 的文件名。
+    """
     return f"session-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-{uuid.uuid4().hex}.json"
 
 
 def _title_truncate(text: str) -> str:
-    """按 _TITLE_CHARS 截断，超长加省略号。"""
+    """按 _TITLE_CHARS 截断，超长加省略号。
+
+    Args:
+        text: 原始标题文本。
+
+    Returns:
+        截断后的标题。
+    """
     return text[:_TITLE_CHARS] + ("…" if len(text) > _TITLE_CHARS else "")
 
 
 def _fork_title(content: Any) -> str:
-    """fork 新会话标题："[Fork] " + 选中消息内容（content 数组取文本，压平空白后截断）。"""
+    """fork 新会话标题："[Fork] " + 选中消息内容（content 数组取文本，压平空白后截断）。
+
+    Args:
+        content: 选中消息的内容。
+
+    Returns:
+        新会话标题。
+    """
     return "[Fork] " + _title_truncate(" ".join(content_text(content).split()))
 
 
@@ -59,7 +83,8 @@ class SessionManager:
     会话管理器，用于创建、更新、删除和保存会话
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """初始化会话映射表与当前会话指针。"""
         # session file name -> session
         self.session_map: dict[str, Session] = {}
         # current session file name
@@ -67,7 +92,11 @@ class SessionManager:
 
     @property
     def current_session(self) -> str:
-        """当前会话文件名；只读，清空请用 reset()。"""
+        """当前会话文件名；只读，清空请用 reset()。
+
+        Returns:
+            当前会话文件名；未选择会话时为空字符串。
+        """
         return self._current_session
 
     def reset(self) -> None:
@@ -75,10 +104,19 @@ class SessionManager:
         self._current_session = ""
 
     def load_session_tokens(self) -> int:
-        """加载当前会话消息 token 总数。"""
+        """加载当前会话消息 token 总数。
+
+        Returns:
+            当前会话的估算 token 总数；无当前会话时为 0。
+        """
         return estimate_size(self.load_messages()) if self._current_session else 0
 
     def _update_session_title(self, content: Any) -> None:
+        """用最新一条非合成用户消息覆盖当前会话标题。
+
+        Args:
+            content: 用户消息内容。
+        """
         if not self._current_session:
             return
         text = content_text(content)
@@ -87,7 +125,14 @@ class SessionManager:
         self.session_map[self._current_session].title = _title_truncate(text)
 
     def add_message(self, message: Message | dict) -> bool:
-        """新增并保存消息（dict 会在入口归一为 Message），若当前会话不存在，则创建新会话。"""
+        """新增并保存消息（dict 会在入口归一为 Message），若当前会话不存在，则创建新会话。
+
+        Args:
+            message: 要追加的消息或消息 dict。
+
+        Returns:
+            始终为 True。
+        """
         if not self._current_session:
             self.new_session()
 
@@ -100,9 +145,12 @@ class SessionManager:
         return True
 
     def load_messages(self) -> list[Message]:
-        """
-        加载当前会话消息列表（返回列表副本，元素即 Message）；无当前会话时返回 []，不产生写副作用。
+        """加载当前会话消息列表（返回列表副本，元素即 Message）；无当前会话时返回 []，不产生写副作用。
+
         发给模型前须经 core.context.to_llm_messages() 裁成 API 视图。
+
+        Returns:
+            当前会话消息列表副本；无当前会话时为空列表。
         """
         if not self._current_session:
             return []
@@ -112,8 +160,9 @@ class SessionManager:
         """
         仅加载用户消息，为 fork 新会话提供节点；cron / 后台通知 / 图片注入 / 压缩摘要等
         合成消息不参与 fork。
+
         Returns:
-            当前会话的非合成用户消息
+            当前会话的非合成用户消息；无当前会话或无消息时返回 None。
         """
         if not self._current_session or not self.session_map[self._current_session].messages:
             return None
@@ -122,7 +171,14 @@ class SessionManager:
                 if message.role == "user" and not is_synthetic_content(message.content)]
 
     def update_messages(self, messages: list[Message] | list[dict]) -> bool:
-        """回写消息列表（dict 入参在入口归一）；这是替换整个列表的唯一入口。"""
+        """回写消息列表（dict 入参在入口归一）；这是替换整个列表的唯一入口。
+
+        Args:
+            messages: 新的消息列表；为空时直接返回 True。
+
+        Returns:
+            始终为 True。
+        """
         if not messages:
             return True
 
@@ -131,7 +187,11 @@ class SessionManager:
         return True
 
     def _update_session_index(self) -> bool:
-        """重写会话索引文件；若删除当前会话后更新，则无需更新当前会话时间戳。"""
+        """重写会话索引文件；若删除当前会话后更新，则无需更新当前会话时间戳。
+
+        Returns:
+            是否写入成功。
+        """
         if self._current_session:
             self.session_map[self._current_session].timestamp = _get_timestamp()
 
@@ -149,7 +209,14 @@ class SessionManager:
         return True
 
     def _update_session_messages(self, append: bool = False) -> bool:
-        """更新会话文件：rewrite 重写全量，append 只追加最后一条。"""
+        """更新会话文件：rewrite 重写全量，append 只追加最后一条。
+
+        Args:
+            append: True 只追加最后一条消息；False 重写全量。
+
+        Returns:
+            是否写入成功。
+        """
         session_path = PATHS.SESSION_DIR / self._current_session
         if not session_path.exists():
             session_path.touch()
@@ -173,7 +240,14 @@ class SessionManager:
         return True
 
     def delete_session(self, session_id: str) -> bool:
-        """删除会话，若删除当前会话，则将当前会话置空。"""
+        """删除会话，若删除当前会话，则将当前会话置空。
+
+        Args:
+            session_id: 要删除的会话文件名。
+
+        Returns:
+            始终为 True。
+        """
         if self._current_session == session_id:
             self._current_session = ""
 
@@ -184,7 +258,14 @@ class SessionManager:
         return True
 
     def _persist(self, append: bool = False) -> bool:
-        """唯一的落盘路径：写消息文件 + 会话索引；当前会话为空时先建新会话。"""
+        """唯一的落盘路径：写消息文件 + 会话索引；当前会话为空时先建新会话。
+
+        Args:
+            append: True 只追加最后一条消息；False 重写全量。
+
+        Returns:
+            始终为 True。
+        """
         if not self._current_session:
             self.new_session()
 
@@ -193,10 +274,17 @@ class SessionManager:
         return True
 
     def new_session(self, messages: list[Message] | None = None, title: str = "") -> Session:
-        """
-        创建新会话：置为当前会话并入映射表。
+        """创建新会话：置为当前会话并入映射表。
+
         messages 非空（fork 前缀）时立即落盘并写会话索引（标题随索引落盘）；空会话
         （fork 到起点 / 新会话）不建文件、不写索引，等首条消息经 add_message / _persist 落盘时再补。
+
+        Args:
+            messages: fork 前缀消息；省略时创建空会话。
+            title: 会话标题。
+
+        Returns:
+            新建的 Session。
         """
         try:
             new_session = Session(title=title)
@@ -217,10 +305,16 @@ class SessionManager:
         return self.session_map[self._current_session]
 
     def fork_session(self, message_id: str) -> Session | None:
-        """
-        从当前会话中信息id为 message_id 处分叉出新会话：新会话消息 = 该消息之前的前缀，
-        标题 = "[Fork] " + 该消息内容（截断长度见 _TITLE_CHARS）。
-        选中首条消息（前缀为空）时不建文件、不写索引，等首条消息落盘时再建。
+        """从当前会话中信息 id 为 message_id 处分叉出新会话。
+
+        新会话消息 = 该消息之前的前缀，标题 = "[Fork] " + 该消息内容（截断长度见
+        _TITLE_CHARS）。选中首条消息（前缀为空）时不建文件、不写索引，等首条消息落盘时再建。
+
+        Args:
+            message_id: 作为分叉点的消息 id。
+
+        Returns:
+            新会话；无当前会话、message_id 为空或消息不存在时返回 None。
         """
         if not self._current_session or not message_id:
             _LOGGER.info(f"[Session fork] error: current_session: {self._current_session}, message_id: {message_id}")
@@ -235,7 +329,11 @@ class SessionManager:
         return None
 
     def load_session_list(self) -> list[Session]:
-        """加载会话索引中的全部会话（仅元数据），更新会话映射表。"""
+        """加载会话索引中的全部会话（仅元数据），更新会话映射表。
+
+        Returns:
+            索引中的会话列表；读取失败时返回空列表。
+        """
         try:
             with open(PATHS.SESSION_INDEX_FILE, "r", encoding="utf-8") as f:
                 content_lines = f.readlines()
@@ -252,10 +350,16 @@ class SessionManager:
         return []
 
     def load_session(self, session_id: str = "") -> Session | None:
-        """
-        加载会话消息：提供会话 id 时加载对应会话，否则加载当前会话。
+        """加载会话消息：提供会话 id 时加载对应会话，否则加载当前会话。
+
         始终从会话文件重读：load_session_list 只保留索引元数据，内存中的 messages
         可能已被重置，不能据此短路返回。
+
+        Args:
+            session_id: 要切换到的会话文件名；省略时沿用当前会话。
+
+        Returns:
+            加载后的 Session；会话文件不存在或读取失败时返回 None。
         """
         if session_id:
             # 切换会话：清空上一会话内存消息，待需要时重新从文件读取

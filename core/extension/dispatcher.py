@@ -45,7 +45,17 @@ def add_many(
         *,
         builtin: bool = False,
 ) -> None:
-    """原子注册一批回调：全部校验通过后才写入注册表，避免半个扩展生效。"""
+    """原子注册一批回调：全部校验通过后才写入注册表，避免半个扩展生效。
+
+    Args:
+        module_name: 注册来源模块名。
+        registrations: 待提交的注册记录。
+        builtin: 是否按内置扩展校验与登记。
+
+    Raises:
+        ValueError: 任一条事件名 / 阶段非法，或外部扩展声明内置能力。
+        TypeError: 任一条回调不可调用。
+    """
     prepared: list[tuple[str, _Handler]] = []
     for registration in registrations:
         validate_registration(
@@ -82,6 +92,18 @@ def add(
 
     stage 决定派发顺序，fail_closed 让异常短路为拒绝。只有内置回调可以声明
     非 user 阶段，保证外部扩展无法排到权限门之后。
+
+    Args:
+        event: 事件名。
+        callback: 事件回调。
+        module_name: 注册来源模块名。
+        stage: 派发阶段。
+        fail_closed: 回调异常时是否短路为拒绝。
+        builtin: 是否按内置扩展登记。
+
+    Raises:
+        ValueError: 事件名 / 阶段非法，或外部扩展声明内置能力。
+        TypeError: 回调不可调用。
     """
     add_many(
         module_name,
@@ -95,6 +117,10 @@ def _set_module_enabled(module_name: str, enabled: bool) -> None:
 
     外部扩展禁用后回调仍保留在注册表中，只在下一次派发时跳过，重新启用无需重新
     import / register。内置模块的派发由 dispatch 的 handler.builtin 分支保证，不受此开关影响。
+
+    Args:
+        module_name: 扩展模块名。
+        enabled: True 允许派发；False 跳过该模块的回调。
     """
     if enabled:
         _DISABLED_MODULES.discard(module_name)
@@ -103,12 +129,29 @@ def _set_module_enabled(module_name: str, enabled: bool) -> None:
 
 
 def is_module_enabled(module_name: str) -> bool:
-    """该模块是否未被显式禁用。"""
+    """该模块是否未被显式禁用。
+
+    Args:
+        module_name: 扩展模块名。
+
+    Returns:
+        未被禁用时为 True。
+    """
     return module_name not in _DISABLED_MODULES
 
 
 def describe_handlers(event: str) -> tuple[HandlerInfo, ...]:
-    """返回某事件当前注册的只读快照；未知事件立即报错。"""
+    """返回某事件当前注册的只读快照；未知事件立即报错。
+
+    Args:
+        event: 事件名。
+
+    Returns:
+        该事件全部回调的只读描述。
+
+    Raises:
+        ValueError: 事件名未登记。
+    """
     spec_for(event)
     return tuple(
         HandlerInfo(handler.module_name, _callback_name(handler.callback),
@@ -125,9 +168,19 @@ def reset() -> None:
 
 
 async def dispatch(event: str, ctx: object, *, include_external: bool = True) -> None:
-    """按 user → observer → gate 顺序调用事件回调，原地修改 ctx；单回调异常不影响其余回调。
+    """按 user → observer → gate 顺序调用事件回调，原地修改 ctx；普通回调异常只影响自身，
+    fail_closed 回调在可拦截事件上抛错时会置 blocked 并短路后续回调。
 
     被禁用模块的回调不参与派发；内置模块不受模块开关影响。
+
+    Args:
+        event: 事件名。
+        ctx: 对应事件的上下文对象，回调原地修改。
+        include_external: False 只派发内置回调。
+
+    Raises:
+        TypeError: ctx 与事件声明的上下文类型不匹配。
+        ValueError: 事件名未登记。
     """
     spec = spec_for(event)
     if not isinstance(ctx, spec.context):
@@ -171,12 +224,27 @@ async def dispatch(event: str, ctx: object, *, include_external: bool = True) ->
 
 
 def _callback_name(callback: Callable) -> str:
-    """取回调可读名；lambda / 可调用对象回退到 str(callback)。"""
+    """取回调可读名；lambda / 可调用对象回退到 str(callback)。
+
+    Args:
+        callback: 事件回调。
+
+    Returns:
+        回调的 __name__ 或字符串表示。
+    """
     return getattr(callback, "__name__", str(callback))
 
 
 def _decision_count(ctx: object, spec: EventSpec) -> int:
-    """返回当前决定票数量；非票箱上下文视作 0。"""
+    """返回当前决定票数量；非票箱上下文视作 0。
+
+    Args:
+        ctx: 事件上下文。
+        spec: 当前事件规格。
+
+    Returns:
+        当前票数；该事件不收集决定票时为 0。
+    """
     if not spec.decisions:
         return 0
     decisions = getattr(ctx, "decisions", None)
@@ -184,7 +252,13 @@ def _decision_count(ctx: object, spec: EventSpec) -> int:
 
 
 def _rollback_decisions(ctx: object, spec: EventSpec, before: int) -> None:
-    """丢弃一次失败回调新增的票。"""
+    """丢弃一次失败回调新增的票。
+
+    Args:
+        ctx: 事件上下文。
+        spec: 当前事件规格。
+        before: 回调开始前的票数。
+    """
     if not spec.decisions:
         return
     decisions = getattr(ctx, "decisions", None)
@@ -193,7 +267,14 @@ def _rollback_decisions(ctx: object, spec: EventSpec, before: int) -> None:
 
 
 def _commit_decisions(ctx: object, spec: EventSpec, module_name: str, before: int) -> None:
-    """把本次回调新增的票归一：只保留最后一条，并记录来源与参数快照。"""
+    """把本次回调新增的票归一：只保留最后一条，并记录来源与参数快照。
+
+    Args:
+        ctx: 事件上下文。
+        spec: 当前事件规格。
+        module_name: 回调来源模块名。
+        before: 回调开始前的票数。
+    """
     if not spec.decisions:
         return
     decisions = getattr(ctx, "decisions", None)
@@ -211,7 +292,11 @@ def _commit_decisions(ctx: object, spec: EventSpec, module_name: str, before: in
 
 
 def _drop_stale_decisions(ctx: object) -> None:
-    """作废基于旧参数作出的决定票；参数被后续回调改写时不再参与裁决。"""
+    """作废基于旧参数作出的决定票；参数被后续回调改写时不再参与裁决。
+
+    Args:
+        ctx: 事件上下文。
+    """
     decisions = getattr(ctx, "decisions", None)
     if not isinstance(decisions, Ballot):
         return
@@ -221,7 +306,12 @@ def _drop_stale_decisions(ctx: object) -> None:
 
 
 def _normalize(ctx: object, spec: EventSpec) -> None:
-    """把钩子可能改坏的可写字段归一为下游期望的类型。"""
+    """把钩子可能改坏的可写字段归一为下游期望的类型。
+
+    Args:
+        ctx: 事件上下文。
+        spec: 当前事件规格。
+    """
     for field_name in spec.str_fields:
         value = getattr(ctx, field_name, _MISSING)
         if value is _MISSING:

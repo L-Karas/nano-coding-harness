@@ -28,12 +28,36 @@ class ToolResult:
 
     @classmethod
     def error(cls, detail: str) -> "ToolResult":
+        """构造带错误前缀的失败结果。
+
+        Args:
+            detail: 错误详情。
+
+        Returns:
+            标记为失败的结果。
+        """
         return cls(content=TOOL_ERROR_MESSAGE_TEMPLATE.format(detail=detail), is_error=True)
 
     @classmethod
     def cancelled(cls, content: str) -> "ToolResult":
+        """构造被用户取消的结果；取消不是失败。
+
+        Args:
+            content: 已产生的部分内容或取消说明。
+
+        Returns:
+            标记为已取消的结果。
+        """
         return cls(content=content, is_cancelled=True)
 
     @classmethod
     def unknown(cls, name: str) -> "ToolResult":
+        """构造未知工具的错误结果。
+
+        Args:
+            name: 请求的工具名。
+
+        Returns:
+            标记为失败的结果。
+        """
         return cls(content=UNKNOWN_TOOL_MESSAGE_TEMPLATE.format(name=name), is_error=True)

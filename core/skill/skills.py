@@ -4,7 +4,7 @@ Skills Module
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 
@@ -21,6 +21,9 @@ def _skill_sources() -> tuple[tuple[SkillType, Path], ...]:
     """扫描来源：顺序即优先级（靠后覆盖靠前），project > user > global。
 
     user 来源随 mode 变化，所以在扫描时从 PATHS 现取，不固化成模块级常量。
+
+    Returns:
+        (来源类型, 目录) 列表，顺序即优先级。
     """
     return (("global", GLOBAL_SKILLS_DIR), ("user", PATHS.SKILL_DIR),
             ("project", PROJECT_SKILL_DIR))
@@ -44,7 +47,18 @@ class Skill:
     skill_type: SkillType
 
 
-def _parse_frontmatter(text: str, skill_dir: Path) -> tuple[dict, str]:
+def _parse_frontmatter(text: str, skill_dir: Path) -> tuple[Any, str]:
+    """拆出 SKILL.md 的 YAML frontmatter 与正文。
+
+    Args:
+        text: SKILL.md 全文。
+        skill_dir: 技能目录，用于日志。
+
+    Returns:
+        (frontmatter 解析结果, 正文)；没有 frontmatter 时返回 ({}, 原文)，
+        YAML 解析失败时返回 ({}, 剥离 frontmatter 后的正文)；YAML 非映射时返回解析值
+        （假值会被 `or {}` 归一为 {}）。
+    """
     if not text.startswith("---"):
         return {}, text
     parts = text.split("---", 2)
@@ -61,7 +75,11 @@ def _parse_frontmatter(text: str, skill_dir: Path) -> tuple[dict, str]:
 
 
 def _read_state() -> tuple[set[str], str | None]:
-    """读 .skills.json：缺失 = 空状态；损坏 / 结构非法 = 全部启用 + 可展示错误。"""
+    """读 .skills.json：缺失 = 空状态；损坏 / 结构非法 = 全部启用 + 可展示错误。
+
+    Returns:
+        (禁用技能名集合, 错误信息或 None)。
+    """
     state_file = PATHS.SKILL_STATE_FILE
     if not state_file.exists():
         return set(), None
@@ -81,6 +99,11 @@ def _read_state() -> tuple[set[str], str | None]:
 
 
 def _write_state(disabled: set[str]) -> None:
+    """把禁用技能名集合写入 .skills.json。
+
+    Args:
+        disabled: 要写入的禁用技能名。
+    """
     state_file = PATHS.SKILL_STATE_FILE
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(
@@ -90,6 +113,7 @@ def _write_state(disabled: set[str]) -> None:
 
 
 def _load_state() -> None:
+    """从磁盘重载技能启用状态与错误信息。"""
     global _DISABLED, _STATE_ERROR
     _DISABLED, _STATE_ERROR = _read_state()
 
@@ -140,20 +164,35 @@ def scan_skills() -> None:
 
 
 def is_skill_enabled(name: str) -> bool:
-    """该技能是否启用；未在状态文件里的名字缺省启用。"""
+    """该技能是否启用；未在状态文件里的名字缺省启用。
+
+    Args:
+        name: 技能名。
+
+    Returns:
+        是否启用。
+    """
     return name not in _DISABLED
 
 
 def skill_state_error() -> str | None:
-    """状态文件读取失败的原因；None 表示正常（含文件缺失）。"""
+    """状态文件读取失败的原因；None 表示正常（含文件缺失）。
+
+    Returns:
+        可展示的错误信息或 None。
+    """
     return _STATE_ERROR
 
 
 def set_skill_enabled(name: str, enabled: bool) -> tuple[bool, str]:
     """写入一个技能的启用状态；落盘失败时回滚内存状态。
 
+    Args:
+        name: 技能名。
+        enabled: 目标启用状态。
+
     Returns:
-        tuple[是否成功, 可直接展示的信息]
+        (是否成功, 可直接展示的信息)。
     """
     global _STATE_ERROR
     if name not in SKILL_REGISTRY:
@@ -178,12 +217,20 @@ def set_skill_enabled(name: str, enabled: bool) -> tuple[bool, str]:
 
 
 def _enabled_skill_names() -> str:
-    """错误信息里的可用技能列表：只列启用项。"""
+    """错误信息里的可用技能列表：只列启用项。
+
+    Returns:
+        以逗号分隔的技能名；无启用项时为 "(none)"。
+    """
     return ", ".join(name for name in SKILL_REGISTRY if name not in _DISABLED) or "(none)"
 
 
 def load_skills() -> dict[str, Skill] | None:
-    """模型可见的技能表：只含启用项；没有可用技能时返回 None。"""
+    """模型可见的技能表：只含启用项；没有可用技能时返回 None。
+
+    Returns:
+        技能名到 Skill 的映射，或 None。
+    """
     if not SKILL_REGISTRY:
         return None
     if not _DISABLED:
@@ -193,6 +240,14 @@ def load_skills() -> dict[str, Skill] | None:
 
 
 def load_skill(name: str) -> str:
+    """加载一个技能的完整内容；未找到或已禁用时返回可展示提示。
+
+    Args:
+        name: 技能名。
+
+    Returns:
+        技能内容或错误提示文本。
+    """
     skill = SKILL_REGISTRY.get(name)
     if not skill:
         return f"Skill not found: {name}\n\nAvailable skills:\n{_enabled_skill_names()}"
@@ -206,5 +261,6 @@ def load_skill(name: str) -> str:
 
 
 # todo: install skill
-async def install_skill() -> str:
+async def install_skill() -> None:
+    """安装技能（尚未实现）。"""
     pass

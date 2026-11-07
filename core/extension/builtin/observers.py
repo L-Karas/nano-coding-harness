@@ -13,12 +13,20 @@ _LOGGER = get_logger(__name__)
 
 
 def tool_call_log_hook(ctx: BeforeToolContext) -> None:
-    """记录一次工具调用的名称与参数（JSON 原文）。"""
+    """记录一次工具调用的名称与参数（JSON 原文）。
+
+    Args:
+        ctx: before_tool 事件上下文。
+    """
     _LOGGER.info(
         f"[HOOK] call tool {ctx.tool_name} with arguments: "
         f"{json.dumps(ctx.args, ensure_ascii=False)}")
 
 
 def register(api: ExtensionAPI) -> None:
-    """注册调用日志观察者：observer 阶段对裁决无副作用。"""
+    """注册调用日志观察者：observer 阶段对裁决无副作用。
+
+    Args:
+        api: 扩展注册缓冲对象。
+    """
     api.on("before_tool", tool_call_log_hook, stage="observer")

@@ -21,5 +21,13 @@ class SaveMemory(BaseTool):
     agent_type: set = {"main"}
     parallel_safe: bool = True
 
-    def run(self, tctx: ToolContext | None = None):
+    def run(self, tctx: ToolContext | None = None) -> tuple[str, str]:
+        """保存一条长期记忆。
+
+        Args:
+            tctx: 运行时上下文；本工具未使用。
+
+        Returns:
+            (创建结果提示, 新记忆 id)。
+        """
         return memory.run_save_memory(self.title, self.content, self.mem_type)

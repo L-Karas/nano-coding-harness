@@ -36,8 +36,15 @@ class Terminal(BaseTool):
     agent_type: set = {"main", "sub-agent"}
 
     def run(self, tctx: ToolContext | None = None) -> str:
-        """
+        """同步执行 shell 命令并返回合并输出。
+
         should_run_in_background is consumed by the dispatcher; direct execution ignores it.
+
+        Args:
+            tctx: 运行时上下文；提供工作目录。
+
+        Returns:
+            合并 stdout/stderr 的文本；无输出时返回 "(Tool no output)"。
         """
         # text=True decodes in a reader thread: on Windows (gbk locale) git's UTF-8 output
         # kills that thread and communicate() returns stdout=None. Capture bytes, decode here.
@@ -60,6 +67,14 @@ class Terminal(BaseTool):
         return output[:int(5e4)] if output else "(Tool no output)"
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
+        """异步执行 shell 命令并返回合并输出；取消时终止子进程。
+
+        Args:
+            tctx: 运行时上下文；提供工作目录与取消检查。
+
+        Returns:
+            合并 stdout/stderr 的文本；无输出时返回 "(Tool no output)"。
+        """
         process = await start_process(build_command_invocation(self.command),
                                       cwd=tctx.cwd if tctx and tctx.cwd else WORKDIR)
         try:

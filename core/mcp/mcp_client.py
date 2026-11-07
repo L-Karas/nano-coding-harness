@@ -13,6 +13,7 @@ import threading
 import time
 from concurrent.futures import Future
 from contextlib import AsyncExitStack, asynccontextmanager
+from typing import Any
 
 import mcp
 from mcp import StdioServerParameters, ClientSessionGroup, ClientSession
@@ -21,6 +22,7 @@ from mcp.client.session_group import SseServerParameters, StreamableHttpParamete
 from mcp_types import ImageContent, TextContent
 
 from core.config import PATHS
+from core.runtime_context import AgentRunContext
 from core.shared.logger import get_logger
 from core.tools import vision
 from core.tools.tool_result import ImageAttachment, ToolResult
@@ -33,7 +35,14 @@ async def _stdio_client(server: StdioServerParameters):
     """stdio 会话的 stderr 显式落盘：mcp 的 `errlog` 默认值是 import 时绑定的 sys.stderr，
     而 Textual 运行期把 sys.stderr 换成 fileno() == -1 的捕获对象 —— 建子进程直接
     OSError(9, 'Bad file descriptor')（Windows 的 get_osfhandle 与 POSIX 的 open_process 同样中招），
-    所有 stdio server 都连不上（HTTP 传输不受影响）。"""
+    所有 stdio server 都连不上（HTTP 传输不受影响）。
+
+    Args:
+        server: stdio 传输参数。
+
+    Yields:
+        已建立的 stdio 读写流。
+    """
     try:
         PATHS.LOG_DIR.mkdir(parents=True, exist_ok=True)
         errlog = open(PATHS.LOG_DIR / "mcp-stderr.log", "a", encoding="utf-8", errors="replace")
@@ -72,7 +81,15 @@ class McpToolError(RuntimeError):
 
 
 def _mcp_error(tool_name: str, exc: Exception) -> McpToolError:
-    """把调用失败格式化成一条能直接进 [Tool Error] 的信息。"""
+    """把调用失败格式化成一条能直接进 [Tool Error] 的信息。
+
+    Args:
+        tool_name: 工具名。
+        exc: 原始异常。
+
+    Returns:
+        带工具名与原因的 McpToolError。
+    """
     if isinstance(exc, TimeoutError):
         detail = f"timed out after {_TOOL_CALL_TIMEOUT:g}s"
     else:
@@ -81,26 +98,57 @@ def _mcp_error(tool_name: str, exc: Exception) -> McpToolError:
 
 
 def _sanitize(name: str) -> str:
+    """把 MCP 名称中的非法字符替换为下划线。
+
+    Args:
+        name: 原始名称。
+
+    Returns:
+        只含字母、数字、下划线与连字符的名称。
+    """
     return _DISALLOWED_CHARS.sub("_", name)
 
 
 def _tool_prefix(server_name: str) -> str:
-    """mcp__<server>__ 前缀：清洗非法字符，避免 MCP 工具与内置工具重名。"""
+    """mcp__<server>__ 前缀：清洗非法字符，避免 MCP 工具与内置工具重名。
+
+    Args:
+        server_name: 配置里的 server 名。
+
+    Returns:
+        工具名前缀。
+    """
     return f"mcp__{_sanitize(server_name)}__"
 
 
-def _component_name(tool_name: str, server) -> str:
-    """ClientSessionGroup 的工具命名钩子。"""
+def _component_name(tool_name: str, server: Any) -> str:
+    """ClientSessionGroup 的工具命名钩子。
+
+    Args:
+        tool_name: 服务端原始工具名。
+        server: 服务端信息对象。
+
+    Returns:
+        带 mcp__<server>__ 前缀的全局工具名。
+    """
     return _tool_prefix(server.name) + _sanitize(tool_name)
 
 
-def _tool_result(result, tool_name: str, tool_args: dict | None) -> ToolResult:
+def _tool_result(result: Any, tool_name: str, tool_args: dict | None) -> ToolResult:
     """MCP 结果 → ToolResult：TextContent 拼正文，每个 ImageContent 单独成一条图片附件。
 
     图文可以共存（服务端常见形态）；未知块类型忽略。失败按 `is_error` 转成错误结果，
     与内置工具同一个口径。图片先校类型（不在支持列表即报错），再校单图 `MAX_IMAGE_BYTES`
     上限（与 read_file 同一条规则）：超限的等比缩小，缩不下来（解不开 / 动图）则整个调用报错、
     不返回附件；缩小过的图片在正文里单独一行说明。
+
+    Args:
+        result: MCP 工具返回结果。
+        tool_name: 工具名。
+        tool_args: 工具参数，用于图片来源说明。
+
+    Returns:
+        归一后的 ToolResult。
     """
     blocks = getattr(result, "content", None) or []
     text = "\n".join(block.text for block in blocks if isinstance(block, TextContent))
@@ -133,7 +181,15 @@ def _tool_result(result, tool_name: str, tool_args: dict | None) -> ToolResult:
 
 
 def _source(tool_name: str, tool_args: dict | None) -> str:
-    """图片注入消息里列出的来源：工具名，有参数时带参数。"""
+    """图片注入消息里列出的来源：工具名，有参数时带参数。
+
+    Args:
+        tool_name: 工具名。
+        tool_args: 工具参数。
+
+    Returns:
+        来源描述字符串。
+    """
     return f"{tool_name}({tool_args})" if tool_args else tool_name
 
 
@@ -145,7 +201,12 @@ class ClientManager:
     的队列，由常驻 task 自己断旧连新（或退出），调用方不等待建连。
     """
 
-    def __init__(self, server_configs: dict):
+    def __init__(self, server_configs: dict) -> None:
+        """初始化会话集合与派生数据缓存。
+
+        Args:
+            server_configs: 已校验的完整 MCP 配置对象（含 mcpServers 键）。
+        """
         self.server_configs = server_configs
         self.exit_stack = AsyncExitStack()
         self.session_group: ClientSessionGroup | None = None
@@ -164,12 +225,32 @@ class ClientManager:
         self._server_tasks: dict[str, asyncio.Task] = {}
 
     def _submit(self, tool_name: str, tool_args: dict | None) -> Future:
-        """调度回拥有 MCP 会话的后台 loop 上执行（本 loop 只 await 结果，取消也能传出）。"""
+        """调度回拥有 MCP 会话的后台 loop 上执行（本 loop 只 await 结果，取消也能传出）。
+
+        Args:
+            tool_name: 全局工具名。
+            tool_args: 工具参数。
+
+        Returns:
+            后台 loop 上的 Future。
+        """
         return asyncio.run_coroutine_threadsafe(
             self.session_group.call_tool(tool_name, tool_args), _get_loop())
 
     def tool_call(self, tool_name: str, tool_args: dict | None = None) -> ToolResult:
-        """同步入口：调用失败抛异常，工具自报 is_error 转成错误结果；两者最终都由 ToolPool 编码。"""
+        """同步入口：调用失败抛异常，工具自报 is_error 转成错误结果；两者最终都由 ToolPool 编码。
+
+        Args:
+            tool_name: 全局工具名。
+            tool_args: 工具参数。
+
+        Returns:
+            工具结果。
+
+        Raises:
+            ValueError: 工具不存在。
+            McpToolError: 调用超时或失败。
+        """
         if tool_name not in self.tool_handlers:
             raise ValueError(f"Tool '{tool_name}' not found")
         future = self._submit(tool_name, tool_args)
@@ -184,10 +265,23 @@ class ClientManager:
     async def tool_call_async(
         self,
         tool_name: str,
-        ctx=None,
+        ctx: AgentRunContext | None = None,
         tool_args: dict | None = None,
     ) -> ToolResult:
-        """异步入口：同 `tool_call`；超时 / 取消 / 服务端异常都向上抛，不在这一层转成文本。"""
+        """异步入口：同 `tool_call`；超时 / 取消 / 服务端异常都向上抛，不在这一层转成文本。
+
+        Args:
+            tool_name: 全局工具名。
+            ctx: 回合上下文；用于取消检查。
+            tool_args: 工具参数。
+
+        Returns:
+            工具结果。
+
+        Raises:
+            ValueError: 工具不存在。
+            McpToolError: 调用超时或失败。
+        """
         if tool_name not in self.tool_handlers:
             raise ValueError(f"Tool '{tool_name}' not found")
 
@@ -206,7 +300,11 @@ class ClientManager:
         return result
 
     def list_tools(self) -> list[dict]:
-        """MCP tools in the OpenAI function schema：当前连接的工具快照（只读）。"""
+        """MCP tools in the OpenAI function schema：当前连接的工具快照（只读）。
+
+        Returns:
+            OpenAI function schema 列表。
+        """
         return self._tools
 
     def _refresh_tools(self) -> None:
@@ -239,14 +337,23 @@ class ClientManager:
         self._tools, self.tools_by_server = schema, tools_by_server
 
     def _register_session(self, server_name: str, session: ClientSession) -> None:
-        """连接成功后登记会话：状态转 connected，工具表立刻带上它的工具。"""
+        """连接成功后登记会话：状态转 connected，工具表立刻带上它的工具。
+
+        Args:
+            server_name: 配置里的 server 名。
+            session: 已建立的 MCP 会话。
+        """
         _LOGGER.info(f"[MCP] connect {server_name} success")
         self.status[server_name] = "connected"
         self.session_map[server_name] = session
         self._refresh_tools()
 
     async def _close_session(self, server_name: str) -> None:
-        """断开并注销该 server 的会话（本来没有会话则为空操作）；随后移除它的工具。"""
+        """断开并注销该 server 的会话（本来没有会话则为空操作）；随后移除它的工具。
+
+        Args:
+            server_name: 配置里的 server 名。
+        """
         session = self.session_map.pop(server_name, None)
         if session is None:
             return
@@ -269,6 +376,12 @@ class ClientManager:
 
         ponytail: connect 不设超时 —— 挂死的 server 会停在 connecting，init（及 warmup 线程、
         /mcp 状态）会一直等它；调用方 get_client_manager 有 _MANAGER_WAIT_TIMEOUT 兜底。
+
+        Args:
+            server_name: 配置里的 server 名。
+            config: 该 server 的配置。
+            commands: 接收重连 / 停止指令的队列。
+            ready: 首个连接结果落地时置位的事件。
         """
         task = asyncio.current_task()  # 记下自己：finally 可能在 loop 外（解释器收尾）执行
         task._log_destroy_pending = False  # 进程级常驻 task：随进程回收，不要「destroyed but pending」告警
@@ -304,6 +417,13 @@ class ClientManager:
 
         队列随创建一起传入 task；task 退出时按 identity 只清理自己的队列 / 槽位，
         不会碰到后来接替它的 task。
+
+        Args:
+            server_name: 配置里的 server 名。
+            config: 该 server 的配置。
+
+        Returns:
+            首个连接结果落地时置位的事件。
         """
         commands: asyncio.Queue = asyncio.Queue()
         ready = asyncio.Event()
@@ -319,6 +439,7 @@ class ClientManager:
         return ready
 
     async def _connect_all_servers(self) -> None:
+        """创建会话组，并为每个启用的 server 启动常驻连接 task。"""
         self.session_group = await self.exit_stack.enter_async_context(
             ClientSessionGroup(component_name_hook=_component_name))
 
@@ -332,8 +453,19 @@ class ClientManager:
         await asyncio.gather(*(event.wait() for event in ready_events))
 
     @staticmethod
-    def _server_params(server_name: str, config: dict):
-        """Build the transport parameters for one mcpServers entry."""
+    def _server_params(server_name: str, config: dict) -> Any:
+        """按单个 mcpServers 配置构造传输参数。
+
+        Args:
+            server_name: 配置里的 server 名。
+            config: 该 server 的配置。
+
+        Returns:
+            stdio / sse / streamable_http 传输参数对象。
+
+        Raises:
+            ValueError: 传输类型或必填字段非法。
+        """
         if not isinstance(config, dict):
             raise ValueError(f"MCP server '{server_name}' config type invalid: {type(config)}")
         transport = _transport_of(config)
@@ -365,6 +497,9 @@ class ClientManager:
         禁用项保留在 server_configs 里，但不持有 task / 连接；重新启用时再启动。
         已有常驻 task 时只排队，不新建第二个 task：同一 server 的并发连接会互相覆盖
         session_map 与共享工具表。
+
+        Args:
+            new_server_configs: 新读取的完整 MCP 配置对象（含 mcpServers 键）。
         """
         old_configs = self.server_configs.get("mcpServers", {})
         new_configs = new_server_configs.get("mcpServers", {})
@@ -403,8 +538,13 @@ class ClientManager:
             self.status.pop(server_name, None)
         self.server_configs = new_server_configs
 
-    def _send(self, server_name: str, command) -> None:
-        """把指令排进该 server 的常驻 task；没有 task 时丢弃（禁用 / 删除无需启动）。"""
+    def _send(self, server_name: str, command: object) -> None:
+        """把指令排进该 server 的常驻 task；没有 task 时丢弃（禁用 / 删除无需启动）。
+
+        Args:
+            server_name: 配置里的 server 名。
+            command: 新配置或 _STOP 哨兵。
+        """
         if commands := self._server_commands.get(server_name):
             commands.put_nowait(command)
 
@@ -413,6 +553,10 @@ class ClientManager:
 
         禁用后立刻启用时旧 task 可能仍在 connect / 退出；排队到同一队列可避免同一
         server 出现两个并发连接（会互相覆盖 session_map 与共享工具表）。
+
+        Args:
+            server_name: 配置里的 server 名。
+            config: 该 server 的新配置。
         """
         if commands := self._server_commands.get(server_name):
             self.status[server_name] = "connecting"  # 排队即置状态，UI 不显示旧连接的 connected
@@ -421,6 +565,7 @@ class ClientManager:
             self._start_server_task(server_name, config)
 
     async def aclose(self) -> None:
+        """停止全部 server task 并释放会话组。"""
         for commands in self._server_commands.values():
             while not commands.empty():  # 关停优先于已排队的重连配置
                 commands.get_nowait()
@@ -442,6 +587,17 @@ class ClientManager:
 
     @classmethod
     async def init_client_manager(cls, server_configs: dict) -> "ClientManager":
+        """建连全部 server 并发布就绪 manager。
+
+        Args:
+            server_configs: 已校验的完整 MCP 配置对象（含 mcpServers 键）。
+
+        Returns:
+            建连后的 ClientManager。
+
+        Raises:
+            Exception: 建连失败；失败时会先关闭已建资源。
+        """
         global _ready_manager
         manager = cls(server_configs)
         try:
@@ -488,21 +644,42 @@ _TRANSPORT_KEYS = {
 }
 
 
-def _transport_of(config) -> str | None:
-    """stdio 由 command 判定，其余按 type；未知/非法类型返回 None。"""
+def _transport_of(config: object) -> str | None:
+    """stdio 由 command 判定，其余按 type；未知/非法类型返回 None。
+
+    Args:
+        config: 单个 server 配置。
+
+    Returns:
+        传输类型；非法时返回 None。
+    """
     if not isinstance(config, dict):
         return None
     transport = "stdio" if config.get("command") else config.get("type")
     return transport if isinstance(transport, str) and transport in _TRANSPORT_KEYS else None
 
 
-def _is_enabled(config) -> bool:
-    """server 是否启用：缺省 True；只有显式 False 才视为禁用。"""
+def _is_enabled(config: object) -> bool:
+    """server 是否启用：缺省 True；只有显式 False 才视为禁用。
+
+    Args:
+        config: 单个 server 配置。
+
+    Returns:
+        是否启用。
+    """
     return not isinstance(config, dict) or config.get("enabled", True) is not False
 
 
-def _validate_config(configs: dict):
-    """Validate mcp server config format"""
+def _validate_config(configs: dict) -> None:
+    """校验 mcpServers 配置格式。
+
+    Args:
+        configs: 完整配置对象。
+
+    Raises:
+        ValueError: 配置为空、结构非法或某个 server 字段不合规。
+    """
     if not configs:
         raise ValueError("MCP server config empty")
     if not isinstance(configs, dict):
@@ -532,12 +709,13 @@ def _reload_config_in_background() -> None:
 
 def configure_mcp_server(mcp_configs: str) -> tuple[bool, str]:
     """
-    Configure MCP Servers
+    合并写入 MCP server 配置。
+
     Args:
-        mcp_configs:
+        mcp_configs: JSON 字符串，形如 {"mcpServers": {...}}。
 
     Returns:
-        tuple[whether configure success, configure information]
+        (是否成功, 可直接展示的信息)。
     """
     try:
         new_servers = json.loads(mcp_configs)
@@ -563,8 +741,12 @@ def configure_mcp_server(mcp_configs: str) -> tuple[bool, str]:
 def set_mcp_server_enabled(mcp_server_name: str, enabled: bool) -> tuple[bool, str]:
     """切换一个已有 server 的启用状态；配置条目保留，连接迁移交给 MCP loop。
 
+    Args:
+        mcp_server_name: server 名。
+        enabled: 目标启用状态。
+
     Returns:
-        tuple[whether the state was persisted, message]
+        (是否成功, 可直接展示的信息)。
     """
     try:
         configs = _read_config()
@@ -589,12 +771,13 @@ def set_mcp_server_enabled(mcp_server_name: str, enabled: bool) -> tuple[bool, s
 
 def unconfigure_mcp_server(mcp_server_name: str) -> tuple[bool, str]:
     """
-    Unconfigure an MCP Server
+    从配置中删除一个 MCP server。
+
     Args:
-        mcp_server_name:
+        mcp_server_name: 要删除的 server 名。
 
     Returns:
-        tuple[whether unconfigure success, unconfigure information]
+        (是否成功, 可直接展示的信息)。
     """
     mcp_configs = _read_config()
     if mcp_server_name not in mcp_configs.get("mcpServers", {}):
@@ -610,12 +793,29 @@ def unconfigure_mcp_server(mcp_server_name: str) -> tuple[bool, str]:
 
 
 def _read_config() -> dict:
+    """读取 MCP 配置文件。
+
+    Returns:
+        解析后的配置对象。
+
+    Raises:
+        FileNotFoundError: 配置文件不存在。
+    """
     if not PATHS.MCP_CONFIG_FILE.exists():
         raise FileNotFoundError(f"MCP server config file not found at {PATHS.MCP_CONFIG_FILE}")
     return json.loads(PATHS.MCP_CONFIG_FILE.read_text(encoding="utf-8"))
 
 
 async def aget_client_manager() -> ClientManager:
+    """读取并校验配置，然后建连出一个新的 ClientManager。
+
+    Returns:
+        建连后的 ClientManager。
+
+    Raises:
+        ValueError: 配置非法。
+        FileNotFoundError: MCP 配置文件不存在。
+    """
     server_configs = _read_config()
     _validate_config(server_configs)
     return await ClientManager.init_client_manager(server_configs)
@@ -627,6 +827,9 @@ def _get_loop() -> asyncio.AbstractEventLoop:
     A fresh asyncio.run() per call would deadlock on teardown: the loop closes
     while stdio/HTTP transports are still open, and cancelling them never
     completes (the spawned subprocess keeps the pipe alive).
+
+    Returns:
+        常驻 MCP 事件循环。
     """
     global _loop
     with _loop_lock:
@@ -637,11 +840,16 @@ def _get_loop() -> asyncio.AbstractEventLoop:
 
 
 def peek_client_manager() -> ClientManager | None:
-    """非阻塞取已就绪的 manager（UI 取数用）；建连未完成/失败时返回 None。"""
+    """非阻塞取已就绪的 manager（UI 取数用）；建连未完成/失败时返回 None。
+
+    Returns:
+        ClientManager 或 None。
+    """
     return _ready_manager
 
 
 def _reset_manager_future() -> None:
+    """清空单例建连缓存，使下次调用重新尝试。"""
     global _manager_future, _ready_manager
     with _manager_lock:
         _manager_future = None
@@ -649,7 +857,11 @@ def _reset_manager_future() -> None:
 
 
 def _ensure_manager_started() -> Future:
-    """Start the singleton init coroutine once, on the MCP loop."""
+    """Start the singleton init coroutine once, on the MCP loop.
+
+    Returns:
+        建连任务的 Future。
+    """
     global _manager_future
     with _manager_lock:
         if _manager_future is None:
@@ -665,6 +877,13 @@ def get_client_manager() -> ClientManager:
     _RETRY_INTERVAL 窗口内至多等一次；建连仍未完成时抛 RuntimeError（由调用方
     记录日志并回退到内置工具）——工具池每轮都会重组装，下一轮建连完成自然带上 MCP 工具。
     配置变化不再同步等待：交给 MCP loop 后台处理，本轮用当前已连工具。
+
+    Returns:
+        已就绪的 ClientManager。
+
+    Raises:
+        RuntimeError: 建连仍未完成，调用方应回退到内置工具。
+        FileNotFoundError: 首次建连时 MCP 配置文件不存在（异常原样上抛并清空缓存）。
     """
     global _last_attempt_at
 

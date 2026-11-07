@@ -8,10 +8,15 @@ from openai.types.chat import ChatCompletionChunk
 async def streaming_message(
         stream: AsyncStream[ChatCompletionChunk],
         on_text: Optional[Callable[[str], None]] = None
-):
-    """单遍解析流，返回 (content, reasoning, tool_calls, finish_reason, usage)。
+) -> tuple[str, str, list[dict], str, dict]:
+    """单遍解析流式响应并累积增量。
 
-    on_text：正文增量回调（主循环边收边渲染；子代理不传）。
+    Args:
+        stream: OpenAI 兼容的流式响应。
+        on_text: 正文增量回调（主循环边收边渲染；子代理不传）。
+
+    Returns:
+        (content, reasoning, tool_calls, finish_reason, usage)。
     """
     content = ""
     reasoning = ""

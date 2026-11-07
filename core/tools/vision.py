@@ -42,12 +42,26 @@ VISION_UNSUPPORTED_MESSAGE = "Current model does not support vision input; image
 
 
 def supports_vision(tctx: ToolContext | None) -> bool:
-    """当前模型能否接收图片；无上下文（直接调用 / 测试）时按支持视觉处理。"""
+    """当前模型能否接收图片；无上下文（直接调用 / 测试）时按支持视觉处理。
+
+    Args:
+        tctx: 运行时上下文。
+
+    Returns:
+        是否支持图片输入。
+    """
     return tctx.vision if tctx is not None else True
 
 
 def is_http_url(path: str) -> bool:
-    """是否为 http(s) 地址：图片 URL 不下载、不落本地，也不属于文件系统访问。"""
+    """是否为 http(s) 地址：图片 URL 不下载、不落本地，也不属于文件系统访问。
+
+    Args:
+        path: 路径或 URL。
+
+    Returns:
+        scheme 为 http / https 时为 True。
+    """
     return urlsplit(path).scheme.lower() in ("http", "https")
 
 
@@ -55,6 +69,12 @@ def image_mime(path: str) -> str | None:
     """按后缀判断图片 MIME；不是支持的图片格式时返回 None。
 
     URL 只看 path 部分（去掉 query / fragment）；本地路径原样取后缀，避免 # / ? 截断。
+
+    Args:
+        path: 本地路径或 URL。
+
+    Returns:
+        图片 MIME；不是支持的图片格式时返回 None。
     """
     candidate = urlsplit(path).path if is_http_url(path) else path
     return IMAGE_MIME_TYPES.get(Path(candidate).suffix.lower())
@@ -65,13 +85,26 @@ def declared_image_mime(mime: str) -> str | None:
 
     与 `image_mime()` 对称——一个从后缀看，一个从声明的类型看；
     `IMAGE/PNG; charset=binary` 归一化成 `image/png`。
+
+    Args:
+        mime: 外部来源声明的 MIME。
+
+    Returns:
+        归一化后的受支持 MIME；不在支持列表内时返回 None。
     """
     normalized = mime.split(";")[0].strip().lower()
     return normalized if normalized in _SUPPORTED_IMAGE_MIME_TYPES else None
 
 
 def image_too_large(size: int) -> bool:
-    """单图是否超过上限：read_file 与 MCP 返回的图片共用这一条规则。"""
+    """单图是否超过上限：read_file 与 MCP 返回的图片共用这一条规则。
+
+    Args:
+        size: 图片字节数。
+
+    Returns:
+        超过上限时为 True。
+    """
     return size > MAX_IMAGE_BYTES
 
 
@@ -80,6 +113,13 @@ def fit_image(mime: str, data: bytes) -> tuple[str, bytes, int | None] | None:
 
     原图大小只在缩小过时给出，未缩小时为 None；缩不下来（解不开 / 多帧动图 / 1x1 仍超限）
     返回 None，由调用方按「太大」报错。
+
+    Args:
+        mime: 图片 MIME。
+        data: 图片原始字节。
+
+    Returns:
+        (mime, 可附件字节, 原图大小或 None)；无法缩小时返回 None。
     """
     if not image_too_large(len(data)):
         return mime, data, None
@@ -95,6 +135,12 @@ def shrink_image(data: bytes) -> tuple[str, bytes] | None:
 
     已在上限内的图片原样返回。解不开（含多帧动图）/ 缩到 1x1 仍超限时返回 None，
     由调用方按「太大」报错。重编码保留原格式，JPEG / WebP 按 85 质量输出。
+
+    Args:
+        data: 图片原始字节。
+
+    Returns:
+        (真实格式 MIME, 重编码字节)；无法处理时返回 None。
     """
     try:
         with Image.open(io.BytesIO(data)) as img:
@@ -123,13 +169,28 @@ def shrink_image(data: bytes) -> tuple[str, bytes] | None:
 
 
 def downscaled_note(count: int) -> str:
-    """缩小过的图片在正文里单独一行说明，模型才知道看到的是缩略版。"""
+    """缩小过的图片在正文里单独一行说明，模型才知道看到的是缩略版。
+
+    Args:
+        count: 被缩小的图片数量。
+
+    Returns:
+        说明文案。
+    """
     images = "image" if count == 1 else "images"
     return f"{count} {images} {'was' if count == 1 else 'were'} downscaled to fit the size limit."
 
 
 def data_url(mime: str, data: bytes) -> str:
-    """原始字节 → `data:<mime>;base64,...`，可直接放进 image_url。"""
+    """原始字节 → `data:<mime>;base64,...`，可直接放进 image_url。
+
+    Args:
+        mime: 图片 MIME。
+        data: 图片字节。
+
+    Returns:
+        data URL。
+    """
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
@@ -138,6 +199,16 @@ def attachment_result(source: str, mime: str, size: int | None, image_url: str,
     """带回图片附件的结果；`size` 是字节数，远程 URL 传 None（不下载，无字节数）。
 
     `original_size` 只在图片被缩小过时给出，正文据此注明原图大小。
+
+    Args:
+        source: 本地绝对路径或原始 URL。
+        mime: 图片 MIME。
+        size: 实际附带的字节数；远程 URL 为 None。
+        image_url: data URL 或 http(s) URL。
+        original_size: 缩小前的字节数。
+
+    Returns:
+        带回图片附件的结果。
     """
     return ToolResult(
         content=_image_read_line(source, mime, size, original_size),
@@ -146,25 +217,61 @@ def attachment_result(source: str, mime: str, size: int | None, image_url: str,
 
 
 def unsupported_vision_result(source: str, mime: str, size: int | None) -> ToolResult:
-    """非视觉模型：只说明读到什么，不附图片。"""
+    """非视觉模型：只说明读到什么，不附图片。
+
+    Args:
+        source: 图片来源。
+        mime: 图片 MIME。
+        size: 图片字节数；远程 URL 为 None。
+
+    Returns:
+        不带附件的提示结果。
+    """
     return ToolResult(content=f"{_image_read_line(source, mime, size)} {VISION_UNSUPPORTED_MESSAGE}")
 
 
 def too_large_result(source: str, size: int) -> ToolResult:
-    """超过单图上限且缩不下来：不附图片，报出实际大小与上限。"""
+    """超过单图上限且缩不下来：不附图片，报出实际大小与上限。
+
+    Args:
+        source: 图片来源。
+        size: 图片字节数。
+
+    Returns:
+        错误结果。
+    """
     return ToolResult.error(
         f"Image too large: {source} is {size} bytes (limit {MAX_IMAGE_BYTES} bytes).")
 
 
 def unsupported_type_result(source: str, mime: str) -> ToolResult:
-    """声明类型不在支持列表内：不附图片，列出支持的类型。"""
+    """声明类型不在支持列表内：不附图片，列出支持的类型。
+
+    Args:
+        source: 图片来源。
+        mime: 外部来源声明的 MIME。
+
+    Returns:
+        错误结果。
+    """
     supported = ", ".join(sorted(_SUPPORTED_IMAGE_MIME_TYPES))
     return ToolResult.error(
         f"Unsupported image type: {source} declares {mime!r} (supported: {supported}).")
 
 
 def url_image_result(url: str, *, vision: bool) -> ToolResult:
-    """图片 URL → 结果：URL 原样透传给接口，不下载、不校验内容。"""
+    """图片 URL → 结果：URL 原样透传给接口，不下载、不校验内容。
+
+    Args:
+        url: 图片 URL。
+        vision: 当前模型是否支持视觉。
+
+    Returns:
+        带附件或视觉不支持提示的结果。
+
+    Raises:
+        ValueError: URL 后缀不是受支持的图片格式。
+    """
     mime = _require_image_mime(url)
     if not vision:
         return unsupported_vision_result(url, mime, None)
@@ -172,7 +279,18 @@ def url_image_result(url: str, *, vision: bool) -> ToolResult:
 
 
 def local_image_result(path: Path, *, vision: bool) -> ToolResult:
-    """本地图片 → 结果（同步）：先过视觉门控，超过上限时缩小，再编码成 data URL。"""
+    """本地图片 → 结果（同步）：先过视觉门控，超过上限时缩小，再编码成 data URL。
+
+    Args:
+        path: 本地图片路径。
+        vision: 当前模型是否支持视觉。
+
+    Returns:
+        带附件或视觉不支持提示的结果。
+
+    Raises:
+        ValueError: 路径后缀不是受支持的图片格式。
+    """
     source = str(path)
     mime = _require_image_mime(source)
     size = path.stat().st_size
@@ -182,8 +300,20 @@ def local_image_result(path: Path, *, vision: bool) -> ToolResult:
 
 
 async def alocal_image_result(path: Path, *, vision: bool) -> ToolResult:
-    """本地图片 → 结果（异步）：与 `local_image_result()` 一致；读字节用 aiofiles，
-    缩小 / 重编码是 CPU 活，放进线程不阻塞 loop。"""
+    """本地图片 → 结果（异步）：与 `local_image_result()` 一致。
+
+    读字节用 aiofiles，缩小 / 重编码是 CPU 活，放进线程不阻塞 loop。
+
+    Args:
+        path: 本地图片路径。
+        vision: 当前模型是否支持视觉。
+
+    Returns:
+        带附件或视觉不支持提示的结果。
+
+    Raises:
+        ValueError: 路径后缀不是受支持的图片格式。
+    """
     source = str(path)
     mime = _require_image_mime(source)
     size = path.stat().st_size
@@ -196,14 +326,34 @@ async def alocal_image_result(path: Path, *, vision: bool) -> ToolResult:
 
 def _image_read_line(source: str, mime: str, size: int | None,
                      original_size: int | None = None) -> str:
-    """结果正文的统一前缀：`Image read: <source> (<mime>, <size>[, downscaled from <size>]).`"""
+    """结果正文的统一前缀：`Image read: <source> (<mime>, <size>[, downscaled from <size>]).`
+
+    Args:
+        source: 图片来源。
+        mime: 图片 MIME。
+        size: 实际附带的字节数；远程 URL 为 None。
+        original_size: 缩小前的字节数。
+
+    Returns:
+        单行说明文本。
+    """
     size_text = "remote URL" if size is None else f"{size} bytes"
     shrink_text = "" if original_size is None else f", downscaled from {original_size} bytes"
     return f"Image read: {source} ({mime}, {size_text}{shrink_text})."
 
 
 def _require_image_mime(source: str) -> str:
-    """后缀不是图片即 ValueError；URL 与本地路径同一判定，只有报错文案区分。"""
+    """后缀不是图片即 ValueError；URL 与本地路径同一判定，只有报错文案区分。
+
+    Args:
+        source: 本地路径或 URL。
+
+    Returns:
+        图片 MIME。
+
+    Raises:
+        ValueError: 后缀不在受支持的图片格式内。
+    """
     mime = image_mime(source)
     if mime is None:
         kind = "URL" if is_http_url(source) else "path"
@@ -212,7 +362,16 @@ def _require_image_mime(source: str) -> str:
 
 
 def _bytes_result(source: str, mime: str, data: bytes) -> ToolResult:
-    """字节 → 附件结果：超限先缩小（MIME 以缩小后的编码为准），缩不下来按「太大」报错。"""
+    """字节 → 附件结果：超限先缩小（MIME 以缩小后的编码为准），缩不下来按「太大」报错。
+
+    Args:
+        source: 图片来源。
+        mime: 原始 MIME。
+        data: 图片字节。
+
+    Returns:
+        带附件的结果或「太大」错误结果。
+    """
     fitted = fit_image(mime, data)
     if fitted is None:
         return too_large_result(source, len(data))
@@ -222,7 +381,15 @@ def _bytes_result(source: str, mime: str, data: bytes) -> ToolResult:
 
 
 def _encode(img: Image.Image, mime: str) -> bytes:
-    """按 mime 重编码缩小后的图：JPEG / WebP 走 85 质量，JPEG 不收 alpha，RGB / L 之外先转 RGB。"""
+    """按 mime 重编码缩小后的图：JPEG / WebP 走 85 质量，JPEG 不收 alpha，RGB / L 之外先转 RGB。
+
+    Args:
+        img: 待编码图片。
+        mime: 目标 MIME。
+
+    Returns:
+        编码后的字节。
+    """
     buf = io.BytesIO()
     if mime == "image/jpeg":
         if img.mode not in ("RGB", "L"):
