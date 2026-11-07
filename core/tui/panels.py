@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pyfiglet import figlet_format
 from rich.text import Text
 from textual.app import ComposeResult
@@ -16,7 +18,15 @@ from core.tui.widgets import _ClarifyList, _CommandInput
 
 
 def _welcome_text(title: str, subtitle: str) -> Text:
-    """欢迎标题：非 ASCII 字符滤除后渲染为块状大字（绿色），末尾接小字副标题。"""
+    """构造欢迎标题。
+
+    Args:
+        title: 标题；非 ASCII 字符会被滤除。
+        subtitle: 副标题；为空时不追加。
+
+    Returns:
+        块状大字标题（绿色）与次级灰副标题。
+    """
     ascii_title = "".join(ch for ch in title.upper() if ch.isascii())
     art = ""
     if ascii_title:
@@ -31,26 +41,44 @@ class _Welcome(Static):
     """空聊板时的居中欢迎标题（显隐由 App._set_welcome 切换，#welcome 样式见 app.css）。"""
 
     def __init__(self, title: str, subtitle: str) -> None:
+        """初始化欢迎标题部件。
+
+        Args:
+            title: 标题。
+            subtitle: 副标题。
+        """
         super().__init__(_welcome_text(title, subtitle), id="welcome", markup=False)
 
 
 class _ChatBoard(VerticalScroll):
     """聊天画板：不满一屏时消息从顶部向下填充，溢出后钉底（anchor）。"""
 
-    def set_reactive(self, reactive, value) -> None:
-        """钉底经 set_reactive 直写负滚动值（绕过 validate_scroll_y）：未溢出时钳为 0，
-        避免内容被钉在底边、上方留白；溢出后的 native anchor 行为不变。"""
+    def set_reactive(self, reactive: Any, value: Any) -> None:
+        """钳制滚动响应式值，避免未溢出时被钉到底边。
+
+        钉底经 set_reactive 直写负滚动值（绕过 validate_scroll_y）：未溢出时钳为 0，
+        避免内容被钉在底边、上方留白；溢出后的 native anchor 行为不变。
+
+        Args:
+            reactive: Textual 响应式描述符。
+            value: 待写入的值。
+        """
         if reactive.name in ("scroll_y", "scroll_target_y") and value < 0:
             value = 0
         super().set_reactive(reactive, value)
 
 
 class _ChatDock(Vertical):
-    """底部固定区：状态行 + / 与 @ 候选列表 + 权限 / clarify 列表 + 输入条 + 页脚两行。
+    """底部固定区：状态行 + / 与 @ 候选列表 + 权限 / clarify 列表 + 输入条 + 页脚三行。
 
     候选 OptionList 默认隐藏，由 _CommandInput 按 id 整批重建；同刻至多一组可见。"""
 
     def compose(self) -> ComposeResult:
+        """组装状态行、候选列表、交互列表、输入条与页脚。
+
+        Yields:
+            按显示顺序排列的部件。
+        """
         yield _StatusLine(id="status")
         yield OptionList(id="cmd-suggest")  # / 指令候选（id = 指令串）
         yield OptionList(id="file-suggest")  # @ 文件补全列表（仅 @ 提及编辑时可见）

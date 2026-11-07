@@ -32,11 +32,17 @@ class ModelPickerScreen(_ListPickerScreen):
     SEARCH_PLACEHOLDER = "Search models…"
 
     def __init__(self, rows: list[tuple[str, str]]) -> None:
+        """初始化模型选择弹窗。
+
+        Args:
+            rows: (模型名, provider) 列表。
+        """
         super().__init__()
         self._rows = rows
         self._current = ("", "")  # 当前模型 (provider, model)；_reload 经懒导入解析
 
     def _reload(self) -> None:
+        """读取当前模型并按搜索词重建模型列表。"""
         self._current = current_model_state()[:2]
         _rebuild_options(self._list(),
                          [Option(self._row_text(model, provider), id=str(i))
@@ -44,9 +50,23 @@ class ModelPickerScreen(_ListPickerScreen):
                           if self._match(model)])
 
     def _row_text(self, model: str, provider: str) -> Text:
+        """构造模型行。
+
+        Args:
+            model: 模型名。
+            provider: 提供方。
+
+        Returns:
+            带当前模型标记的模型行。
+        """
         return _model_row_text(model, provider, self._current == (provider, model))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """选择模型并切换当前模型。
+
+        Args:
+            event: 选项选中事件。
+        """
         event.stop()
         option_id = event.option_id or ""
         if not option_id.isdigit():  # 选项 id = 原始行下标（过滤后列表位置不再对应数据源）
@@ -78,10 +98,20 @@ class EffortScreen(ModalScreen[None]):
     ]
 
     def __init__(self, current: str = "") -> None:
+        """初始化思考档位弹窗。
+
+        Args:
+            current: 当前档位；空/未知时使用默认首档。
+        """
         super().__init__()
         self._current = current
 
     def compose(self) -> ComposeResult:
+        """组装档位 Tabs 与提示行。
+
+        Yields:
+            思考档位弹窗内容。
+        """
         picker = Vertical(
             _InstantTabs(*(Tab(level, id=level) for level in _EFFORT_LEVELS), id="effort-tabs"),
             Static("  ←/→ or click    Enter apply    Esc close", classes="picker-hint"),
@@ -92,6 +122,7 @@ class EffortScreen(ModalScreen[None]):
         yield picker
 
     def on_mount(self) -> None:
+        """挂载后同步当前档位并聚焦 Tabs。"""
         tabs = self.query_one("#effort-tabs", Tabs)
         if self._current in _EFFORT_LEVELS:
             tabs.active = self._current
@@ -99,12 +130,25 @@ class EffortScreen(ModalScreen[None]):
         tabs.focus()
 
     def _sync_level_class(self, tabs: Tabs, level: str) -> None:
-        """维护 -effort-<level> 类：CSS 按类给滑块（Underline 高亮段）与标签同色上色。"""
+        """同步档位样式类。
+
+        Args:
+            tabs: 档位 Tabs。
+            level: 当前档位。
+
+        维护 -effort-<level> 类：CSS 按类给滑块（Underline 高亮段）与标签同色上色。
+        """
         for lvl in _EFFORT_LEVELS:
             tabs.set_class(lvl == level, f"-effort-{lvl}")
 
     def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
-        """首档激活事件可能早于本屏挂载完成，故 on_mount 里再显式同步一次。"""
+        """处理 Tab 激活。
+
+        Args:
+            event: Tab 激活事件。
+
+        首档激活事件可能早于本屏挂载完成，故 on_mount 里再显式同步一次。
+        """
         event.stop()
         self._sync_level_class(event.tabs, event.tab.id or "")
 
@@ -124,4 +168,5 @@ class EffortScreen(ModalScreen[None]):
         self.dismiss(None)
 
     def action_cancel(self) -> None:
+        """Esc：关闭弹窗并返回 None。"""
         self.dismiss(None)

@@ -48,7 +48,16 @@ class _CommandFlow:
     # ---------- / 弹窗指令 ----------
 
     def _client_call(self, getter: str, title: str) -> Any:
-        """懒加载调用 core.client.<getter>()；缺依赖（演示/冒烟环境）时 toast 提示并返回 None。"""
+        """懒加载调用 core.client 的 getter。
+
+        Args:
+            getter: `core.client` 中的函数名。
+            title: 失败提示的标题。
+
+        Returns:
+            getter 的返回值；导入或调用抛异常（含演示/冒烟环境缺依赖）时
+            以 error 级 toast 提示并返回 None。
+        """
         try:
             import core.client as client
             return getattr(client, getter)()
@@ -57,6 +66,7 @@ class _CommandFlow:
             return None
 
     def _open_sessions(self) -> None:
+        """/sessions：打开会话选择器；无会话时显示空列表提示卡片。"""
         if self._manager is None:
             self._notify("SessionManager not connected — /sessions unavailable",
                          title="⚠️ Sessions")
@@ -83,8 +93,14 @@ class _CommandFlow:
                          callback=lambda message_id: self._on_fork_picked(message_id, messages))
 
     def _on_fork_picked(self, message_id: Optional[str], messages: list[Any]) -> None:
-        """ForkScreen 回调：分叉并重放新会话历史（不含选中消息），原文填入输入条；
-        None = Esc 取消，分叉失败只提示。"""
+        """处理 ForkScreen 回调。
+
+        Args:
+            message_id: 选中的用户消息 id；None 表示 Esc 取消。
+            messages: 可选用户消息列表。
+
+        分叉并重放新会话历史（不含选中消息），原文填入输入条；分叉失败只提示。
+        """
         if not message_id or self._manager is None:
             return
         forked = self._manager.fork_session(message_id)
@@ -113,9 +129,13 @@ class _CommandFlow:
         self.push_screen(SkillsScreen(rows), callback=self._on_skill_picked)
 
     def _on_skill_picked(self, picked: Optional[tuple[str, bool]]) -> None:
-        """SkillsScreen 回调：(技能名, 是否附带补充消息)；None = Esc 取消，busy 时拒绝。
+        """处理 SkillsScreen 回调。
 
-        False → 立即作为用户消息发出；True → 只填入输入栏并聚焦，用户可继续写补充消息。
+        Args:
+            picked: (技能名, 是否附带补充消息)；None 表示 Esc 取消。
+
+        False → 立即作为用户消息发出；True → 只填入输入栏并聚焦，用户可继续写补充消息；
+        busy 时拒绝。
         """
         if picked is None:
             return
@@ -189,7 +209,13 @@ class _CommandFlow:
     # ---------- 会话历史 ----------
 
     def _reload_history(self, session_id: str = "") -> None:
-        """按会话最新消息重放聊板（省略 id = 当前会话；切换会话 / 压缩完成共用）。"""
+        """按会话最新消息重放聊板。
+
+        Args:
+            session_id: 会话 id；省略或为空时取当前会话。
+
+        切换会话 / 压缩完成共用。
+        """
         if self._manager is None:
             return
         session = self._manager.load_session(session_id)
@@ -198,6 +224,11 @@ class _CommandFlow:
             render_session_history(session)
 
     def _on_session_picked(self, result: tuple[Optional[str], bool]) -> None:
+        """处理 SessionPickerScreen 回调。
+
+        Args:
+            result: (会话 id, 列表是否原本为空)；id 为空时不切换。
+        """
         session_id, was_empty = result
         if not session_id:
             if was_empty:
@@ -208,7 +239,13 @@ class _CommandFlow:
     # ---------- 用户回合 ----------
 
     def _dispatch_query(self, query: str) -> None:
-        """/ 指令与普通消息分派：exit → opener → 忙时拒绝 → compact → new → 发送。"""
+        """分派 / 指令与普通消息。
+
+        Args:
+            query: 输入文本。
+
+        顺序：exit → opener → 忙时拒绝 → compact → new → 发送。
+        """
         cmd = query.lower()
         if cmd in ("/exit", "/quit"):
             self.exit()
@@ -228,10 +265,17 @@ class _CommandFlow:
             self._send_user_query(query)
 
     def _reject_busy(self) -> None:
+        """提示上一回合仍在运行并拒绝当前操作。"""
         self._notify("Previous turn is still running, please wait…", title="⏳ Busy")
 
     def _send_user_query(self, query: str) -> None:
-        """把一条文本作为用户消息发出（输入条回车与 /skills 选中技能共用）。"""
+        """把一条文本作为用户消息发出。
+
+        Args:
+            query: 用户消息文本。
+
+        输入条回车与 /skills 选中技能共用。
+        """
         self._prompt().text = ""  # 输入已消费即清空
         self._busy = True
         self._prompt().disabled = True
@@ -241,6 +285,11 @@ class _CommandFlow:
         self._spawn_worker(lambda: self._turn_worker(query), "agent-turn", "⚠️ Agent Error")
 
     def _turn_worker(self, query: str) -> None:
+        """回合线程主体：保存用户消息后交给 agent 处理。
+
+        Args:
+            query: 用户消息文本。
+        """
         if self._manager is not None:
             try:
                 self._manager.add_message({"role": "user", "content": query})
@@ -254,9 +303,20 @@ class _CommandFlow:
         name: str,
         title: str,
     ) -> threading.Thread:
-        """后台线程跑 work：线程内异常上屏，收尾回 App 线程复位忙碌态（App 已退出则忽略）。"""
+        """启动后台线程执行 work。
+
+        Args:
+            work: 线程主体。
+            name: 线程名。
+            title: 异常提示标题。
+
+        Returns:
+            已启动的守护线程（daemon=True）；线程内异常上屏，收尾回 App 线程复位忙碌态
+            （App 已退出则忽略）。
+        """
 
         def _run() -> None:
+            """执行 work，异常上屏并在 finally 中复位忙碌态。"""
             try:
                 work()
             except Exception as exc:
@@ -301,9 +361,15 @@ class _CommandFlow:
         self._spawn_worker(lambda: self._compact_worker(self._runtime), "agent-compact", "⚠️ Compact Error")
 
     def _compact_worker(self, runtime: Any) -> None:
-        """压缩线程主体：run_compact() 在锁内提交并在 runtime 事件循环上跑完（阻塞）。
+        """压缩线程主体。
+
+        Args:
+            runtime: agent 运行时。
+
+        run_compact() 在锁内提交并在 runtime 事件循环上跑完（阻塞）。
         Esc 可中断：中断则不落会话，历史保持原样。
-        compact 返回 False（未选模型）时只提示未压缩，不重放历史。"""
+        compact 返回 False（未选模型）时只提示未压缩，不重放历史。
+        """
         try:
             compacted = runtime.run_compact()
         except AgentInterrupted:  # 取消统一成 AgentInterrupted

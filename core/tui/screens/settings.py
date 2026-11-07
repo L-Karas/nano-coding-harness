@@ -67,15 +67,31 @@ _FIELD_ID = "set-{}"  # 控件 id：字段名（下划线原样）→ #set-defau
 
 
 def _model_options(rows: list[tuple[str, str]]) -> list[tuple[Text, tuple[str, str]]]:
-    """模型下拉选项 (label, value)：label = 'model [provider]'（带提供方信息，样式同 /model
-    列表行：模型亮 / [provider] 暗），value = (provider, model)，保存时拼回 'provider:model'。
+    """构造模型下拉选项。
+
+    Args:
+        rows: (模型名, provider) 列表。
+
+    Returns:
+        (label, value) 列表；label = 'model [provider]'（样式同 /model 列表行），
+        value = (provider, model)，保存时拼回 'provider:model'。
+
     不用纯字符串 label：'[provider]' 会被 Rich markup 当标签吞掉，须用 Text 原样渲染。
-    未选择态由 Select 自身的 prompt 占位行充当（allow_blank）。"""
+    未选择态由 Select 自身的 prompt 占位行充当（allow_blank）。
+    """
     return [(_model_row_text(model, provider), (provider, model)) for model, provider in rows]
 
 
 def _labeled_field(name: str, widget: Widget) -> Horizontal:
-    """字段行：左侧参数显示名（定宽对齐，app.css .field-label）+ 右侧控件；无下划线。"""
+    """构造带标签的字段行。
+
+    Args:
+        name: 字段名。
+        widget: 字段控件。
+
+    Returns:
+        左侧参数显示名（定宽对齐，app.css .field-label）+ 右侧控件；无下划线。
+    """
     return Horizontal(Static(_FIELD_LABELS[name], classes="field-label"), widget, classes="field-row")
 
 
@@ -90,6 +106,11 @@ class _LockedInput(Input):
     locked: bool = True
 
     def set_locked(self, locked: bool) -> None:
+        """切换锁定态。
+
+        Args:
+            locked: 是否锁定；锁定时清空全选高亮。
+        """
         self.locked = locked
         self.set_class(not locked, "-editing")
         if locked:
@@ -98,14 +119,33 @@ class _LockedInput(Input):
     # Textual 会把 _on_key 沿 MRO 逐类派发（子类返回也拦不住 Input._on_key），
     # prevent_default 才会中断后续类的处理器，从而挡住字符插入。
     def _on_key(self, event: events.Key) -> None:
+        """锁定时拦截按键插入。
+
+        Args:
+            event: 按键事件。
+        """
         if self.locked:
             event.prevent_default()
 
     def _on_paste(self, event: events.Paste) -> None:
+        """锁定时拦截粘贴。
+
+        Args:
+            event: 粘贴事件。
+        """
         if self.locked:
             event.prevent_default()
 
     def check_action(self, action: str, parameters: tuple[Any, ...]) -> bool | None:
+        """锁定时禁用本控件绑定。
+
+        Args:
+            action: 动作名。
+            parameters: 动作参数。
+
+        Returns:
+            锁定时为 False；否则走基类判断。
+        """
         return False if self.locked else super().check_action(action, parameters)
 
 
@@ -126,6 +166,11 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
     _baseline: dict[str, Any] = {}  # 上次预填 / 落盘时的 Select / Switch 控件值
 
     def compose(self) -> ComposeResult:
+        """组装设置表单与底部提示行。
+
+        Yields:
+            设置弹窗内容。
+        """
         # 模型下拉以 prompt 作占位（未选择态即空值，保存为空串），on_mount 再 set_options
         widgets = [_labeled_field(name, Select([], prompt="Select a model",
                                                id=_FIELD_ID.format(name)))
@@ -204,8 +249,12 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
                 select.clear()  # 未设置：占位显示 prompt
 
     def _values(self) -> dict[str, Any]:
-        """当前配置打底 + 表单值覆盖：未在表单中的参数原样保留。
-        数字字段留空 = 回退 AgentConfig 默认值（不提供“未设置”语义）。"""
+        """汇总表单值。
+
+        Returns:
+            当前配置打底 + 表单值覆盖的字典；未在表单中的参数原样保留。
+            数字字段留空 = 回退 AgentConfig 默认值（不提供“未设置”语义）。
+        """
         values: dict[str, Any] = self._config.model_dump()
         for name in _MODEL_FIELDS:
             select = self.query_one(f"#{_FIELD_ID.format(name)}", Select)
@@ -227,6 +276,11 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
     # ---------- 两段式 Enter：编辑 → 保存 ----------
 
     def on_key(self, event: events.Key) -> None:
+        """处理表单按键：空格吞掉，Enter 两段式，其余交给 _ArrowNav。
+
+        Args:
+            event: 按键事件。
+        """
         if event.key == "space":
             # 空格在本表单不承担功能：开关只认 Enter（避免"切了不落盘"），
             # 也不让它冒泡到 App 的空格绑定（toggle_clarify）
@@ -243,17 +297,35 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         self._handle_enter(self.focused)
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """下拉值变化即落盘：键盘浮层确认与鼠标点选项同一路径；预填 / 落盘回显（当前值未变）跳过。"""
+        """下拉值变化即落盘。
+
+        Args:
+            event: 下拉变化事件。
+
+        键盘浮层确认与鼠标点选项同一路径；预填 / 落盘回显（当前值未变）跳过。
+        """
         if event.select.value != self._baseline.get(event.select.id):
             self._save()
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
-        """开关切换即落盘（鼠标点击路径；键盘 Enter 在 _handle_enter 已落盘）；回显跳过。"""
+        """开关切换即落盘。
+
+        Args:
+            event: 开关变化事件。
+
+        鼠标点击路径；键盘 Enter 在 _handle_enter 已落盘；回显跳过。
+        """
         if event.switch.value != self._baseline.get(event.switch.id):
             self._save()
 
     def on_click(self, event: events.Click) -> None:
-        """点中锁定输入框即进入编辑态（等同第一次 Enter），全选后可直接输入替换。"""
+        """处理点击。
+
+        Args:
+            event: 点击事件。
+
+        点中锁定输入框即进入编辑态（等同第一次 Enter），全选后可直接输入替换。
+        """
         target = event.widget
         if isinstance(target, _LockedInput) and target is not self._editing:
             event.stop()
@@ -265,14 +337,28 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         scroll_visible: bool = True,
         from_app_focus: bool = False,
     ) -> None:
-        """焦点移出编辑字段即退出编辑态（下拉浮层内部焦点切换不算移出）。"""
+        """设置焦点。
+
+        Args:
+            widget: 目标部件；None（清空焦点）时跳过编辑态退出。
+            scroll_visible: 是否滚动到可见区域。
+            from_app_focus: 是否由 App 级焦点变更触发。
+
+        焦点移出编辑字段即退出编辑态（下拉浮层内部焦点切换不算移出）。
+        """
         if (self._editing is not None and widget is not None
                 and not self._inside_editing(widget)):
             self._deactivate()
         super().set_focus(widget, scroll_visible=scroll_visible, from_app_focus=from_app_focus)
 
     def _handle_enter(self, focused: Widget | None) -> None:
-        """Enter：开关直接切换 + 保存；其余字段第一次进入编辑态、编辑态中再次按下保存。"""
+        """处理 Enter。
+
+        Args:
+            focused: 当前焦点部件。
+
+        开关直接切换 + 保存；其余字段第一次进入编辑态、编辑态中再次按下保存。
+        """
         if focused is None:
             return
         if isinstance(focused, Switch):
@@ -284,7 +370,13 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
             self._activate(focused)
 
     def _activate(self, widget: Widget) -> None:
-        """进入编辑态：输入框解锁并全选当前值；下拉展开选项。"""
+        """进入编辑态。
+
+        Args:
+            widget: 目标字段。
+
+        输入框解锁并全选当前值；下拉展开选项。
+        """
         self._deactivate()
         if isinstance(widget, _LockedInput):
             self._pre_edit = (widget, widget.value)  # 未保存就切走焦点时回退到这里
@@ -297,12 +389,24 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         self._editing = widget
 
     def _inside_editing(self, widget: Widget) -> bool:
-        """widget 是否属于当前编辑字段（下拉浮层是 Select 的子节点）。"""
+        """判断部件是否属于当前编辑字段。
+
+        Args:
+            widget: 待判断部件。
+
+        Returns:
+            属于当前编辑字段（下拉浮层是 Select 的子节点）时为 True。
+        """
         return widget is self._editing or self._editing in widget.ancestors_with_self
 
     def _deactivate(self, restore: bool = True) -> None:
-        """退出编辑态：锁定所有输入框（开关无编辑态，不需复位）。
-        restore=True（焦点移开等放弃场景）时把未保存的输入回退到编辑前值；保存成功传 False。"""
+        """退出编辑态。
+
+        Args:
+            restore: 是否把未保存输入回退到编辑前值；保存成功传 False。
+
+        锁定所有输入框（开关无编辑态，不需复位）。
+        """
         if restore and self._pre_edit is not None:
             widget, old_value = self._pre_edit
             widget.value = old_value
@@ -326,4 +430,5 @@ class SettingsScreen(_ArrowNav, ModalScreen[None]):
         self.app.notify("Settings saved", title="✅ Settings")
 
     def action_cancel(self) -> None:
+        """Esc：关闭弹窗并丢弃未保存改动。"""
         self.dismiss(None)

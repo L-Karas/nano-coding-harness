@@ -41,9 +41,19 @@ def _entry_row(
     status: str = "",
     head_style: Optional[str] = None,
 ) -> Text:
-    """「● 名称」行；enabled=False 默认改用红色「○ 名称」（同 /mcp 连接失败的 server，
-    head_style 可覆盖）；tag 非空时以源标记色追加 [tag]；status 非空时在 tag 前追加
-    `(status)`，与名称同色；描述 strip 后自第二行起（内部换行 / 缩进原样保留）。"""
+    """构造「● 名称」行。
+
+    Args:
+        name: 名称。
+        desc: 描述；strip 后自第二行起显示。
+        tag: 源标记；非空时以标记色追加 [tag]。
+        enabled: 是否启用；False 时默认改用红色「○ 名称」。
+        status: 状态文本；非空时在 tag 前追加 `(status)`。
+        head_style: 名称段样式覆盖。
+
+    Returns:
+        名称行 Text；内部换行 / 缩进原样保留。
+    """
     row = Text()
     glyph = ACTIVE_GLYPH if enabled else INACTIVE_GLYPH
     row_style = head_style or (ACTIVE_STYLE if enabled else INACTIVE_STYLE)
@@ -59,7 +69,16 @@ def _entry_row(
 
 
 def _model_row_text(model: str, provider: str, current: bool = False) -> Text:
-    """模型行 = 模型名（亮色）+ [Provider]（次级灰）+ 可选 (current model) 标记（暗绿）。"""
+    """构造模型行。
+
+    Args:
+        model: 模型名。
+        provider: 提供方。
+        current: 是否为当前模型。
+
+    Returns:
+        模型名（亮色）+ [Provider]（次级灰）+ 可选 (current model) 标记（暗绿）。
+    """
     row = Text.assemble((model, _MODEL_NAME_STYLE),
                         (f" [{provider}]", _MODEL_PROVIDER_STYLE))
     if current:
@@ -68,12 +87,26 @@ def _model_row_text(model: str, provider: str, current: bool = False) -> Text:
 
 
 def _error_text(exc: Exception) -> str:
-    """异常文本带类型名前缀（str 为空的异常不至于只显示空串）。"""
+    """格式化异常文本。
+
+    Args:
+        exc: 异常。
+
+    Returns:
+        带类型名前缀的文本；str 为空的异常也不至于只显示空串。
+    """
     return f"{type(exc).__name__}: {exc}"
 
 
 def _field(widget: Widget) -> Horizontal:
-    """表单字段行：「❯」标记 + 控件；行样式同搜索栏（app.css .field-row / .field-mark）。"""
+    """构造表单字段行。
+
+    Args:
+        widget: 字段控件。
+
+    Returns:
+        「❯」标记 + 控件的 Horizontal；行样式同搜索栏（app.css .field-row / .field-mark）。
+    """
     return Horizontal(Static("❯", classes="field-mark"), widget, classes="field-row")
 
 
@@ -83,6 +116,13 @@ class _ArrowNav:
     ↑/↓ 留给 TextArea 移光标（表单里的 args / headers 多行输入区）。"""
 
     def on_key(self, event: events.Key) -> None:
+        """用 ↑/↓ 切换表单字段。
+
+        Args:
+            event: 按键事件。
+
+        Tab 由 Textual 默认焦点链处理；下拉浮层展开或文本区聚焦时不拦截 ↑/↓。
+        """
         if event.key not in ("up", "down"):
             return
         if isinstance(self.focused, TextArea):
@@ -98,7 +138,14 @@ class _ArrowNav:
 
 
 def _rebuild_options(olist: OptionList, options: list[Option]) -> None:
-    """整列替换并保留原高亮位置（set_options 会清空高亮）。"""
+    """整列替换选项并保留原高亮位置。
+
+    Args:
+        olist: 目标列表。
+        options: 新选项列表。
+
+    set_options 会清空高亮，这里按旧下标恢复。
+    """
     old_index = olist.highlighted
     olist.set_options(options)
     if options:
@@ -117,9 +164,20 @@ class _InlineConfirm:
     _default_hint = ""
 
     def _hint(self) -> Static:
+        """取确认提示行。
+
+        Returns:
+            #confirm-hint Static。
+        """
         return self.query_one("#confirm-hint", Static)
 
     def _ask_confirm(self, message: str, action: Callable[[], None]) -> None:
+        """进入原地二次确认。
+
+        Args:
+            message: 确认文案。
+            action: Enter 后执行的动作。
+        """
         if self._pending is None:
             self._default_hint = str(self._hint().render())
         self._pending = action
@@ -127,7 +185,11 @@ class _InlineConfirm:
                                            self._CONFIRM_STYLE)))
 
     def _cancel_confirm(self) -> bool:
-        """撤销待确认并恢复原提示行；返回是否确实撤销了。"""
+        """撤销待确认并恢复原提示行。
+
+        Returns:
+            确实撤销了待确认时为 True。
+        """
         if self._pending is None:
             return False
         self._pending = None
@@ -135,7 +197,11 @@ class _InlineConfirm:
         return True
 
     def _run_confirm(self) -> bool:
-        """Enter：先复位再执行（操作可能刷新列表 / 关窗）。"""
+        """Enter：先复位待确认（恢复提示行）再执行动作（动作可能刷新列表 / 关窗）。
+
+        Returns:
+            有待确认并已执行时为 True。
+        """
         if self._pending is None:
             return False
         action = self._pending
@@ -144,24 +210,49 @@ class _InlineConfirm:
         return True
 
     def action_cancel(self) -> None:
+        """Esc：先撤销待确认，否则关闭弹窗。"""
         if not self._cancel_confirm():
             self.dismiss(None)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Enter：先确认已武装的原地操作（有则不再选择），否则走子类 _selected。"""
+        """处理列表 Enter。
+
+        Args:
+            event: 选项选中事件。
+
+        先确认已武装的原地操作（有则不再选择），否则走子类 _selected。
+        """
         event.stop()
         if not self._run_confirm():
             self._selected(event.option_id)
 
     def _selected(self, option_id: Optional[str]) -> None:
-        """无待确认时的选择动作；纯确认型屏（注销）保持默认空实现。"""
+        """执行无待确认时的选择动作。
+
+        Args:
+            option_id: 选中项 id。
+
+        纯确认型屏（注销）保持默认空实现。
+        """
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """输入变化即改选：撤销进行中的原地确认（确认屏的输入框即搜索栏）。"""
+        """输入变化时撤销进行中的原地确认。
+
+        Args:
+            event: 输入变化事件。
+
+        确认屏的输入框即搜索栏；改选后旧确认目标已失效。
+        """
         self._cancel_confirm()
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
-        """高亮变化：确认目标已不是当前行，自动撤销。"""
+        """高亮变化时自动撤销确认。
+
+        Args:
+            event: 高亮变化事件。
+
+        确认目标已不是当前行。
+        """
         self._cancel_confirm()
 
 
@@ -169,14 +260,19 @@ class _InstantTabs(Tabs):
     """滑块无滑行延迟的 Tabs（强制关闭切档位移画；滑块色仍随 TabActivated 即时同步）。"""
 
     def _highlight_active(self, animate: bool = True) -> None:
+        """高亮当前 Tab，强制关闭滑块位移动画。
+
+        Args:
+            animate: 基类动画开关；此处始终传 False。
+        """
         super()._highlight_active(False)
 
 
 class _SessionRow:
     """会话列表项：标题靠左、(current session) 随后、时间戳顶到行最右。
 
-    OptionList 无法表达右对齐列，故按渲染时给到的实际行宽自排版；空间不足先舍 (current)
-    标记、再截断标题（…），时间戳保持完整。"""
+    OptionList 无法表达右对齐列，故按渲染时给到的实际行宽自排版；空间不足时标题按剩余
+    宽度截断（…），(current) 标记仅在剩余空间足够时追加，时间戳保持完整。"""
 
     _TITLE_STYLE = "#f8fafc"
     _MARK_STYLE = "#34d399"
@@ -189,18 +285,42 @@ class _SessionRow:
         current: bool,
         timestamp: str,
     ) -> None:
+        """初始化会话行。
+
+        Args:
+            title: 会话标题。
+            current: 是否为当前会话。
+            timestamp: 时间戳文本。
+        """
         self._title = title
         self._current = current
         self._timestamp = timestamp
 
     def __rich_measure__(self, options: ConsoleOptions) -> Measurement:
+        """计算自然宽度。
+
+        Args:
+            options: Rich 控制台选项。
+
+        Returns:
+            完整未截断行的宽度；超宽行由列表裁剪。
+        """
         # 自然宽度 = 完整未截断行（超宽行由列表裁剪）
         mark = self._MARK_TEXT if self._current else ""
         return Measurement(1, cell_len(f"{self._title}{mark}  {self._timestamp}"))
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        """按实际行宽排版并渲染会话行。
+
+        Args:
+            console: Rich 控制台。
+            options: 渲染选项。
+
+        Yields:
+            单行 Text；时间戳右对齐，标题按剩余宽度截断，标记仅在剩余空间足够时追加。
+        """
         ts = Text(f"  {self._timestamp}", style=self._TS_STYLE)
-        free = max(0, options.max_width or 0) - ts.cell_len  # 空间不足先舍标题、再舍标记
+        free = max(0, options.max_width or 0) - ts.cell_len  # 标题先截断，标记仅在剩余空间足够时追加
         title = Text(self._title, style=self._TITLE_STYLE)
         if free < 1:  # rich 的 truncate(0) 不清空文本（ellipsis 分支按 max_width-1 取宽）
             title = Text("")
@@ -239,10 +359,22 @@ class _ListPickerScreen(ModalScreen[Any]):
     _query = ""  # casefold 后的搜索词；无搜索栏的屏恒空（子串匹配全过）
 
     def _match(self, name: str) -> bool:
-        """当前搜索词是否为 name 的子串（未输入 / 无搜索栏时恒 True）。"""
+        """判断名称是否匹配当前搜索词。
+
+        Args:
+            name: 待匹配名称。
+
+        Returns:
+            当前搜索词是否为 name 的子串；未输入 / 无搜索栏时恒 True。
+        """
         return self._query in name.casefold()
 
     def compose(self) -> ComposeResult:
+        """组装标题、可选搜索栏、列表与提示行。
+
+        Yields:
+            弹窗内容部件。
+        """
         widgets = []
         if self.SEARCH_PLACEHOLDER:
             widgets.append(Horizontal(
@@ -258,20 +390,37 @@ class _ListPickerScreen(ModalScreen[Any]):
         yield picker
 
     def on_mount(self) -> None:
+        """挂载后重建列表并聚焦搜索栏或列表。"""
         self._reload()
         (self._search() if self.SEARCH_PLACEHOLDER else self._list()).focus()
 
     def _list(self) -> OptionList:
+        """取弹窗列表。
+
+        Returns:
+            #LIST_ID OptionList。
+        """
         return self.query_one(f"#{self.LIST_ID}", OptionList)
 
     def _search(self) -> Input:
+        """取搜索输入框。
+
+        Returns:
+            #SEARCH_ID Input。
+        """
         return self.query_one(f"#{self.SEARCH_ID}", Input)
 
     def _reload(self) -> None:
         """子类按当前数据源重建选项（搜索屏按名称子串过滤 self._query）。"""
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """搜索栏输入：记录 casefold 查询词并重建列表（撤销确认由 _InlineConfirm 自理）。"""
+        """处理搜索栏输入。
+
+        Args:
+            event: 输入变化事件。
+
+        记录 casefold 查询词并重建列表（撤销确认由 _InlineConfirm 自理）。
+        """
         if event.input.id != self.SEARCH_ID:
             return
         event.stop()
@@ -279,14 +428,26 @@ class _ListPickerScreen(ModalScreen[Any]):
         self._reload()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """搜索栏 Enter：选中当前高亮行（走列表原有的选择 / 原地确认逻辑）。"""
+        """处理搜索栏 Enter。
+
+        Args:
+            event: 提交事件。
+
+        选中当前高亮行（走列表原有的选择 / 原地确认逻辑）。
+        """
         if event.input.id != self.SEARCH_ID:
             return
         event.stop()
         self._list().action_select()
 
     def on_key(self, event: events.Key) -> None:
-        """搜索栏聚焦时 ↑/↓ 仍移动列表高亮（输入框自身不消费方向键）；Tab 切焦点不受影响。"""
+        """处理搜索栏聚焦时的方向键。
+
+        Args:
+            event: 按键事件。
+
+        ↑/↓ 仍移动列表高亮（输入框自身不消费方向键）；Tab 切焦点不受影响。
+        """
         if (self.SEARCH_PLACEHOLDER and event.key in ("up", "down")
                 and self._search().has_focus):
             event.stop()
@@ -296,6 +457,7 @@ class _ListPickerScreen(ModalScreen[Any]):
                 self._list().action_cursor_down()
 
     def action_cancel(self) -> None:
+        """Esc：关闭弹窗并返回 None。"""
         self.dismiss(None)
 
 
@@ -313,14 +475,25 @@ class _NamedListScreen(_ListPickerScreen):
     /skills 覆写选择结果，以区分立即调用与带补充消息）。"""
 
     def __init__(self, items: list[_NamedItem]) -> None:
+        """初始化命名列表弹窗。
+
+        Args:
+            items: 命名条目列表。
+        """
         super().__init__()
         self._items = items
 
     def _reload(self) -> None:
+        """按当前搜索词重建命名列表。"""
         _rebuild_options(self._list(), [Option(_entry_row(item.name, item.description, item.tag), id=item.name)
                                         for item in self._items
                                         if self._match(item.name)])
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """选中条目后关闭弹窗并回传名称。
+
+        Args:
+            event: 选项选中事件。
+        """
         event.stop()
         self.dismiss(event.option_id)

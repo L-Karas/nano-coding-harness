@@ -28,12 +28,26 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
     )]
 
     def __init__(self, manager: Any, on_delete_current: Optional[Callable[[], None]] = None) -> None:
+        """初始化会话选择弹窗。
+
+        Args:
+            manager: 会话管理器。
+            on_delete_current: 删除当前会话时的回调。
+        """
         super().__init__()
         self._manager = manager
         self._on_delete_current = on_delete_current
         self._sessions: list[Any] = []  # 列表快照（confirm 回调按高亮行取回会话）
 
-    def _row(self, session) -> _SessionRow:
+    def _row(self, session: Any) -> _SessionRow:
+        """构造会话选项行。
+
+        Args:
+            session: 会话对象。
+
+        Returns:
+            标题、当前标记与分钟级时间戳组成的会话行。
+        """
         return _SessionRow(
             session.title or session.id,
             current=session.id == self._manager.current_session,
@@ -41,12 +55,14 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
         )
 
     def _reload(self) -> None:
+        """按时间倒序重建会话列表，并按搜索词过滤。"""
         self._sessions = sorted(self._manager.load_session_list(), key=lambda s: s.timestamp, reverse=True)
         _rebuild_options(self._list(),
                          [Option(self._row(s), id=s.id) for s in self._sessions
                           if self._match(s.title or s.id)])
 
     def action_cancel(self) -> None:
+        """Esc：确认中只撤销确认，否则关闭弹窗并返回 (None, False)。"""
         if not self._cancel_confirm():  # 确认中：Esc 只撤销确认，弹窗保持打开
             self.dismiss((None, False))
 
@@ -64,6 +80,13 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
                           lambda: self._delete_session(session.id))
 
     def _delete_session(self, session_id: str) -> None:
+        """删除会话并刷新列表。
+
+        Args:
+            session_id: 会话 id。
+
+        删除当前会话时先清空聊板；删空后关闭弹窗并回传 (None, True)。
+        """
         if session_id == self._manager.current_session and self._on_delete_current is not None:
             self._on_delete_current()  # 立即清空聊板（弹窗可继续开着）
         self._manager.delete_session(session_id)
@@ -73,6 +96,12 @@ class SessionPickerScreen(_InlineConfirm, _ListPickerScreen):
             self.dismiss((None, True))  # 删空后退出，主界面显示空列表卡片
 
     def _selected(self, option_id: Optional[str]) -> None:
-        """Enter/点击选中行：切到该会话；原地确认中由 _InlineConfirm 先行拦截。"""
+        """选中会话并关闭弹窗。
+
+        Args:
+            option_id: 会话 id；为空时忽略。
+
+        Enter/点击选中行：切到该会话；原地确认中由 _InlineConfirm 先行拦截。
+        """
         if option_id:
             self.dismiss((option_id, False))

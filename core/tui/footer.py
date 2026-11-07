@@ -31,14 +31,25 @@ _TEXT_STYLE = SECONDARY_TEXT  # 次级灰（cwd 行 / 模型段 / 标签 / 百�
 
 
 def approval_mode_text(mode: str) -> Text:
-    """'Approval Mode: <mode>'：标签次级灰，仅模式值按模式染色（表外模式也走次级灰）。"""
+    """构造审批模式行。
+
+    Args:
+        mode: 审批模式名。
+
+    Returns:
+        'Approval Mode: <mode>'；标签次级灰，仅模式值按模式染色（表外模式也走次级灰）。
+    """
     text = Text(f"{APPROVAL_LABEL}: ", no_wrap=True, style=_TEXT_STYLE)
     text.append(mode, style=APPROVAL_MODE_COLORS.get(mode, _TEXT_STYLE))
     return text
 
 
 def _model_label() -> str:
-    """'(provider) model * level'；未配置返回空串，无 level 时省略后缀。"""
+    """构造模型状态文本。
+
+    Returns:
+        '(provider) model * level'；未配置 provider/model 时为空串，无 level 时省略后缀。
+    """
     provider, model, level = current_model_state()
     if not provider or not model:
         return ""
@@ -46,7 +57,15 @@ def _model_label() -> str:
 
 
 def format_compact_threshold(tokens: int) -> str:
-    """压缩阈值提示：K/M 单位，整单位省略小数（160000 → '160K'，1500000 → '1.5M'）。"""
+    """格式化压缩阈值提示。
+
+    Args:
+        tokens: 阈值 token 数。
+
+    Returns:
+        K/M 单位文本；K 单位整除时省略小数，M 单位保留一位小数
+        （160000 → '160K'，1500000 → '1.5M'）。
+    """
     if tokens >= 1_000_000:
         return f"{tokens / 1_000_000:.1f}M"
     if tokens % 1000 == 0:
@@ -55,7 +74,14 @@ def format_compact_threshold(tokens: int) -> str:
 
 
 def _dot_cell(dots: int) -> str:
-    """0–8 个点对应的盲文字形（≤0 为空格，≥8 为满格）：逐行从底部点起，每行先左点后右点。"""
+    """生成单格占用条的盲文字形。
+
+    Args:
+        dots: 点亮的盲文点数（0–8）。
+
+    Returns:
+        对应盲文字形；≤0 为空格，≥8 为满格，逐行从底部点起、每行先左点后右点。
+    """
     if dots <= 0:
         return _BAR_EMPTY
     bits = 0
@@ -69,12 +95,23 @@ def _dot_cell(dots: int) -> str:
 
 def token_bar_text(tokens: int, context_length: int, *, compact_threshold: int = 0,
                    auto_compact: bool = True) -> Text:
-    """占用条：'Context Usage: [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦         ] 53.0% / 200.0K (compact at 160K)'；
-    盲文点阵 20 格 × 8 点，末格按点亮点数呈现部分填充（一档 0.625%）；
-    40% / 80% 阈值绿→黄→红；末尾括号提示压缩阈值（K/M 单位），
-    auto_compact 关闭时提示 '(auto-compact off)'（阈值不再自动触发）；
-    阈值为 0（未知）时不提示；上下文长度未知时灰条 'Context Usage: [...] -- / --'（无提示）；
-    占比 >100% 条填满、百分比照实显示。"""
+    """构造上下文占用条。
+
+    Args:
+        tokens: 当前估算 token 数。
+        context_length: 模型上下文长度。
+        compact_threshold: 自动压缩阈值；0 表示未知。
+        auto_compact: 自动压缩是否开启。
+
+    Returns:
+        带占用条、百分比与压缩提示的 Text，例如
+        'Context Usage: [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦         ] 53.0% / 200.0K (compact at 160K)'；
+        盲文点阵 20 格 × 8 点，末格按点亮点数呈现部分填充（一档 0.625%）；
+        40% / 80% 阈值绿→黄→红；末尾括号提示压缩阈值（K/M 单位），
+        auto_compact 关闭时提示 '(auto-compact off)'（阈值不再自动触发）；
+        阈值为 0（未知）时不提示；上下文长度未知时灰条 'Context Usage: [...] -- / --'（无提示）；
+        占比 >100% 条填满、百分比照实显示。
+        """
     text = Text(f"{TOKEN_LABEL}: ", no_wrap=True, style=_TEXT_STYLE)
     if context_length <= 0:
         text.append("[" + "-" * TOKEN_BAR_CELLS + "] -- / --", style=_TEXT_STYLE)
@@ -102,16 +139,23 @@ class _FooterBar(Vertical):
     2s 自轮询（cwd / git 分支 / token / 阈值 / 审批模式可能被其它进程或回合改变）；宽度变化由 App 触发重算。"""
 
     def compose(self) -> ComposeResult:
+        """组装 cwd、占用条与审批模式三行。
+
+        Yields:
+            三个 Static 部件。
+        """
         yield Static("", id="footer", markup=False)
         yield Static("", id="token-bar", markup=False)
         yield Static("", id="approval-mode", markup=False)
 
     def on_mount(self) -> None:
+        """挂载后立即刷新，并在布局完成后对齐一次；随后每 2 秒轮询。"""
         self.refresh_data()
         self.call_after_refresh(self.refresh_data)  # 首帧宽度为 0，布局完成后再对齐一次
         self.set_interval(2.0, self.refresh_data)
 
     def refresh_data(self) -> None:
+        """重新读取 cwd / 分支 / token / 阈值 / 审批模式 / 模型状态并更新三行。"""
         cwd = working_directory()
         branch = current_git_branch()
         label = f"{cwd} ({branch})" if branch else cwd
@@ -134,7 +178,11 @@ class _FooterBar(Vertical):
         row.update(text)
 
     def _session_tokens(self) -> int:
-        """当前会话 token 估算数；未接 SessionManager / 取值失败按 0。"""
+        """当前会话 token 估算数。
+
+        Returns:
+            估算值；未接 SessionManager / 取值失败时为 0。
+        """
         manager = getattr(self.app, "_manager", None)
         if manager is None:
             return 0

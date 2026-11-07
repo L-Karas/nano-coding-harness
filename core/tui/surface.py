@@ -22,7 +22,14 @@ _KEYCAP_TAIL = re.compile(rf"{_KEYCAP_CHAR}\ufe0f?\Z")  # 可能跨 chunk 的尾
 
 
 def _strip_keycaps(text: str) -> str:
-    """键帽 emoji（如 1️⃣）降级为基字符（1）；跨 chunk 的半截序列见 _stream_update。"""
+    """把键帽 emoji 降级为基字符。
+
+    Args:
+        text: 原始文本。
+
+    Returns:
+        键帽 emoji（如 1️⃣）替换为基字符（1）后的文本；跨 chunk 的半截序列见 _stream_update。
+    """
     return _KEYCAP.sub(r"\1", text)
 
 
@@ -30,6 +37,11 @@ class _StatusLine(Static):
     """状态行：文本 + 可选 spinner 轮播（0.1s，惰性启动、非动画态停表）。"""
 
     def __init__(self, **kwargs: Any) -> None:
+        """初始化状态行。
+
+        Args:
+            kwargs: 透传给 Static 的参数。
+        """
         super().__init__("", **kwargs)
         self._text = ""
         self._spin = False
@@ -37,6 +49,12 @@ class _StatusLine(Static):
         self._timer: Any = None
 
     def set_text(self, text: str, spin: bool = False) -> None:
+        """设置状态文本；spin 为真时启动 spinner 轮播。
+
+        Args:
+            text: 状态文本。
+            spin: 是否显示 spinner 动画。
+        """
         self._text = text
         self._spin = spin
         if spin:
@@ -51,12 +69,21 @@ class _StatusLine(Static):
                 self._timer = None
 
     def swap(self, text: str, spin: bool = True) -> tuple[str, bool]:
-        """切到 text，返回旧状态 (文本, 是否动画) 供调用方恢复。"""
+        """切换状态文本。
+
+        Args:
+            text: 新状态文本。
+            spin: 是否显示 spinner 动画。
+
+        Returns:
+            旧状态 (文本, 是否动画)，供调用方恢复。
+        """
         previous = (self._text, self._spin)
         self.set_text(text, spin=spin)
         return previous
 
     def _tick(self) -> None:
+        """推进一帧 spinner 并刷新状态文本。"""
         frame = _SPINNER_FRAMES[self._cursor % len(_SPINNER_FRAMES)]
         self._cursor += 1
         self.update(f"{frame} {self._text}")
@@ -75,8 +102,18 @@ class _RenderSurface:
         reserved: int = 0,
         tail: Any = None,
     ) -> Static:
-        """追加卡片并返回正文 Static；cap 非 None 时按视觉行折叠（reserved = 固定头行数）；
-        tail 非 None 时作为固定尾段追加，不参与折叠，排在正文之后。"""
+        """追加卡片。
+
+        Args:
+            kind: 卡片类型。
+            body: 卡片正文。
+            cap: 折叠行数上限；None 表示不折叠。
+            reserved: 固定头行数。
+            tail: 固定尾段；不参与折叠，排在正文之后。
+
+        Returns:
+            卡片正文 Static。
+        """
         self._set_welcome(False)
         body_w = (_CappedCardBody(
             body,
@@ -93,10 +130,22 @@ class _RenderSurface:
         return body_w
 
     def _toggle_expand(self, body_w: Static) -> None:
+        """切换卡片正文的展开/折叠。
+
+        Args:
+            body_w: 卡片正文部件。
+        """
         body_w.toggle_expand()
 
     def _add_markdown_card(self, content: str) -> Markdown:
-        """追加 Assistant Markdown 卡片（链接点击交系统浏览器；键帽序列先降级，见 _strip_keycaps）。"""
+        """追加 Assistant Markdown 卡片。
+
+        Args:
+            content: Markdown 正文。
+
+        Returns:
+            新挂载的 Markdown 部件；链接点击交系统浏览器，键帽序列先降级（见 _strip_keycaps）。
+        """
         self._set_welcome(False)
         md = Markdown(_strip_keycaps(content), open_links=True)
         self._chat().mount(Vertical(md, classes="card assistant"))
@@ -105,16 +154,32 @@ class _RenderSurface:
     # ---------- 通知 ----------
 
     def _notify(self, message: str, title: str = "", severity: str = "information") -> None:
-        """即时 toast（后台任务结果之外的提示统一入口）：正文按纯文本渲染，
-        避免工具输出 / 异常文本里的方括号被 Rich 解析；App.notify 线程安全，worker 线程可直接调。"""
+        """显示即时 toast。
+
+        Args:
+            message: 通知正文。
+            title: 通知标题。
+            severity: 严重级别。
+
+        正文按纯文本渲染，避免工具输出 / 异常文本里的方括号被 Rich 解析；
+        App.notify 线程安全，worker 线程可直接调用。
+        """
         self.notify(message, title=title, severity=severity, markup=False)
 
     # ---------- 流式回复 ----------
 
     def _run_stream_task(self, coro: Any, what: str) -> None:
-        """后台跑流协程（调用方必在 App 线程）；失败仅记日志（卡片可能已被清屏移除）。"""
+        """后台运行流协程。
+
+        Args:
+            coro: 待运行的协程。
+            what: 日志中的操作名。
+
+        调用方必在 App 线程；失败仅记日志（卡片可能已被清屏移除）。
+        """
 
         async def _guarded() -> None:
+            """执行协程并把异常记为警告日志。"""
             try:
                 await coro
             except Exception:
@@ -133,6 +198,7 @@ class _RenderSurface:
             return
 
         async def _finish() -> None:
+            """补发尾部半截键帽前缀后停止流。"""
             if carry:
                 await stream.write(carry.removesuffix("\ufe0f"))
             await stream.stop()
@@ -140,8 +206,13 @@ class _RenderSurface:
         self._run_stream_task(_finish(), "markdown stream stop")
 
     def _stream_update(self, chunk: str) -> None:
-        """流式增量：chunk 为本次新增片段（勿传累计全量，会重复追加）；
-        尾部半截键帽前缀留到下一片再拼（停流时补发）。"""
+        """追加流式增量。
+
+        Args:
+            chunk: 本次新增片段；勿传累计全量，会重复追加。
+
+        尾部半截键帽前缀留到下一片再拼（停流时补发）。
+        """
         if not chunk:
             return
         piece = self._keycap_carry + chunk
@@ -159,19 +230,40 @@ class _RenderSurface:
     # ---------- 状态行 ----------
 
     def _set_status_text(self, text: str, spin: bool = False) -> None:
+        """设置状态行文本。
+
+        Args:
+            text: 状态文本。
+            spin: 是否显示 spinner 动画。
+        """
         self.query_one("#status", _StatusLine).set_text(text, spin=spin)
 
     def _status_swap(self, text: str, spin: bool = False) -> tuple[str, bool]:
-        """设置状态并返回旧状态；状态上下文从不嵌套，退出时恢复旧状态即可。"""
+        """设置状态并返回旧状态。
+
+        Args:
+            text: 新状态文本。
+            spin: 是否显示 spinner 动画。
+
+        Returns:
+            旧状态 (文本, 是否动画)；状态上下文从不嵌套，退出时恢复旧状态即可。
+        """
         return self.query_one("#status", _StatusLine).swap(text, spin=spin)
 
     # ---------- 欢迎 / 清板 ----------
 
     def _set_welcome(self, show: bool) -> None:
-        """-welcome 类挂在 #left 上，欢迎标题与聊板互斥显隐（规则见 app.css）。"""
+        """切换欢迎标题与聊板的显隐。
+
+        Args:
+            show: 是否显示欢迎标题。
+
+        -welcome 类挂在 #left 上，两者互斥（规则见 app.css）。
+        """
         self.query_one("#left", Vertical).set_class(show, "-welcome")
 
     def _clear_cards(self) -> None:
+        """清空聊天卡片并恢复欢迎标题。"""
         self._stop_stream()  # 先停流再移除卡片，避免残留写入已移除的卡片
         self._chat().remove_children()
         self._chat().anchor()

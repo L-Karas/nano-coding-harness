@@ -47,17 +47,31 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
     _CONFIGURED_STYLE = "#16a34a"  # 暗绿：已配置
 
     def __init__(self, rows: list[tuple[str, bool]]) -> None:
+        """初始化 provider 配置弹窗。
+
+        Args:
+            rows: (provider, 是否已配置) 列表。
+        """
         super().__init__()
         self._rows = list(rows)  # 快照仅作首屏；配置变更后经 _refresh 重取真源
 
     def _reload(self) -> None:
+        """按当前 provider 快照与搜索词重建列表。"""
         _rebuild_options(self._list(),
                          [Option(self._row_text(provider, configured), id=provider)
                           for provider, configured in self._rows
                           if self._match(provider)])
 
     def _row_text(self, provider: str, configured: bool) -> Text:
-        """行 = provider（后端原名）+ 状态（未配置灰 / 已配置暗绿）。"""
+        """构造 provider 行。
+
+        Args:
+            provider: provider 原名。
+            configured: 是否已配置。
+
+        Returns:
+            provider + 状态（未配置灰 / 已配置暗绿）。
+        """
         status = "[● configured]" if configured else "[○ unconfigured]"
         status_style = self._CONFIGURED_STYLE if configured else self._UNCONFIGURED_STYLE
         return Text.assemble((provider, self._NAME_STYLE),
@@ -70,13 +84,24 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
         self._reload()
 
     def _selected(self, option_id: Optional[str]) -> None:
-        """Enter/点击选中行：弹出 ApiKeyScreen 录入该 provider 的 API Key。"""
+        """选中 provider 并打开 API Key 录入窗。
+
+        Args:
+            option_id: provider 名；为空时忽略。
+        """
         if option_id:
             self.app.push_screen(ApiKeyScreen(option_id),
                                  callback=lambda api_key: self._on_key_submitted(option_id, api_key))
 
     def _on_key_submitted(self, provider: str, api_key: Optional[str]) -> None:
-        """ApiKeyScreen 回调：None=Esc 取消；有 key 则落盘并刷新状态。"""
+        """处理 ApiKeyScreen 回调。
+
+        Args:
+            provider: provider 名。
+            api_key: API Key；None 表示 Esc 取消。
+
+        有 key 则落盘并刷新状态。
+        """
         if not api_key:
             return
         try:
@@ -103,6 +128,11 @@ class ProviderScreen(_InlineConfirm, _ListPickerScreen):
         self._ask_confirm(f"Remove key for {provider}?", lambda: self._remove_config(provider))
 
     def _remove_config(self, provider: str) -> None:
+        """删除 provider 配置并刷新列表。
+
+        Args:
+            provider: provider 名。
+        """
         try:
             from core.client import unconfigure_provider
             unconfigure_provider(provider)
@@ -119,10 +149,20 @@ class ApiKeyScreen(ModalScreen[Optional[str]]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def __init__(self, provider: str) -> None:
+        """初始化 API Key 录入窗。
+
+        Args:
+            provider: provider 名。
+        """
         super().__init__()
         self._provider = provider
 
     def compose(self) -> ComposeResult:
+        """组装掩码输入框与提示行。
+
+        Yields:
+            录入窗内容。
+        """
         picker = Vertical(
             _field(Input(placeholder="API Key (masked)", password=True, id="api-key-input")),
             Static("  Enter save    Esc cancel", classes="picker-hint"),
@@ -132,14 +172,22 @@ class ApiKeyScreen(ModalScreen[Optional[str]]):
         yield picker
 
     def on_mount(self) -> None:
+        """挂载后聚焦 API Key 输入框。"""
         self.query_one("#api-key-input", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Enter：key 非空才关闭（空输入留窗内重录）。"""
+        """处理 Enter 提交。
+
+        Args:
+            event: 提交事件。
+
+        key 非空才关闭；空输入留窗内重录。
+        """
         event.stop()
         key = event.value.strip()
         if key:
             self.dismiss(key)
 
     def action_cancel(self) -> None:
+        """Esc：关闭弹窗并返回 None。"""
         self.dismiss(None)

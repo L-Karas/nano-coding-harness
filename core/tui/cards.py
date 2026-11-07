@@ -30,6 +30,14 @@ class _CappedCardBody(Static):
         reserved: int = 0,
         **kwargs: Any,
     ) -> None:
+        """初始化折叠正文。
+
+        Args:
+            content: 传给 Static 的正文内容。
+            cap: 折叠时最多显示的正文视觉行数。
+            reserved: 固定头行数，不参与折叠。
+            kwargs: 透传给 Static 的其余参数。
+        """
         super().__init__(content, **kwargs)
         self._cap = cap
         self._reserved = reserved
@@ -38,6 +46,11 @@ class _CappedCardBody(Static):
 
     @property
     def _truncated(self) -> bool:
+        """正文是否超过折叠上限。
+
+        Returns:
+            当前宽度下正文行数大于 cap 时为 True。
+        """
         return self._full_height - self._reserved > self._cap
 
     def get_content_height(
@@ -46,12 +59,28 @@ class _CappedCardBody(Static):
         viewport: Size,
         width: int,
     ) -> int:
+        """按折叠状态返回正文高度，并记录当前宽度下的完整高度。
+
+        Args:
+            container: 容器尺寸。
+            viewport: 视口尺寸。
+            width: 渲染宽度。
+
+        Returns:
+            折叠态为头行 + min(正文行数, cap + 1)（未超上限时即完整高度、无提示行）；
+            展开态为完整高度 + 1 行收起提示。
+        """
         full = super().get_content_height(container, viewport, width)
         self._full_height = full
         body = max(0, full - self._reserved)  # 扣除固定头行后的正文行数
         return self._reserved + (body + 1 if self._expanded else min(body, self._cap + 1))
 
     def on_resize(self, event: events.Resize) -> None:
+        """宽度变化会改变折行，重新同步 -expandable 类。
+
+        Args:
+            event: 尺寸变化事件。
+        """
         self.set_class(self._truncated or self._expanded, "-expandable")
 
     def toggle_expand(self) -> None:
@@ -62,7 +91,14 @@ class _CappedCardBody(Static):
         self.refresh(layout=True)
 
     def render_line(self, y: int) -> Strip:
-        """折叠态末行 / 展开态末行替换为提示行（正文行仍走基类渲染缓存）"""
+        """渲染指定视觉行；折叠（已截断）/展开态的末行替换为提示行。
+
+        Args:
+            y: 视觉行号。
+
+        Returns:
+            该行的 Strip；正文行仍走基类渲染缓存。
+        """
         if self._expanded and y == self._full_height:
             return self._hint_strip(_COLLAPSE_HINT)
         if not self._expanded and y == self._reserved + self._cap and self._truncated:
@@ -71,6 +107,14 @@ class _CappedCardBody(Static):
         return super().render_line(y)
 
     def _hint_strip(self, text: str) -> Strip:
+        """构造提示行 Strip。
+
+        Args:
+            text: 提示文本。
+
+        Returns:
+            按当前宽度渲染的单行 Strip。
+        """
         content = Content.from_rich_text(Text(text, style=_HINT_STYLE), console=self.app.console)
         options = RenderOptions(self._get_style, self.styles)
         return content.render_strips(

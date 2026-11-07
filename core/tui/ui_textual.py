@@ -19,6 +19,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.screen import Screen
+from textual.widget import Widget
 from textual.widgets import Input, OptionList, Static
 
 import core.tui.render as _render  # run() 把 ChatApp 挂到渲染桥接的 _APP 全局
@@ -40,18 +41,32 @@ class _ChatScreen(Screen):
 
     def set_focus(
         self,
-        widget,
-        scroll_visible=True,
-        from_app_focus=False,
+        widget: Widget | None,
+        scroll_visible: bool = True,
+        from_app_focus: bool = False,
     ) -> None:
+        """设置焦点，并把主屏上的焦点改道到当前交互。
+
+        Args:
+            widget: 目标部件；为 None 时清空焦点且不改道。
+            scroll_visible: 是否滚动到可见区域。
+            from_app_focus: 是否由 App 级焦点变更触发。
+        """
         if widget is not None and self.app.screen is self:
             widget = self._dock_focus_target(widget)
         super().set_focus(widget, scroll_visible=scroll_visible, from_app_focus=from_app_focus)
 
-    def _dock_focus_target(self, widget):
-        """把焦点改道到当前交互（取不到部件时保持原目标）：权限挂起 → #perm-list；
-        clarify 挂起 → #clarify-list（Other 输入模式归 #prompt）；否则 #prompt
-        （/ 与 @ 候选导航依赖它；输入条禁用时不改道）。"""
+    def _dock_focus_target(self, widget: Widget | None) -> Widget | None:
+        """把焦点改道到当前交互。
+
+        Args:
+            widget: 原焦点目标。
+
+        Returns:
+            改道后的目标；取不到部件时保持原目标。权限挂起 → #perm-list；
+            clarify 挂起 → #clarify-list（Other 输入模式归 #prompt）；否则 #prompt
+            （/ 与 @ 候选导航依赖它；输入条禁用时不改道）。
+        """
         if self.app._perm_pending:
             target_id = "#perm-list"
         elif self.app._clarify_pending and not self.app._clarify_other:
@@ -66,13 +81,28 @@ class _ChatScreen(Screen):
 
 
 def _set_terminal_title(driver: Any, title: str) -> None:
-    """OSC 2 设终端窗口标题；driver 为 None / headless 时写空操作，空串即清空。"""
+    """设置终端窗口标题。
+
+    Args:
+        driver: Textual 终端驱动。
+        title: 窗口标题；空串即清空。
+
+    使用 OSC 2；driver 为 None / headless 时为空操作。
+    """
     if driver is not None:
         driver.write(f"\x1b]2;{title}\x07")
 
 
 def _set_terminal_progress(driver: Any, state: int, value: Optional[int] = None) -> None:
-    """OSC 9;4 任务栏进度：3 不确定（运行中）/ 4 黄色（等待用户输入）/ 0 清除；driver 为 None 时忽略。"""
+    """设置终端任务栏进度。
+
+    Args:
+        driver: Textual 终端驱动。
+        state: 进度状态：3 不确定（运行中）/ 4 黄色（等待用户输入）/ 0 清除。
+        value: 可选百分比。
+
+    使用 OSC 9;4；driver 为 None 时忽略。
+    """
     if driver is not None:
         tail = f";{value}" if value is not None else ""
         driver.write(f"\x1b]9;4;{state}{tail}\x07")
@@ -92,7 +122,11 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
     SUB_TITLE = "Textual UI"
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
-        """注册 app.css 使用的自定义变量：$secondary-text（次级文字色）。"""
+        """注册 app.css 使用的自定义变量。
+
+        Returns:
+            含 $secondary-text（次级文字色）的变量表。
+        """
         return {**super().get_theme_variable_defaults(), "secondary-text": SECONDARY_TEXT}
 
     # ctrl+c 空操作覆盖 Textual 默认的 help_quit（退出用 /exit 或 ctrl+q；复制由更内层绑定处理）
@@ -109,6 +143,17 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         runtime: Any = None,
         runtime_state: RuntimeState = RUNTIME_STATE,
     ) -> None:
+        """初始化对话主界面。
+
+        Args:
+            handle_query: 每轮消息回调；省略时接真实 agent 回合。
+            session_manager: 会话管理器。
+            banner: 欢迎标题与副标题。
+            on_interrupt: Esc 中断回调；省略时用 runtime.interrupt；
+                handle_query 省略时改用默认 agent 回合的 interrupt。
+            runtime: agent 运行时；handle_query 省略时改用默认 agent 运行时。
+            runtime_state: 右栏信息面板的数据源。
+        """
         super().__init__(ansi_color=True)  # 按终端调色板显示 ANSI 色，避免与终端主题不一致
         if handle_query is None:
             handle_query, on_interrupt, runtime = _default_agent_turn()
@@ -135,12 +180,22 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._manual_expand = False  # 用户手动展开后，三区清空也不自动收回
 
     def get_default_screen(self) -> Screen:
+        """创建默认主屏。
+
+        Returns:
+            主屏 _ChatScreen。
+        """
         return _ChatScreen(id="_default")
 
     def action_copy_or_ignore(self) -> None:
         """Ctrl+C 空操作（覆盖基类退出提示）。"""
 
     def compose(self) -> ComposeResult:
+        """组装左栏聊天区与右栏信息面板。
+
+        Yields:
+            主界面部件。
+        """
         title, subtitle = self._banner
         with Horizontal(id="main"):  # 左 4fr 聊天区 / 右 1fr 信息栏（比例见 app.css）
             with Vertical(id="left"):
@@ -156,6 +211,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
                                  on_sections_changed=self._sync_info_panel)
 
     def on_mount(self) -> None:
+        """挂载后聚焦输入框、钉底聊板并启动状态轮询。"""
         self._prompt().focus()
         self._chat().anchor()  # 钉底：溢出时保持贴底，用户上滚解除、滚回底部恢复
         self._set_welcome(True)
@@ -171,7 +227,14 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
     # ---------- 终端任务栏进度（OSC 9;4） ----------
 
     def _write_progress(self, state: int, value: Optional[int] = None) -> None:
-        """任务栏进度写入口：driver 缺失时忽略；与上次相同则不重复写（tick 可任意频繁调用）。"""
+        """写入任务栏进度。
+
+        Args:
+            state: 进度状态。
+            value: 可选百分比。
+
+        driver 缺失时忽略；与上次相同则不重复写（tick 可任意频繁调用）。
+        """
         if self._driver is None or (state, value) == self._progress_state:
             return
         self._progress_state = (state, value)
@@ -190,7 +253,11 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._write_progress(0)
 
     def _background_active(self) -> bool:
-        """是否有在跑的后台任务 / 子代理（子代理条目只在运行期存在；Todos 不算）。"""
+        """判断是否有在跑的后台任务 / 子代理。
+
+        Returns:
+            存在运行中的后台任务或子代理时为 True；子代理条目只在运行期存在，Todos 不算。
+        """
         return self._runtime_state.snapshot().has_running_background()
 
     def _progress_sync(self) -> None:
@@ -205,10 +272,21 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
             self._progress_clear()
 
     def on_resize(self, event: events.Resize) -> None:
+        """终端宽度变化时重算页脚对齐。
+
+        Args:
+            event: 尺寸变化事件。
+        """
         self._refresh_footer()  # 页脚右对齐随终端宽度实时重算
 
     def on_click(self, event: events.Click) -> None:
-        """卡片正文点击 = 展开/收起；»/« 点击 = 折叠/展开右栏（分区点击由 _InfoPanel 处理）。"""
+        """处理卡片与右栏折叠标签的点击。
+
+        Args:
+            event: 点击事件。
+
+        卡片正文点击 = 展开/收起；»/« 点击 = 折叠/展开右栏（分区点击由 _InfoPanel 处理）。
+        """
         target = event.widget
         if target.has_class("-expandable"):
             self._toggle_expand(target)
@@ -221,8 +299,12 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
     # ---------- 右栏折叠 / 展开与调宽（Ctrl+←/→，绑定见 _CommandInput.BINDINGS） ----------
 
     def _set_info_collapsed(self, collapsed: bool, *, manual_expand: bool = False) -> None:
-        """收/放右栏：折叠只留左缘 »/« 标签一列。manual_expand=True 记录用户展开意图，
-        使三区清空后不再自动收回（读取见 _sync_info_panel）。"""
+        """折叠或展开右栏。
+
+        Args:
+            collapsed: 是否折叠；折叠只留左缘 »/« 标签一列。
+            manual_expand: 是否记录用户展开意图，使三区清空后不再自动收回。
+        """
         right = self.query_one("#right", Vertical)
         right.set_class(collapsed, "-collapsed")
         glyph = self.query_one("#info-tab-glyph", Static)
@@ -235,10 +317,16 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self.call_after_refresh(self._refresh_footer)  # 左栏宽度随右栏变化
 
     def _sync_info_panel(self, non_empty: bool) -> None:
-        """三区「全空 ↔ 非空」跳变时自动展开/收回（_InfoPanel 每次轮询后回调）。
+        """按三区活动状态自动展开/收回右栏。
+
+        Args:
+            non_empty: 三区是否有内容。
+
+        仅在「全空 ↔ 非空」跳变时动作（_InfoPanel 每次轮询后回调）。
 
         - 非空跳变：折叠则自动展开（手动折叠只保持到这次跳变）；
-        - 全空跳变：仅当用户没手动展开过才自动收回（手动展开优先保持）。"""
+        - 全空跳变：仅当用户没手动展开过才自动收回（手动展开优先保持）。
+        """
         if non_empty == self._sections_non_empty:
             return
         self._sections_non_empty = non_empty
@@ -250,6 +338,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
             self._set_info_collapsed(True)
 
     def action_narrow_info_panel(self) -> None:
+        """Ctrl+→：收窄右栏一档；低于 20% 即折叠。"""
         self._resize_info_panel(-10)
 
     def action_widen_info_panel(self) -> None:
@@ -261,7 +350,13 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._resize_info_panel(10)
 
     def _resize_info_panel(self, delta: int) -> None:
-        """按档位设右栏宽度（默认 20%，每档 10%，夹在 20%–40%）；低于 20% 即收成折叠态。"""
+        """按档位调整右栏宽度。
+
+        Args:
+            delta: 宽度增量（百分比）。
+
+        默认 20%，每档 10%，夹在 20%–40%；低于 20% 即收成折叠态。
+        """
         right = self.query_one("#right", Vertical)
         if right.has_class("-collapsed"):
             return  # 折叠态已是最低宽度
@@ -274,8 +369,14 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self.call_after_refresh(self._refresh_footer)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """停靠区列表选中统一收口（弹窗内的列表已在弹窗内 stop）：权限作答 / clarify /
-        / 指令填入 / @ 文件补全。"""
+        """处理停靠区列表选中。
+
+        Args:
+            event: 选项选中事件。
+
+        统一收口（弹窗内的列表已在弹窗内 stop）：权限作答 / clarify / / 指令填入 /
+        @ 文件补全。
+        """
         oid = event.option_list.id
         if oid == "perm-list":
             event.stop()
@@ -300,17 +401,33 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
     # ---------- 取件 ----------
 
     def _chat(self) -> _ChatBoard:
+        """取聊天画板。
+
+        Returns:
+            #chat 部件。
+        """
         return self.query_one("#chat", _ChatBoard)
 
     def _prompt(self) -> _CommandInput:
+        """取输入框。
+
+        Returns:
+            #prompt 输入框。
+        """
         return self.query_one("#prompt", _CommandInput)
 
     def _refresh_footer(self) -> None:
+        """立即刷新页脚数据。"""
         self.query_one(_FooterBar).refresh_data()
 
     # ---------- 输入回合 ----------
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """处理输入框提交：clarify 的 Other 输入或普通用户回合。
+
+        Args:
+            event: 提交事件。
+        """
         if self._clarify_pending and self._clarify_other:  # clarify 的 Other 输入：不当作新回合
             self._prompt().text = ""
             text = event.value.strip()
@@ -328,8 +445,12 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
 
 
 def _default_agent_turn() -> tuple[Callable[[str], None], Callable[[], None], Any]:
-    """无 handle_query 时的默认回合：接 core.agent_loop 的真实 agent。
-    延迟导入：--smoke 与离线 UI 演示不必拉起 openai / mcp 依赖。"""
+    """构造默认 agent 回合。
+
+    Returns:
+        (handle_query, interrupt, runtime) 三元组；延迟导入，--smoke 与离线 UI 演示
+        不必拉起 openai / mcp 依赖。
+    """
     from core.agent_loop import make_agent_turn, start_agent_runtime
 
     runtime = start_agent_runtime()
@@ -345,9 +466,16 @@ def run(
 ) -> None:
     """启动 Textual 对话界面（阻塞直到退出）。
 
-    不传 handle_query 时用真实 agent 回合（需已配置模型；离线演示见 smoke.demo）。
-    session_manager 接入后 /new /sessions 可用；runtime 接入后 /compact 可用。
-    运行期忽略 SIGINT（Ctrl+C 不关闭应用，退出用 /exit 或 ctrl+q），退出后恢复原处理器。"""
+    Args:
+        handle_query: 每轮消息回调；省略时用真实 agent 回合。
+        session_manager: 会话管理器；接入后 /new /sessions 可用。
+        banner: 欢迎标题与副标题。
+        on_interrupt: Esc 中断回调；handle_query 省略时改用默认 agent 回合的 interrupt。
+        runtime: agent 运行时；接入后 /compact 可用；handle_query 省略时改用默认运行时。
+
+    不传 handle_query 时需已配置模型（离线演示见 smoke.demo）。
+    运行期忽略 SIGINT（Ctrl+C 不关闭应用，退出用 /exit 或 ctrl+q），退出后恢复原处理器。
+    """
     from core.bootstrap import bootstrap
     bootstrap()
 

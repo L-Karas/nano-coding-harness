@@ -16,12 +16,26 @@ _STATUS_STYLES = {"enabled": ACTIVE_STYLE, "disabled": DISABLED_TEXT,
 
 
 def _hooks(entry: ExtensionInfo) -> str:
-    """hook 事件摘要；无回调时显示 no hooks。"""
+    """生成 hook 事件摘要。
+
+    Args:
+        entry: 扩展登记项。
+
+    Returns:
+        `hooks: ...` 文本；无回调时为 `no hooks`。
+    """
     return f"hooks: {', '.join(entry.events)}" if entry.events else "no hooks"
 
 
 def _row(entry: ExtensionInfo) -> Text:
-    """列表行 = 状态字形 名称 (状态) [来源] + 描述 / hooks；失败原因不展示。"""
+    """构造扩展列表行。
+
+    Args:
+        entry: 扩展登记项。
+
+    Returns:
+        状态字形 + 名称 + (状态) + [来源] + 描述 / hooks；失败原因不展示。
+    """
     status = entry.status
     row = _entry_row(
         entry.name,
@@ -51,10 +65,16 @@ class ExtensionsScreen(_ListPickerScreen):
     BINDINGS = [Binding("ctrl+e", "toggle_selected", "Enable/Disable", priority=True)]
 
     def __init__(self, extensions: list[ExtensionInfo]) -> None:
+        """初始化扩展列表弹窗。
+
+        Args:
+            extensions: 扩展登记项列表。
+        """
         super().__init__()
         self._extensions = extensions
 
     def _reload(self) -> None:
+        """按当前搜索词重建扩展列表。"""
         _rebuild_options(
             self._list(),
             [Option(_row(entry), id=f"{entry.origin}:{entry.name}")
@@ -62,7 +82,11 @@ class ExtensionsScreen(_ListPickerScreen):
         )
 
     def _highlighted_entry(self) -> ExtensionInfo | None:
-        """当前高亮行对应的登记项；高亮为空 / id 非法时返回 None。"""
+        """取当前高亮行对应的登记项。
+
+        Returns:
+            高亮项；高亮为空 / id 非法时为 None。
+        """
         olist = self._list()
         if olist.highlighted is None:
             return None

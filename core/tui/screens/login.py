@@ -24,7 +24,14 @@ from core.tui.screens.base import (
 
 
 def _custom_provider_names(screen: ModalScreen) -> list[str]:
-    """自定义提供方名列表（core.client 真源）；懒导入失败（无 openai 环境）时提示并返回空表。"""
+    """获取自定义提供方名列表。
+
+    Args:
+        screen: 当前弹窗，用于 toast 提示。
+
+    Returns:
+        提供方名列表；懒导入失败（无 openai 环境）时提示并返回空表。
+    """
     try:
         from core.client import get_provider_list
         return [provider for provider, _configured in get_provider_list(custom_provider=True)]
@@ -35,7 +42,14 @@ def _custom_provider_names(screen: ModalScreen) -> list[str]:
 
 
 def _positive_int(text: str) -> Optional[int]:
-    """解析正整数（上下文长度 / 最大输出）；非法或 <= 0 返回 None。"""
+    """解析正整数。
+
+    Args:
+        text: 输入文本。
+
+    Returns:
+        整数值；非法或 <= 0 时为 None。
+    """
     try:
         value = int(text)
     except ValueError:
@@ -70,15 +84,31 @@ class LoginScreen(_ListPickerScreen):
         label: str,
         register: bool,
     ) -> Text:
+        """构造菜单行。
+
+        Args:
+            num: 序号。
+            label: 动作文本。
+            register: 是否注册项。
+
+        Returns:
+            序号（次级灰）+ 动作文本（注册绿 / 注销红）。
+        """
         style = self._REGISTER_STYLE if register else self._UNREGISTER_STYLE
         return Text.assemble((f"{num}. ", self._NUM_STYLE), (label, style))
 
     def _reload(self) -> None:
+        """重建注册 / 注销菜单。"""
         _rebuild_options(self._list(),
                          [Option(self._option_row(num, label, register), id=oid)
                           for num, (oid, label, register) in enumerate(self._OPTIONS, start=1)])
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """打开选中的子窗。
+
+        Args:
+            event: 选项选中事件。
+        """
         event.stop()
         screen_cls = _MENU_TARGETS.get(event.option_id or "")
         if screen_cls is not None:
@@ -92,6 +122,11 @@ class RegisterProviderScreen(_ArrowNav, ModalScreen[None]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
+        """组装提供方注册表单。
+
+        Yields:
+            注册窗内容。
+        """
         picker = Vertical(
             _field(Input(placeholder="Provider name", id="reg-provider-name")),
             _field(Input(placeholder="OpenAI-compatible Base URL",
@@ -106,9 +141,15 @@ class RegisterProviderScreen(_ArrowNav, ModalScreen[None]):
         yield picker
 
     def on_mount(self) -> None:
+        """挂载后聚焦名称输入框。"""
         self.query_one("#reg-provider-name", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """提交提供方注册表单。
+
+        Args:
+            event: 提交事件。
+        """
         event.stop()
         name = self.query_one("#reg-provider-name", Input).value.strip()
         base_url = self.query_one("#reg-provider-url", Input).value.strip()
@@ -130,6 +171,7 @@ class RegisterProviderScreen(_ArrowNav, ModalScreen[None]):
         self.dismiss(None)
 
     def action_cancel(self) -> None:
+        """Esc：关闭弹窗并返回 None。"""
         self.dismiss(None)
 
 
@@ -143,6 +185,11 @@ class RegisterModelScreen(_ArrowNav, ModalScreen[None]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
+        """组装模型注册表单。
+
+        Yields:
+            注册窗内容。
+        """
         picker = Vertical(
             _field(Select([], prompt="Select a custom provider", id="reg-model-provider")),
             _field(Input(placeholder="Model name", id="reg-model-name")),
@@ -162,6 +209,7 @@ class RegisterModelScreen(_ArrowNav, ModalScreen[None]):
         yield picker
 
     def on_mount(self) -> None:
+        """挂载后填充自定义提供方下拉并聚焦。"""
         select = self.query_one("#reg-model-provider", Select)
         providers = _custom_provider_names(self)
         select.set_options([(provider, provider) for provider in providers])
@@ -170,6 +218,11 @@ class RegisterModelScreen(_ArrowNav, ModalScreen[None]):
         select.focus()  # 先选提供方
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """提交模型注册表单。
+
+        Args:
+            event: 提交事件。
+        """
         event.stop()
         provider = self.query_one("#reg-model-provider", Select).selection
         model = self.query_one("#reg-model-name", Input).value.strip()
@@ -213,6 +266,7 @@ class RegisterModelScreen(_ArrowNav, ModalScreen[None]):
         self.dismiss(None)
 
     def action_cancel(self) -> None:
+        """Esc：关闭弹窗并返回 None。"""
         self.dismiss(None)
 
 
@@ -228,6 +282,7 @@ class UnregisterProviderScreen(_InlineConfirm, _ListPickerScreen):
     BINDINGS = [("delete", "remove_selected", "Delete")]
 
     def _reload(self) -> None:
+        """重建自定义提供方列表；为空时提示。"""
         providers = _custom_provider_names(self)
         _rebuild_options(self._list(), [Option(provider, id=provider) for provider in providers])
         if not providers:
@@ -244,6 +299,11 @@ class UnregisterProviderScreen(_InlineConfirm, _ListPickerScreen):
                               lambda: self._unregister(provider))
 
     def _unregister(self, provider: str) -> None:
+        """注销提供方并刷新列表。
+
+        Args:
+            provider: 提供方名。
+        """
         try:
             from core.client import logout_provider
             ok = logout_provider(provider)
@@ -270,10 +330,12 @@ class UnregisterModelScreen(_InlineConfirm, _ListPickerScreen):
     BINDINGS = [("delete", "remove_selected", "Delete")]
 
     def __init__(self) -> None:
+        """初始化自定义模型注销窗。"""
         super().__init__()
         self._rows: list[tuple[str, str]] = []
 
     def _reload(self) -> None:
+        """重建自定义模型列表；为空时提示。"""
         try:
             from core.client import get_model_list
             self._rows = get_model_list(custom_model=True)
@@ -296,6 +358,12 @@ class UnregisterModelScreen(_InlineConfirm, _ListPickerScreen):
                           lambda: self._unregister(provider, model))
 
     def _unregister(self, provider: str, model: str) -> None:
+        """注销模型并刷新列表。
+
+        Args:
+            provider: 提供方名。
+            model: 模型名。
+        """
         try:
             from core.client import logout_model
             ok = logout_model(provider, model)

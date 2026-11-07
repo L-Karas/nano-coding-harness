@@ -20,8 +20,15 @@ _CONFIRM_STYLE = "bold #fef3c7"  # 权限确认文本（原因 / 冲突标题）
 
 
 def _permission_body(message: str, details: list[str]) -> Text:
-    """确认卡正文：确认文本保持 _CONFIRM_STYLE；details 为触发数据段落，按工具卡正文
-    （_dim_body，dim #e2e8f0）逐段展示，段间空一行。"""
+    """构造权限确认卡正文。
+
+    Args:
+        message: 确认文本。
+        details: 触发数据段落。
+
+    Returns:
+        确认文本保持 _CONFIRM_STYLE；details 按工具卡正文（_dim_body）逐段展示，段间空一行。
+    """
     body = Text()
     body.append(message, style=_CONFIRM_STYLE)
     for detail in details:
@@ -38,8 +45,16 @@ class _DockInteractions:
     # ---------- 权限确认 ----------
 
     def _begin_permission(self, message: str, details: list[str], future: Future[str]) -> None:
-        """渲染确认卡（确认文本 + 触发数据段落两种文本样式）+ 停靠区 yes/no 列表并聚焦
-        （Enter 确认高亮项 / Esc 拒绝）。"""
+        """发起权限确认。
+
+        Args:
+            message: 确认文本。
+            details: 触发数据段落。
+            future: 等待回答的 Future。
+
+        渲染确认卡与停靠区 yes/no 列表并聚焦（默认高亮 No，同旧版 [y/N]；
+        Enter 确认高亮项 / Esc 拒绝）。
+        """
         self._perm_future = future
         self._add_card("perm", _permission_body(message, details))
         self._perm_pending = True
@@ -52,8 +67,14 @@ class _DockInteractions:
         self._progress_sync()
 
     def _answer_permission(self, value: str) -> None:
-        """落地回答：写回等待线程、收起列表。前台回合内的询问由回合结束的 _set_idle 收尾；
-        回合外（子代理 / cron）没有收尾回合，就地恢复空闲界面。"""
+        """落地权限回答。
+
+        Args:
+            value: 回答值（"yes" / "no"）。
+
+        写回等待线程并收起列表。前台回合内的询问由回合结束的 _set_idle 收尾；
+        回合外（子代理 / cron）没有收尾回合，就地恢复空闲界面。
+        """
         if not self._perm_pending:
             return
         future, self._perm_future = self._perm_future, None
@@ -80,8 +101,12 @@ class _DockInteractions:
             self.notify("User interrupted")
 
     def _agent_running(self) -> bool:
-        """runtime 里是否有回合在跑：UI 的 _busy 只覆盖自己发起的回合，
-        auto_loop 的 cron / 后台自动回合不经过 UI，Esc 需另经 runtime 判断。"""
+        """判断 runtime 里是否有回合在跑。
+
+        Returns:
+            有回合运行时为 True。UI 的 _busy 只覆盖自己发起的回合，
+            auto_loop 的 cron / 后台自动回合不经过 UI，Esc 需另经 runtime 判断。
+        """
         runtime = self._runtime
         return runtime is not None and runtime.is_running()
 
@@ -93,7 +118,15 @@ class _DockInteractions:
             multi_select: bool,
             future: Future[str],
     ) -> None:
-        """弹选项列表（末尾 Other）并聚焦：单选 Enter/点击作答，多选 Space 勾选、Enter 提交。"""
+        """发起 clarify 询问。
+
+        Args:
+            questions: 问题列表。
+            multi_select: 是否多选。
+            future: 等待回答的 Future。
+
+        弹出选项列表（末尾 Other）并聚焦：单选 Enter/点击作答，多选 Space 勾选、Enter 提交。
+        """
         self._clarify_future = future
         self._clarify_pending = True
         self._clarify_multi = multi_select
@@ -110,8 +143,12 @@ class _DockInteractions:
         self._progress_sync()
 
     def _clarify_rows(self):
-        """选项行：多选带 ◉/◯；末尾 Other（id=other，其余 id=下标）。prompt 用 Text：
-        选项文本来自模型，不得按 markup 解析（OptionList 默认 markup=True）。"""
+        """生成 clarify 选项行。
+
+        Yields:
+            Option 行；多选带 ◉/◯，末尾 Other（id=other，其余 id=下标）。
+            prompt 用 Text，选项文本来自模型，不得按 markup 解析（OptionList 默认 markup=True）。
+        """
         for index, text in enumerate(self._clarify_options):
             label = (f"{'◉' if index in self._clarify_chosen else '◯'} {text}"
                      if self._clarify_multi else text)
@@ -119,11 +156,22 @@ class _DockInteractions:
         yield Option(Text("Other (type your own answer)", style="dim"), id="other")
 
     def _clarify_hint(self) -> str:
+        """生成 clarify 操作提示。
+
+        Returns:
+            多选或单选对应的快捷键提示。
+        """
         return ("Clarify: ↑/↓ move, Space toggle, Enter confirm, Esc cancel." if self._clarify_multi
                 else "Clarify: ↑/↓ move, Enter select, Esc cancel.")
 
     def _select_clarify(self, index: int) -> None:
-        """第 index 项选中：末行 Other → 输入模式；多选 → 切换勾选；单选 → 直接作答。"""
+        """选中 clarify 选项。
+
+        Args:
+            index: 选项下标。
+
+        末行 Other → 输入模式；多选 → 切换勾选；单选 → 直接作答。
+        """
         if not self._clarify_pending or self._clarify_other:
             return
         if index >= len(self._clarify_options):  # 末行固定为 Other（见 _clarify_rows）
@@ -134,7 +182,13 @@ class _DockInteractions:
             self._answer_clarify(self._clarify_options[index])
 
     def _toggle_clarify(self, index: int) -> None:
-        """多选：切换第 index 项勾选并刷新行首 ◉/◯。"""
+        """切换多选项的勾选状态。
+
+        Args:
+            index: 选项下标。
+
+        切换第 index 项并刷新行首 ◉/◯。
+        """
         if index in self._clarify_chosen:
             self._clarify_chosen.discard(index)
         else:
@@ -152,7 +206,13 @@ class _DockInteractions:
             self._select_clarify(ol.highlighted)
 
     def on_clarify_confirmed(self, event: ClarifyConfirmed) -> None:
-        """_ClarifyList Enter：多选提交勾选；单选选中高亮项（Other → 输入模式）。"""
+        """处理 clarify 列表的 Enter 确认。
+
+        Args:
+            event: 确认事件。
+
+        多选提交勾选；单选选中高亮项（Other → 输入模式）。
+        """
         if not self._clarify_pending or self._clarify_other:
             return
         ol = self.query_one("#clarify-list", _ClarifyList)
@@ -162,7 +222,14 @@ class _DockInteractions:
             self._select_clarify(ol.highlighted)
 
     def _clarify_answer(self, other: str = "") -> str:
-        """多选答案：勾选项逐行（Other 文本追加末行）；空选择给占位文本。"""
+        """生成多选答案。
+
+        Args:
+            other: Other 输入的自定义文本。
+
+        Returns:
+            勾选项逐行文本；Other 文本追加末行；空选择给占位文本。
+        """
         chosen = [self._clarify_options[i] for i in sorted(self._clarify_chosen)]
         if other:
             chosen.append(other)
@@ -193,8 +260,14 @@ class _DockInteractions:
         prompt.disabled = True
 
     def _answer_clarify(self, value: str) -> None:
-        """落地回答：写回等待线程、收起列表。前台回合内的询问由回合结束的 _set_idle 收尾；
-        回合外（子代理 / cron）没有收尾回合，就地恢复空闲界面。"""
+        """落地 clarify 回答。
+
+        Args:
+            value: 回答文本。
+
+        写回等待线程并收起列表。前台回合内的询问由回合结束的 _set_idle 收尾；
+        回合外（子代理 / cron）没有收尾回合，就地恢复空闲界面。
+        """
         if not self._clarify_pending:
             return
         future, self._clarify_future = self._clarify_future, None

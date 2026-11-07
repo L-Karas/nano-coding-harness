@@ -43,7 +43,16 @@ _HTTP_TRANSPORTS = ("sse", "streamable_http")  # 走 url + headers 的传输类�
 
 
 def _server_row(name: str, info: dict, cursor: int = 0) -> Text:
-    """server 行 = 「状态字形 名称」+ 失败/禁用状态词；未识别状态按 connected 样式。"""
+    """构造 MCP server 行。
+
+    Args:
+        name: server 名。
+        info: server 状态信息。
+        cursor: spinner 帧序号。
+
+    Returns:
+        「状态字形 名称」+ 失败/禁用状态词；未识别状态按 connected 样式。
+    """
     status = info.get("status", "")
     glyph = (_SPINNER_FRAMES[cursor % len(_SPINNER_FRAMES)] if status == "connecting"
              else _SERVER_GLYPH.get(status, ACTIVE_GLYPH))
@@ -83,12 +92,18 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
                 )]
 
     def __init__(self, servers: dict[str, dict]) -> None:
+        """初始化 MCP 服务器列表弹窗。
+
+        Args:
+            servers: server 状态快照。
+        """
         super().__init__()
         self._servers = servers  # 快照；状态经 1s 轮询重取，删除只改本地副本
         self._cursor = 0  # connecting 行 spinner 帧下标
         self._anim = None  # spinner interval（有 connecting 行时惰性启动）
 
     def on_mount(self) -> None:
+        """挂载后启动状态轮询。"""
         # 不调 super().on_mount()：Textual 按 MRO 自动派发各级 on_mount（_ListPickerScreen 的
         # _reload/focus 也会被调到），显式再调会 _reload 两次
         self.set_interval(1.0, self._poll_status)
@@ -110,6 +125,7 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
             self._refresh()
 
     def _reload(self) -> None:
+        """按当前快照与搜索词重建 server 列表。"""
         rows = [Option(_server_row(server, info, self._cursor), id=server)
                 for server, info in self._servers.items()
                 if self._match(server)]
@@ -137,7 +153,11 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
                 olist.replace_option_prompt(server, _server_row(server, info, self._cursor))
 
     def _selected(self, option_id: str | None) -> None:
-        """Enter/点击 server：仅已连接 / 连接中可查看工具；失败 / 禁用只提示。"""
+        """打开选中 server 的工具列表（仅 connected / connecting；failed / disabled 只提示）。
+
+        Args:
+            option_id: server 名；为空时忽略。
+        """
         if not option_id:
             return
         status = self._servers.get(option_id, {}).get("status")
@@ -183,7 +203,13 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         self._ask_confirm(f'Remove "{server}"?', lambda: self._remove_server(server))
 
     def _remove_server(self, server: str) -> None:
-        """unconfigure 立即返回（连接后台收敛），本地删行重建；删空也不关窗（空态可继续 Insert）。"""
+        """删除 server 配置并刷新列表。
+
+        Args:
+            server: server 名。
+
+        unconfigure 立即返回（连接后台收敛），本地删行重建；删空也不关窗（空态可继续 Insert）。
+        """
         try:
             from core.mcp.mcp_client import unconfigure_mcp_server
             ok, message = unconfigure_mcp_server(server)
@@ -202,6 +228,11 @@ class MCPServersScreen(_InlineConfirm, _ListPickerScreen):
         self.app.push_screen(MCPConfigScreen(), callback=self._on_config_saved)
 
     def _on_config_saved(self, saved: bool) -> None:
+        """配置窗回调：保存成功时刷新列表。
+
+        Args:
+            saved: 是否保存成功。
+        """
         if saved:
             self._refresh()
 
@@ -214,14 +245,29 @@ class MCPToolsScreen(_NamedListScreen):
     SEARCH_PLACEHOLDER = "Search tools…"
 
     def __init__(self, server: str, tools: list[dict]) -> None:
+        """初始化工具列表弹窗。
+
+        Args:
+            server: server 名。
+            tools: 工具信息列表。
+        """
         super().__init__([_NamedItem(tool["tool_name"], tool.get("tool_description", ""))
                           for tool in tools])
         self.TITLE = f"{server} tools"
 
 
 def _parse_headers(text: str) -> dict[str, str]:
-    """headers 输入区解析：每行 KEY=VALUE（按首个 = 切分，值可含 =）；空行跳过，非法行抛
-    ValueError（带行号，消息直接用于窗内提示）。"""
+    """解析 headers 输入区。
+
+    Args:
+        text: 多行 KEY=VALUE 文本。
+
+    Returns:
+        header 字典；按首个 = 切分，值可含 =，空行跳过。
+
+    Raises:
+        ValueError: 存在非法行（带行号，消息直接用于窗内提示）。
+    """
     headers: dict[str, str] = {}
     for lineno, line in enumerate(text.splitlines(), start=1):
         line = line.strip()
@@ -242,10 +288,23 @@ def _build_mcp_config(
     url: str,
     headers_text: str,
 ) -> dict:
-    """把配置表单值组装成 configure_mcp_server 接受的 {"mcpServers": {name: config}}。
+    """组装 MCP 配置负载。
 
-    表单单行值已由调用方 strip；args / headers 多行文本在此解析。必填缺失或 headers
-    非法时抛 ValueError。
+    Args:
+        name: server 名。
+        transport: 传输类型。
+        command: stdio 命令。
+        args_text: stdio 参数（每行一个）。
+        url: HTTP / SSE 地址。
+        headers_text: HTTP headers（每行 KEY=VALUE）。
+
+    Returns:
+        configure_mcp_server 接受的 {"mcpServers": {name: config}}。
+
+    表单单行值已由调用方 strip；args / headers 多行文本在此解析。
+
+    Raises:
+        ValueError: 必填缺失、传输类型未知或 headers 非法。
     """
     if not name:
         raise ValueError("Server name is required")
@@ -282,6 +341,11 @@ class MCPConfigScreen(_ArrowNav, ModalScreen[bool]):
     ]
 
     def compose(self) -> ComposeResult:
+        """组装配置表单。
+
+        Yields:
+            配置窗内容。
+        """
         picker = Vertical(
             _field(Input(placeholder="Server name", id="mcp-server-name")),
             _field(Select((("stdio", "stdio"),
@@ -306,15 +370,21 @@ class MCPConfigScreen(_ArrowNav, ModalScreen[bool]):
         yield picker
 
     def on_mount(self) -> None:
+        """挂载后聚焦 server 名并同步条件字段显隐。"""
         self.query_one("#mcp-server-name", Input).focus()
         self._sync_transport_fields()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """type 变化：只显示对应的条件字段组（未选时两组都隐藏）。"""
+        """type 变化：只显示对应的条件字段组（未选时两组都隐藏）。
+
+        Args:
+            event: 下拉变化事件。
+        """
         event.stop()
         self._sync_transport_fields()
 
     def _sync_transport_fields(self) -> None:
+        """按传输类型显示对应的条件字段组。"""
         transport = self.query_one("#mcp-server-type", Select).selection
         self.query_one("#mcp-stdio-fields").display = transport == "stdio"
         self.query_one("#mcp-http-fields").display = transport in _HTTP_TRANSPORTS
@@ -346,4 +416,5 @@ class MCPConfigScreen(_ArrowNav, ModalScreen[bool]):
         self.dismiss(True)
 
     def action_cancel(self) -> None:
+        """Esc：关闭配置窗并返回 False。"""
         self.dismiss(False)

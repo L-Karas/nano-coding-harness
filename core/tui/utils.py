@@ -27,7 +27,11 @@ SLASH_COMMAND_ALIASES = {cmd: aliases for cmd, aliases, _desc in _SLASH_COMMAND_
 
 
 def slash_command_rows() -> list[tuple[str, str]]:
-    """/ 候选行显示文本 (指令名列, 说明)：指令名左对齐定宽（含别名括注），便于说明段对齐。"""
+    """生成 / 候选行显示文本。
+
+    Returns:
+        (指令名列, 说明) 列表；指令名含别名括注并左对齐定宽，便于说明段对齐。
+    """
     rows = [(cmd + (f" ({', '.join(a.lstrip('/') for a in aliases)})" if aliases else ""), desc)
             for cmd, aliases, desc in _SLASH_COMMAND_META]
     width = max(len(label) for label, _desc in rows)
@@ -40,7 +44,11 @@ _TEMP_SUFFIXES = (".pyc", ".pyo", ".tmp", ".temp", ".bak", ".swp", ".swo", ".log
 
 
 def working_directory() -> str:
-    """当前工作目录；目录被删除等极端情况下返回空串。"""
+    """获取当前工作目录。
+
+    Returns:
+        绝对路径；目录被删除等极端情况下为空串。
+    """
     try:
         return os.getcwd()
     except OSError:
@@ -48,8 +56,14 @@ def working_directory() -> str:
 
 
 def list_project_files(root: str | None = None) -> list[str]:
-    """项目根下全部文件的相对路径（'/' 分隔、已排序）；剪掉隐藏文件/目录、venv、
-    缓存构建目录与临时文件。"""
+    """列出项目根下的文件。
+
+    Args:
+        root: 项目根；省略时取当前工作目录。
+
+    Returns:
+        相对路径列表（'/' 分隔、已排序）；已剪掉隐藏文件/目录、venv、缓存构建目录与临时文件。
+    """
     files: list[str] = []
     root = root or working_directory()
     if not root:
@@ -68,7 +82,11 @@ def list_project_files(root: str | None = None) -> list[str]:
 
 
 def current_git_branch() -> str:
-    """当前 git 分支名；非仓库 / 无 git / 分离头指针时返回空串。"""
+    """获取当前 git 分支名。
+
+    Returns:
+        分支名；非仓库 / 无 git / 分离头指针时为空串。
+    """
     try:
         proc = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -82,7 +100,11 @@ def current_git_branch() -> str:
 
 
 def current_model_state() -> tuple[str, str, str]:
-    """当前模型 (provider, model, thinking_level)；core.client 不可用 / 未配置时各段为空串。"""
+    """获取当前模型状态。
+
+    Returns:
+        (provider, model, thinking_level)；core.client 不可用 / 未配置时各段为空串。
+    """
     try:
         from core.client import shared_model_client
         client = shared_model_client()
@@ -94,7 +116,11 @@ def current_model_state() -> tuple[str, str, str]:
 
 
 def current_context_length() -> int:
-    """当前模型注册表中的上下文长度；client 不可用 / 未选择模型时返回 0。"""
+    """获取当前模型的上下文长度。
+
+    Returns:
+        注册表中的上下文长度；client 不可用 / 未选择模型时为 0。
+    """
     try:
         from core.client import shared_model_client
         return int(shared_model_client().load_context_length())
@@ -103,7 +129,11 @@ def current_context_length() -> int:
 
 
 def current_compact_trigger_tokens() -> int:
-    """当前模型的有效压缩阈值（绝对 token）；client 不可用 / 未选模型时返回 0。"""
+    """获取当前模型的有效压缩阈值。
+
+    Returns:
+        绝对 token 阈值；client 不可用 / 未选模型时为 0。
+    """
     try:
         from core.client import shared_model_client
         return int(shared_model_client().compact_trigger_tokens())
@@ -112,7 +142,11 @@ def current_compact_trigger_tokens() -> int:
 
 
 def current_auto_compact() -> bool:
-    """自动压缩开关；配置不可用时按默认开启（与 config 默认值一致）。"""
+    """获取自动压缩开关。
+
+    Returns:
+        是否开启；配置不可用时按默认开启（与 config 默认值一致）。
+    """
     try:
         from core.config import CONFIGMANAGER
         return bool(CONFIGMANAGER.config.auto_compact)
@@ -124,7 +158,11 @@ _IMPLEMENTED_APPROVAL_MODES = ("Manual", "Yolo")
 
 
 def current_approval_mode() -> str:
-    """当前实际生效的审批模式；LLM / Decision Model 未实现，按 Manual 显示。"""
+    """获取当前实际生效的审批模式。
+
+    Returns:
+        模式名；LLM / Decision Model 未实现，按 Manual 显示。
+    """
     try:
         from core.config import CONFIGMANAGER
         mode = str(CONFIGMANAGER.config.approval_mode)
@@ -134,7 +172,15 @@ def current_approval_mode() -> str:
 
 
 def format_context_length(value: int) -> str:
-    """上下文长度显示：K / M 单位保留一位小数（1000000 → '1.0M'，128000 → '128.0K'）"""
+    """格式化上下文长度。
+
+    Args:
+        value: token 数。
+
+    Returns:
+        K / M 单位、保留一位小数的文本（1000000 → '1.0M'，128000 → '128.0K'）；
+        小于 1000 时原样返回整数字符串（999 → '999'）。
+    """
     if value >= 1_000_000:
         return f"{value / 1_000_000:.1f}M"
     if value >= 1_000:

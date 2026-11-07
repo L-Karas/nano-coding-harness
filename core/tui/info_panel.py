@@ -37,6 +37,13 @@ class _InfoRow(Horizontal):
         data: dict,
         cursor: int,
     ) -> None:
+        """初始化条目行。
+
+        Args:
+            kind: 分区类型（todos / bg / subagents）。
+            data: 条目快照。
+            cursor: 当前 spinner 帧序号。
+        """
         super().__init__(classes="info-row -expandable")
         self._kind = kind
         self._data = data
@@ -46,28 +53,53 @@ class _InfoRow(Horizontal):
 
     @property
     def work_id(self) -> str:
-        """本条工作的内部 id（bg-XXXX / sa-XXXX）：■ 点击时交给 RuntimeState.cancel_work；
-        子代理 id 不再展示。"""
+        """本条工作的内部 id（bg-XXXX / sa-XXXX）。
+
+        Returns:
+            ■ 点击时交给 RuntimeState.cancel_work 的 id；子代理 id 不再展示。
+        """
         return self._data["id"]
 
     def compose(self) -> ComposeResult:
+        """组装摘要文本与可选停止按钮。
+
+        Yields:
+            摘要 Static；可取消时追加 ■ 按钮。
+        """
         yield self._label
         if self._data.get("cancellable"):
             yield Static("■", markup=False, classes="-stop")
 
     def is_running(self) -> bool:
+        """判断条目是否处于进行中状态。
+
+        Returns:
+            in_progress / running 时为 True。
+        """
         return self._data["status"] in _RUNNING_STATUSES
 
     def tick(self, cursor: int) -> None:
-        """推进一帧轮播字形（仅进行中的行由调用方调用）。"""
+        """推进一帧轮播字形。
+
+        Args:
+            cursor: 当前帧序号。
+
+        仅进行中的行由调用方调用。
+        """
         self._cursor = cursor
         self._label.update(self._text())
 
     def toggle_expand(self) -> None:
+        """切换摘要 / 全文显示。"""
         self._expanded = not self._expanded
         self._label.update(self._text())
 
     def _text(self) -> Text:
+        """构造条目显示文本。
+
+        Returns:
+            带状态字形、角色 / 工具名与折叠提示的 Text。
+        """
         frame = _SPINNER_FRAMES[self._cursor % len(_SPINNER_FRAMES)]
         it = self._data
         if self._kind == "todos":
@@ -121,6 +153,14 @@ class _InfoPanel(Vertical):
         on_sections_changed: Callable[[bool], None] | None = None,
         **kwargs,
     ) -> None:
+        """初始化信息面板。
+
+        Args:
+            state: 运行时状态源；默认全局 RUNTIME_STATE。
+            on_sections_changed: 三区活动状态回传回调，参数为「是否有任一分区非空」；
+                None 表示不回传。
+            kwargs: 透传给 Vertical 的参数。
+        """
         super().__init__(**kwargs)
         self._state = state  # 读侧只在 snapshot() 上取数，不 import 三个写入方
         self._on_sections_changed = on_sections_changed  # 三区活动状态回传（驱动 App 自动展开/收回）
@@ -130,6 +170,11 @@ class _InfoPanel(Vertical):
         self._anim = None  # 加载动画 interval（有进行中项时惰性启动）
 
     def compose(self) -> ComposeResult:
+        """组装三个分区与缩放提示。
+
+        Yields:
+            分区容器与提示 Static。
+        """
         for key, label in self.SECTIONS.items():
             section = Vertical(VerticalScroll(id=f"{key}-list"), id=f"{key}-section", classes="info-section")
             section.border_title = f"▼ {label}"  # 计数见 _head_text
@@ -137,12 +182,19 @@ class _InfoPanel(Vertical):
         yield Static("Ctrl+←/→ resize panel", id="info-hint", markup=False)
 
     def on_mount(self) -> None:
+        """挂载后立即同步一次，并每秒轮询。"""
         self._refresh()
         self.set_interval(1.0, self._refresh)
 
     def on_click(self, event: events.Click) -> None:
-        """条目行点击：行尾 ■ = 指名停止；行其余处 = 摘要 ↔ 全文；分区边框点击：折叠 / 展开
-        （就地处理，不冒泡到 App）。"""
+        """处理条目行与分区边框点击。
+
+        Args:
+            event: 点击事件。
+
+        行尾 ■ = 指名停止；行其余处 = 摘要 ↔ 全文；分区边框点击：折叠 / 展开
+        （就地处理，不冒泡到 App）。
+        """
         target = event.widget
         if target.has_class("-stop"):
             event.stop()
@@ -180,7 +232,15 @@ class _InfoPanel(Vertical):
             self._on_sections_changed(non_empty)
 
     def _items(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
-        """分区条目快照 [{id, status, text, role?}]；展示文案与签名逻辑留在面板。"""
+        """生成分区条目快照。
+
+        Args:
+            kind: 分区类型。
+            snap: 运行时快照。
+
+        Returns:
+            [{id, status, text, ...}] 列表；展示文案与签名逻辑留在面板。
+        """
         if kind == "todos":
             return [{"id": t.content, "status": t.status, "text": t.content, "cancellable": False}
                     for t in snap.todos]
@@ -205,7 +265,15 @@ class _InfoPanel(Vertical):
         return items
 
     def _sync_rows(self, kind: str, snap: RuntimeSnapshot) -> list[dict]:
-        """按最新条目重建 #kind-list（签名未变则跳过，避免 1s 轮询反复重建）；返回本次快照。"""
+        """同步分区条目列表。
+
+        Args:
+            kind: 分区类型。
+            snap: 运行时快照。
+
+        Returns:
+            本次条目快照；签名未变时跳过重建，避免 1s 轮询反复重建。
+        """
         items = self._items(kind, snap)
         sig = tuple((it["id"], it["status"], it.get("role"), it["text"], it["cancellable"])
                     for it in items)
@@ -221,7 +289,14 @@ class _InfoPanel(Vertical):
         return items
 
     def _sync_section(self, kind: str, has_content: bool) -> None:
-        """仅在「空 ↔ 非空」跳变时按内容重设展开态；其余时间保留用户手动状态。"""
+        """同步分区展开态。
+
+        Args:
+            kind: 分区类型。
+            has_content: 当前是否非空。
+
+        仅在「空 ↔ 非空」跳变时按内容重设展开态；其余时间保留用户手动状态。
+        """
         previous = self._has_content.get(kind)
         if previous == has_content:
             return
@@ -230,13 +305,26 @@ class _InfoPanel(Vertical):
         self.query_one(f"#{kind}-section", Vertical).set_class(not has_content, "-collapsed")
 
     def _head_text(self, kind: str, count: int) -> None:
-        """上边框左端标题 = 折叠箭头（随分区状态）+ 分区名 + dim 计数。"""
+        """更新分区标题。
+
+        Args:
+            kind: 分区类型。
+            count: 条目数。
+
+        标题 = 折叠箭头（随分区状态）+ 分区名 + dim 计数。
+        """
         section = self.query_one(f"#{kind}-section", Vertical)
         glyph = "▶" if section.has_class("-collapsed") else "▼"
         section.border_title = f"{glyph} {self.SECTIONS[kind]} [dim #a7bf21]· {count}[/dim #a7bf21]"
 
     def _sync_anim(self, running: bool) -> None:
-        """有进行中项时惰性启动 0.1s 轮播；全部结束即停并复位帧（空闲不空转重绘）。"""
+        """同步轮播定时器。
+
+        Args:
+            running: 是否存在进行中项。
+
+        有进行中项时惰性启动 0.1s 轮播；全部结束即停并复位帧（空闲不空转重绘）。
+        """
         if running and self._anim is None:
             self._anim = self.set_interval(0.1, self._tick)
         elif not running and self._anim is not None:

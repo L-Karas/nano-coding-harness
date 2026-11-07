@@ -36,10 +36,16 @@ class SkillsScreen(_NamedListScreen):
     BINDINGS = [Binding("ctrl+e", "toggle_selected", "Enable/Disable", priority=True)]
 
     def __init__(self, skills: list[Skill]) -> None:
+        """初始化技能列表弹窗。
+
+        Args:
+            skills: 技能列表。
+        """
         super().__init__([_NamedItem(skill.name, skill.description, skill.skill_type)
                           for skill in skills])
 
     def _reload(self) -> None:
+        """按当前搜索词与启用状态重建技能列表。"""
         rows = []
         error = skill_state_error()
         if error and not self._query:  # 搜索时隐藏故障行，避免干扰过滤结果
@@ -61,6 +67,11 @@ class SkillsScreen(_NamedListScreen):
                 olist.highlighted = 1 if len(rows) > 1 else None
 
     def _highlighted_id(self) -> str | None:
+        """取当前高亮项 id。
+
+        Returns:
+            高亮项 id；无高亮或 id 为空时为 None。
+        """
         olist = self._list()
         if olist.highlighted is None:
             return None
@@ -68,7 +79,14 @@ class SkillsScreen(_NamedListScreen):
         return None if option_id is None else str(option_id)
 
     def _reject_disabled(self, name: str) -> bool:
-        """禁用项 / 状态故障行不可调用；返回是否应拦截本次操作。"""
+        """判断是否应拦截本次调用。
+
+        Args:
+            name: 技能名或状态故障行 id。
+
+        Returns:
+            禁用项 / 状态故障行不可调用时为 True。
+        """
         if name == _STATE_ID:
             self.app.notify("Skill state file failed to load; all skills are treated as enabled.",
                             title="⚠️ Skills", severity="error")
@@ -81,6 +99,9 @@ class SkillsScreen(_NamedListScreen):
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Enter/点击：立即调用（with_message=False）。
+
+        Args:
+            event: 选项选中事件。
 
         prevent_default 才会中断 Textual 沿 MRO 派发到 _NamedListScreen 的同名处理器
         （否则它会再 dismiss 一次字符串，导致重复 pop）。"""
@@ -95,6 +116,9 @@ class SkillsScreen(_NamedListScreen):
 
     def on_key(self, event: events.Key) -> None:
         """Tab：回传当前高亮技能并附带补充消息（搜索栏聚焦时同样生效）。
+
+        Args:
+            event: 按键事件。
 
         其余键直接返回：Textual 会继续沿 MRO 派发到 _ListPickerScreen.on_key，
         这里再调 super() 会让 ↑/↓ 被处理两次。"""

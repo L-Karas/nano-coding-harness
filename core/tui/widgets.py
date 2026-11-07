@@ -26,7 +26,15 @@ _ROW_DESC_STYLE = SECONDARY_TEXT
 
 
 def _cmd_candidates(value: str) -> list[str]:
-    """/ 指令候选：整行以 / 开头且未含空白时按前缀过滤（含别名，忽略大小写）；指令完整输入后不再提示。"""
+    """计算 / 指令候选。
+
+    Args:
+        value: 输入框当前文本。
+
+    Returns:
+        整行以 / 开头且不含空格时按前缀过滤的指令（含别名，忽略大小写）；
+        指令完整输入后不再提示。
+    """
     if not (value.startswith("/") and " " not in value):
         return []
     value = value.lower()
@@ -39,7 +47,14 @@ def _cmd_candidates(value: str) -> list[str]:
 
 
 def _cmd_row(cmd: str) -> Text:
-    """候选行 = 指令名列（定宽，含别名括注）+ 空距 + 简短说明（淡灰）。"""
+    """构造 / 指令候选行。
+
+    Args:
+        cmd: 规范指令串。
+
+    Returns:
+        指令名列（定宽，含别名括注）+ 空距 + 简短说明（淡灰）。
+    """
     label, desc = _CMD_ROWS[cmd]
     row = Text(label, no_wrap=True)
     row.append(f"    {desc}", style=_ROW_DESC_STYLE)
@@ -47,7 +62,14 @@ def _cmd_row(cmd: str) -> Text:
 
 
 def _ancestor_dirs(files: list[str]) -> set[str]:
-    """全部祖先目录（含中间层），由文件路径推导（list_project_files 只返回文件）。"""
+    """推导全部祖先目录。
+
+    Args:
+        files: 相对文件路径列表。
+
+    Returns:
+        全部祖先目录（含中间层）；list_project_files 只返回文件。
+    """
     dirs: set[str] = set()
     for f in files:
         parts = f.split("/")[:-1]
@@ -56,7 +78,16 @@ def _ancestor_dirs(files: list[str]) -> set[str]:
 
 
 def _level_entries(files: list[str], level: str, rem: str) -> set[str]:
-    """level 目录的直接子项：名称含 rem 才入选；目录显示 name/。"""
+    """列出指定目录的直接子项。
+
+    Args:
+        files: 相对文件路径列表。
+        level: 目录前缀。
+        rem: 子项名称过滤串（大小写不敏感）。
+
+    Returns:
+        名称含 rem 的直接子项相对路径（含 level 前缀）；目录带结尾 /。
+    """
     prefix = f"{level}/" if level else ""
     r = rem.lower()
     entries: dict[str, str] = {}  # 子项名 -> 展示串（目录带结尾 /；同名去重）
@@ -69,14 +100,29 @@ def _level_entries(files: list[str], level: str, rem: str) -> set[str]:
 
 
 def _file_display_name(candidate: str) -> str:
-    """@ 候选左列名称：路径末段；目录保留结尾 /，与文件区分。"""
+    """生成 @ 候选左列名称。
+
+    Args:
+        candidate: 候选相对路径。
+
+    Returns:
+        路径末段；目录保留结尾 /，与文件区分。
+    """
     is_dir = candidate.endswith("/")
     name = candidate.rstrip("/").rsplit("/", 1)[-1]
     return f"{name}/" if is_dir else name
 
 
 def _file_rows(candidates: list[str]) -> list[tuple[str, Text]]:
-    """@ 候选行 = 条目名列（定宽）+ 空距 + 完整相对路径（淡灰），排版同 / 指令候选。"""
+    """构造 @ 文件候选行。
+
+    Args:
+        candidates: 候选相对路径列表。
+
+    Returns:
+        (候选路径, 显示 Text) 列表；条目名列定宽 + 空距 + 完整相对路径（淡灰），
+        排版同 / 指令候选。
+    """
     names = [_file_display_name(candidate) for candidate in candidates]
     width = max((cell_len(name) for name in names), default=0)
     return [
@@ -87,10 +133,17 @@ def _file_rows(candidates: list[str]) -> list[tuple[str, Text]]:
 
 
 def _match_project_entries(query: str) -> list[str]:
-    """@ 提及补全候选（相对项目根，目录以 / 结尾，大小写不敏感子串）：
+    """计算 @ 提及补全候选。
 
-    - 空输入 → 根同级列表；纯名称 → 全树匹配名称并展示完整路径；
-    - 带 / → 目录前缀必须真实存在，只在其直接子项中逐级下钻。"""
+    Args:
+        query: @ 后的查询串。
+
+    Returns:
+        相对项目根、目录以 / 结尾、大小写不敏感子串匹配的候选：
+
+        - 空输入 → 根同级列表；纯名称 → 全树匹配名称并展示完整路径；
+        - 带 / → 目录前缀必须真实存在，只在其直接子项中逐级下钻。
+    """
     files = list_project_files()
     dirs = _ancestor_dirs(files)
     if "/" in query:
@@ -115,7 +168,7 @@ _NEWLINE_KEYS = ("shift+enter", "ctrl+j", "ctrl+enter")
 class _CommandInput(TextArea):
     """带 / 指令与 @ 文件补全的多行输入框（TextArea）。
 
-    - / 指令：整行以 / 开头且未含空白时在输入框上方弹候选列表，↑/↓ 选、Tab/Enter 接受、Esc 关；
+    - / 指令：整行以 / 开头且不含空格时在输入框上方弹候选列表，↑/↓ 选、Tab/Enter 接受、Esc 关；
     - @ 文件：行首/空白后的 @ 弹项目文件候选，Tab/Enter/点击补进输入（不发送）；
     - 普通消息 Enter 发送、Shift+Enter / Ctrl+J 换行；ctrl+←/→ 转发给 App 调右栏宽度。
 
@@ -128,6 +181,12 @@ class _CommandInput(TextArea):
     ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """初始化输入框。
+
+        Args:
+            args: 透传给 TextArea 的位置参数。
+            kwargs: 透传给 TextArea 的关键字参数。
+        """
         super().__init__(*args, **kwargs)
         self._candidates: list[str] = []  # / 指令候选
         self._file_candidates: list[str] = []  # @ 文件候选（完整相对路径；目录以 / 结尾）
@@ -135,14 +194,28 @@ class _CommandInput(TextArea):
     # ---------- 候选列表 ----------
 
     def _list_widget(self, list_id: str) -> Optional[OptionList]:
-        """按 id 取候选 OptionList；未挂载时返回 None（早期事件空转）。"""
+        """按 id 取候选列表。
+
+        Args:
+            list_id: 候选列表的 id。
+
+        Returns:
+            候选 OptionList；未挂载时为 None（早期事件空转）。
+        """
         try:
             return self.screen.query_one(f"#{list_id}", OptionList)
         except Exception:
             return None
 
     def _sync_list(self, list_id: str, entries: list[tuple[str, Text]]) -> None:
-        """整批重建候选列表（选项 id = 候选串）；空则隐藏，未挂载则空转。"""
+        """整批重建候选列表。
+
+        Args:
+            list_id: 候选列表的 id。
+            entries: (选项 id, 显示文本) 列表。
+
+        空则隐藏，未挂载则空转。
+        """
         ol = self._list_widget(list_id)
         if ol is None:
             return
@@ -151,7 +224,11 @@ class _CommandInput(TextArea):
         ol.highlighted = 0 if entries else None  # None→0 触发高亮首项并滚回顶部
 
     def _find_mention(self) -> Optional[tuple[int, int, str]]:
-        """光标前最后一个「行首/空白后」的 @ → (行, @列, @ 到光标之间的查询串)。"""
+        """查找光标前的 @ 提及。
+
+        Returns:
+            (行, @列, @ 到光标之间的查询串)；没有「行首/空白后」的 @ 时为 None。
+        """
         line, col = self.cursor_location
         lines = self.text.split("\n")
         if line >= len(lines):
@@ -179,8 +256,15 @@ class _CommandInput(TextArea):
             self.cursor_location = (0, len(self.text))
 
     def apply_file_candidate(self, index: Optional[int] = None) -> bool:
-        """把第 index 个（缺省 = 高亮项）候选以 @完整路径 替换 @ 到光标处（不发送）。
-        目录候选自带结尾 /，随后的刷新即展开其同级内容；返回是否成功应用。"""
+        """应用 @ 文件候选。
+
+        Args:
+            index: 候选下标；省略时使用高亮项。
+
+        Returns:
+            是否成功应用。把第 index 个候选以 @完整路径 替换 @ 到光标处（不发送）；
+        目录候选自带结尾 /，随后的刷新即展开其同级内容。
+        """
         if index is None:
             ol = self._list_widget("file-suggest")
             index = ol.highlighted if ol is not None else None
@@ -198,7 +282,13 @@ class _CommandInput(TextArea):
         return True
 
     def _cycle_highlight(self, delta: int) -> None:
-        """↑/↓：在可见候选中循环移动高亮（两组候选互斥）。"""
+        """在可见候选中循环移动高亮。
+
+        Args:
+            delta: 移动方向（-1 上 / 1 下）。
+
+        两组候选互斥。
+        """
         for list_id, candidates in (("file-suggest", self._file_candidates),
                                     ("cmd-suggest", self._candidates)):
             ol = self._list_widget(list_id)
@@ -216,11 +306,20 @@ class _CommandInput(TextArea):
     # ---------- 键盘 ----------
 
     async def _on_key(self, event: events.Key) -> None:
-        """候选导航 / Enter / Tab / 换行拦截；其余交 TextArea。无候选时 Enter 发送、Tab 吞掉。"""
+        """拦截输入框按键。
+
+        Args:
+            event: 按键事件。
+
+        候选导航 / Enter / Tab / 换行在此处理；其余交 TextArea。Enter：有 @ 候选时
+        只补全不发送，有 / 候选时先落为指令再提交，无候选时直接提交；Tab 一律吞掉
+        （有候选时接受高亮项）。
+        """
         key = event.key
         has_candidates = bool(self._candidates or self._file_candidates)
 
         def consume() -> None:
+            """阻止事件继续传播并取消默认行为。"""
             event.stop()
             event.prevent_default()
 
@@ -256,6 +355,11 @@ class _CommandInput(TextArea):
     # ---------- 事件 ----------
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """输入变化后刷新候选列表。
+
+        Args:
+            event: 文本变化事件。
+        """
         event.stop()
         self._refresh_suggestions()
 
@@ -275,4 +379,5 @@ class _ClarifyList(OptionList):
     )]
 
     def action_confirm(self) -> None:
+        """发送 clarify 确认消息。"""
         self.post_message(ClarifyConfirmed())
