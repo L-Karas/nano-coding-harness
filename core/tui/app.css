@@ -207,7 +207,8 @@ Toast, Toast:ansi { background: #1e293b; }
 /* ── 消息卡片 ──
    height:auto 才能随内容伸缩（Vertical 默认 1fr 会均分视口并裁掉超出内容）；
    无左右 margin 保证与终端同宽。类别：user 用户 · assistant 回复 · tool 工具调用 ·
-   result 工具输出（含 write / edit 的 diff）· error 工具错误 · notice 提示 · sessions 会话列表 · perm 权限确认 */
+   result 工具输出（含 write / edit 的 diff）· error 工具错误 · notice 提示 · sessions 会话列表 · perm 权限确认
+   工具结果到达后卡片由 tool 换成 result / error（同一张卡，surface._append_tool_result） */
 .card {
     height: auto;
     margin-bottom: 1;
@@ -216,6 +217,10 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* 截断正文（工具调用 / 结果卡正文 / 同卡 diff 段）：点击展开全文，指针提示 */
 .card .card-body.-expandable { pointer: pointer; }
+
+/* 工具结果并入调用卡后追加的第一段（diff 优先 / 无 diff 即结果）：与参数段之间留一空白行，
+   切分「入参」与「产出」两类内容（-merged 见 surface._append_tool_result） */
+.card .card-body.-merged { margin-top: 1; }
 
 /* Markdown 自带 padding 0 2，去掉以与其它卡片左对齐；
    末块 margin-bottom 归零，否则卡尾多出一整行空白。

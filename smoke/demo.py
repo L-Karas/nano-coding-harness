@@ -33,13 +33,13 @@ def _demo_agent(query: str) -> None:
         for chunk in chunks:
             time.sleep(0.16)
             stream_assistant_response(chunk)  # 每 chunk 传新增片段（UI 端增量追加，勿传累计全量）
-    render_tool_call("terminal", {"command": "ls -la"})
+    render_tool_call("demo-1", "terminal", {"command": "ls -la"})
     with render_working_status():
         time.sleep(0.6)
-    render_tool_result("total 0\n-rw-r--r-- 1 user user 1234 demo.txt\n(demo output)")
+    render_tool_result("demo-1", "total 0\n-rw-r--r-- 1 user user 1234 demo.txt\n(demo output)")
     # write / edit 的 diff 与结果同卡渲染：diff 在前，结果固定收尾
-    render_tool_call("write_file", {"path": "demo.py", "content": "def main():\n    print('new')"})
-    render_tool_result("Wrote 3 lines to demo.py.",
+    render_tool_call("demo-2", "write_file", {"path": "demo.py", "content": "def main():\n    print('new')"})
+    render_tool_result("demo-2", "Wrote 3 lines to demo.py.",
                        diff=[(" ", 1, "def main():"), ("-", 2, "    print('old')"),
                              ("+", 2, "    print('new')")])
     # 右栏信息分区演示：写入与真实 Agent 相同的 RuntimeState（ADR-0004），UI 经 1s 轮询上屏，

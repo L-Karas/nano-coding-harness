@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from types import SimpleNamespace
 
 from core.template import INJECTION_MESSAGES_TEMPLATE
@@ -203,3 +203,22 @@ async def chat_app(*, size=None, handle_query=None, **kwargs):
     run_test = app.run_test(size=size) if size is not None else app.run_test()
     async with run_test as pilot:
         yield app, pilot
+
+
+@contextmanager
+def render_bridge(app):
+    """把 ChatApp 挂到渲染桥接全局（run_test 不经 run()，同 smoke 的用法）。
+
+    Args:
+        app: 待挂载的 ChatApp。
+
+    Yields:
+        None；退出时卸载。
+    """
+    import core.tui.render as render  # 延迟导入：只有 UI 测试需要拉起 Textual
+
+    render._APP = app
+    try:
+        yield
+    finally:
+        render._APP = None

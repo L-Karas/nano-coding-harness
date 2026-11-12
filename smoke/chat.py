@@ -38,9 +38,9 @@ async def run(app, pilot) -> None:
     await pilot.press("enter")
     await wait_idle(app, pilot)
     assert welcome.styles.display == "none", "首卡上屏后欢迎标题应隐藏"
-    render_tool_result("line\n" * 15)  # 触发截断提示（含方括号），回归渲染期 MissingStyle
-    render_tool_call("terminal", list(range(15)))  # 17 行参数 JSON → 同样折叠为 10 行 + 1 行提示
-    render_tool_result("x" * 2000)  # 单行超长：按换行后的视觉行计数，同样只占 10 行 + 1 行提示
+    render_tool_result("", "line\n" * 15)  # 触发截断提示（含方括号），回归渲染期 MissingStyle
+    render_tool_call("smoke-args", "terminal", list(range(15)))  # 17 行参数 JSON → 折叠为 4 行 + 1 行提示
+    render_tool_result("", "x" * 2000)  # 单行超长：按换行后的视觉行计数，同样只占 10 行 + 1 行提示
     await settle(pilot, 10, 0.05)
     assert app._exception is None, f"渲染异常: {app._exception}"
     capped = [w for w in app.query(".card-body")
@@ -48,12 +48,12 @@ async def run(app, pilot) -> None:
     assert len(capped) == 3, f"应 3 张折叠卡: {len(capped)}"
     hints = [w.render_line(w.size.height - 1).text for w in capped]
     assert "... [truncated 6 lines] · click to expand" in hints[0], hints[0]
-    assert "... [truncated 7 lines] · click to expand" in hints[1], hints[1]
-    assert capped[2].size.height == 11 and "truncated" in hints[2], \
-        f"单行 2000 字符应按视觉行折叠为 10 行 + 1 行提示: {capped[2].size.height} 行"
+    assert "... [truncated 13 lines] · click to expand" in hints[1], hints[1]
+    assert capped[2].size.height == 12 and "truncated" in hints[2], \
+        f"单行 2000 字符应按视觉行折叠为 1 行标题 + 10 行 + 1 行提示: {capped[2].size.height} 行"
     # 截断卡片点击展开：真实鼠标点击折叠的 diff 段末行提示 → 全文（含第 11~15 行）；
     # 再点展开态末行（折叠提示）收回截断。diff 与工具结果同卡：结果尾段始终可见。
-    render_tool_result("Wrote 15 lines to demo.py.",
+    render_tool_result("smoke-diff", "Wrote 15 lines to demo.py.",
                        diff=[("+", i, f"add {i}") for i in range(1, 16)])
     await settle(pilot, 10, 0.05)
     merged = app.query("#chat .card").last()
@@ -87,13 +87,26 @@ async def run(app, pilot) -> None:
         await settle(pilot, 5)
         assert "... [truncated " in w.render_line(w.size.height - 1).text, "收回后应回到截断态"
     print("[smoke] expandable tool cards OK: click expands/collapses full content")
+    # 工具调用与结果同卡：结果到达后并进调用卡，卡片样式换成结果样式（底色/左边框由 result 类取代 tool）
+    render_tool_call("smoke-merge", "read_file", {"path": "demo.py"})
+    await settle(pilot, 5)
+    render_tool_result("smoke-merge", "read 15 lines from demo.py")
+    await settle(pilot, 5)
+    merged = app.query("#chat .card.result").last()
+    result_body = merged.query(".card-body").last()
+    assert "read 15 lines from demo.py" in str(result_body.render()), \
+        "结果未并进调用卡"
+    assert "Tool Result:" in str(result_body.render()), "结果段应有 Tool Result: 标题行"
+    assert not merged.has_class("tool") and "path: demo.py" in str(merged.query(".card-body").first().render()), \
+        "合并卡应保留参数段并换成结果样式"
+    print("[smoke] merged tool call/result card OK: one card, style swapped")
     # 工具失败输出（约定前缀）→ 暗红 error 卡；普通输出仍为 result 卡
-    render_tool_result("[Tool Error]: disk quota exceeded")
+    render_tool_result("smoke-err", "[Tool Error]: disk quota exceeded")
     await settle(pilot, 5)
     err_bodies = app.query("#chat .card.error .card-body")
     assert err_bodies and "[Tool Error]" in str(err_bodies.last().render()), \
         "工具失败输出未渲染为暗红 error 卡"
-    render_tool_result("ordinary tool output")  # 对照：非失败输出仍为 result 卡
+    render_tool_result("smoke-ok", "ordinary tool output")  # 对照：非失败输出仍为 result 卡
     await settle(pilot, 5)
     assert list(app.query("#chat .card"))[-1].has_class("result"), "普通工具输出误判为 error"
     print("[smoke] tool error card OK: [Tool Error]: prefix renders dark-red card")

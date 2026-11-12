@@ -43,7 +43,7 @@ def _tool(output="", exc=None):
 
 def _collect_diff(renders: list):
     """on_tool_result 替身：只记录随结果一起渲染的 diff（无 diff 时为 None，不入列表）。"""
-    def on_tool_result(_text, _is_error, diff):
+    def on_tool_result(_tool_call_id, _text, _is_error, diff):
         if diff:
             renders.append(diff)
 
@@ -200,7 +200,7 @@ def test_failure_passes_error_flag_to_render(ctx, monkeypatch):
         }], "tool_calls", None)
 
     monkeypatch.setattr(step_mod, "streaming_message", fake_stream)
-    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: flags.append(err))
+    renderer = StepRenderer(on_tool_result=lambda _tid, text, err, _diff: flags.append(err))
     asyncio.run(run_agent_step(
         [],
         "sys",

@@ -27,6 +27,7 @@ if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp�
 _APP: Optional[ChatApp] = None
 
 DEFAULT_MAX_LINES = 10  # 可折叠正文默认行数上限（渲染宽度下换行的视觉行）
+TOOL_ARGS_MAX_LINES = 4  # 工具调用卡参数段上限：结果到达后卡片仍保持紧凑
 
 _DIM = "dim #e2e8f0"  # 卡片正文（暗灰）
 _DIFF_STYLES = {"+": "#b5bd68", "-": "#f87171"}  # diff 行：+ 绿 / - 淡红，其余 dim
@@ -77,31 +78,17 @@ def _dim_body(text: str) -> Text:
     return Text(_strip_keycaps(text), style=_DIM)
 
 
-def _add_capped_card(
-    kind: str,
-    body: Text,
-    max_lines: int = DEFAULT_MAX_LINES,
-    head: Optional[Text] = None,
-    tail: Optional[Text] = None,
-) -> None:
-    """追加可折叠卡片。
+def _with_head_line(head: Text, body: Text) -> tuple[Text, int]:
+    """把固定首行拼到正文前，并给出首行占用的固定行数。
 
     Args:
-        kind: 卡片类型。
-        body: 卡片正文。
-        max_lines: 折叠前最多显示的正文行数。
-        head: 固定首行，不计入行数与折叠。
-        tail: 固定尾段，不参与折叠，排在正文之后。
+        head: 固定首行，通常以换行结尾；不参与折叠。
+        body: 正文。
+
+    Returns:
+        (合并后的正文, 首行固定行数)。
     """
-    head = head if head is not None else Text()
-    reserved = head.plain.count("\n")  # head 占用的固定行数
-    _exec(lambda app: app._add_card(
-        kind,
-        head + body,
-        cap=max_lines,
-        reserved=reserved,
-        tail=tail,
-    ))
+    return head + body, head.plain.count("\n")
 
 
 def render_user_input(user_text: Any) -> None:
@@ -158,21 +145,23 @@ def _format_args(tool_args: Any) -> str:
         return str(tool_args)
 
 
-def render_tool_call(tool_name: str, tool_args: Any, max_lines: int = DEFAULT_MAX_LINES) -> None:
-    """渲染工具调用卡片。
+def render_tool_call(
+    tool_call_id: str,
+    tool_name: str,
+    tool_args: Any,
+    max_lines: int = TOOL_ARGS_MAX_LINES,
+) -> None:
+    """渲染工具调用卡片；结果到达时按 id 并进同一张卡。
 
     Args:
+        tool_call_id: 本次调用的 id，结果据此并回本卡；空串表示无法配对（不登记）。
         tool_name: 工具名。
         tool_args: 工具参数。
-        max_lines: 折叠前最多显示的正文行数。
+        max_lines: 参数段折叠前最多显示的正文行数。
     """
     head = Text.assemble(("Tool Call: ", "bold #fde68a"), (tool_name, "bold white"), "\n")
-    _add_capped_card(
-        "tool",
-        _dim_body(_format_args(tool_args)),
-        max_lines,
-        head=head,
-    )
+    body, reserved = _with_head_line(head, _dim_body(_format_args(tool_args)))
+    _exec(lambda app: app._add_tool_card(tool_call_id, body, cap=max_lines, reserved=reserved))
 
 
 def _diff_body(rows: list[tuple[str, int, str]]) -> Text:
@@ -192,28 +181,33 @@ def _diff_body(rows: list[tuple[str, int, str]]) -> Text:
 
 
 def render_tool_result(
+    tool_call_id: str,
     output: Any,
     is_error: bool | None = None,
     diff: list[tuple[str, int, str]] | None = None,
     max_lines: int = DEFAULT_MAX_LINES,
 ) -> None:
-    """渲染工具输出卡片。
+    """渲染工具结果：并进对应调用的卡片，卡片样式改按结果（result / error）。
 
     Args:
+        tool_call_id: 对应调用的 id；无对应卡（拦截 / 解析失败 / 已清屏）时独立成卡。
         output: 工具输出。
         is_error: 是否为错误；省略时按输出前缀识别。
         diff: write / edit 的 diff 行；提供时与结果同卡渲染。
-        max_lines: 折叠前最多显示的正文行数。
+        max_lines: 结果段（或 diff 段）折叠前最多显示的正文行数。
 
-    带 diff 时 diff 在前、超长可折叠，结果固定收尾，不拆成两张卡片。
+    带 diff 时 diff 在前、超长可折叠，结果固定收尾，不拆成两张卡片。结果段以固定首行
+    `Tool Result:` 开头（样式同 `Tool Call:`），标题行不参与折叠。
     """
     output_str = str(output)
     failed = is_error if is_error is not None else output_str.startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX))
     kind = "error" if failed else "result"
-    if diff:
-        _add_capped_card(kind, _diff_body(diff), max_lines, tail=_dim_body(output_str))
-    else:
-        _add_capped_card(kind, _dim_body(output_str), max_lines)
+    head = Text.assemble(("Tool Result: ", "bold #fde68a"), "\n")
+    content = _diff_body(diff) if diff else _dim_body(output_str)
+    body, reserved = _with_head_line(head, content)
+    tail = _dim_body(output_str) if diff else None
+    _exec(lambda app: app._append_tool_result(
+        tool_call_id, kind, body, cap=max_lines, reserved=reserved, tail=tail))
 
 
 def render_background_notification(message: str) -> None:
@@ -225,7 +219,8 @@ def render_background_notification(message: str) -> None:
     卡片为加粗固定标题行 + 暗灰正文，正文超出折叠。
     """
     head = Text.assemble(("🔔 Background Task", "bold #f8fafc"), "\n")
-    _add_capped_card("notice", _dim_body(message), head=head)
+    body, reserved = _with_head_line(head, _dim_body(message))
+    _exec(lambda app: app._add_card("notice", body, cap=DEFAULT_MAX_LINES, reserved=reserved))
 
 
 def notify(message: str, title: str = "", severity: str = "information") -> None:
@@ -267,7 +262,7 @@ def _render_tool_message(message: Any) -> None:
 
     payload 里的 diff 与结果同卡渲染。
     """
-    render_tool_result(message.content, diff=message.payload or None)
+    render_tool_result(message.tool_call_id or "", message.content, diff=message.payload or None)
 
 
 def render_session_history(session: Any) -> None:
@@ -296,7 +291,7 @@ def render_session_history(session: Any) -> None:
                     args = json.loads(fn.get("arguments", ""))
                 except (TypeError, ValueError):
                     args = fn.get("arguments", "")
-                render_tool_call(fn.get("name", "tool"), args)
+                render_tool_call(tool_call.get("id", ""), fn.get("name", "tool"), args)
                 result = pending.pop(tool_call.get("id", ""), None)
                 if result is not None:
                     _render_tool_message(result)

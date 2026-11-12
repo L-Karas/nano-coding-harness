@@ -80,7 +80,8 @@ async def spawn_subagent(description: str, ctx: AgentRunContext | None = None, g
         tctx = ToolContext(agent_run=ctx, cwd=work_dir, agent_name="sub-agent",
                            vision=model_supports_vision(client))
         policy = StepPolicy(use_extensions=True)
-        renderer = StepRenderer(on_tool_call=lambda tool_name, _args: _set_phase(agent_id, "tool", tool_name))
+        renderer = StepRenderer(
+            on_tool_call=lambda _tool_call_id, tool_name, _args: _set_phase(agent_id, "tool", tool_name))
 
         for _ in range(MAX_SUB_AGENT_ROUNDS):
             if ctx:

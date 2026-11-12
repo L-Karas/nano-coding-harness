@@ -8,7 +8,7 @@ import core.agent_step as step_mod
 from core.agent_step import StepPolicy, StepRenderer, group_parallel_tool_calls, run_agent_step
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
-from core.template import IMAGE_OMITTED_MESSAGE
+from core.template import IMAGE_OMITTED_MESSAGE, TOOL_ABORTED_PROMPT
 from core.tools import ImageAttachment, ToolResult, ToolPool
 from core.tools.base_tools.edit import EditFile
 from core.tools.base_tools.glob import Glob
@@ -243,8 +243,8 @@ def test_background_route_sees_rewritten_call_arguments(monkeypatch):
 
 def test_renderer_receives_tool_call_and_result(monkeypatch):
     seen = []
-    renderer = StepRenderer(on_tool_call=lambda n, a: seen.append(("call", n, a)),
-                            on_tool_result=lambda text, err, _diff: seen.append(("result", text, err)))
+    renderer = StepRenderer(on_tool_call=lambda _tid, n, a: seen.append(("call", n, a)),
+                            on_tool_result=lambda _tid, text, err, _diff: seen.append(("result", text, err)))
     _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)], renderer=renderer)
     assert ("call", "echo", {"value": "x"}) in seen
     assert ("result", "echo:x", False) in seen
@@ -256,7 +256,7 @@ def test_blocked_call_runs_after_tool_and_renders_result(monkeypatch):
     add_hook("before_tool", lambda ctx: ctx.block("no shell"), "test")
     add_hook("after_tool",
              lambda ctx: hooks.append((ctx.tool_name, ctx.args, ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda _tid, text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True), renderer=renderer)
@@ -269,7 +269,7 @@ def test_blocked_call_runs_after_tool_and_renders_result(monkeypatch):
 def test_unparsable_arguments_run_after_tool_and_render_result(monkeypatch):
     hooks, rendered = [], []
     add_hook("after_tool", lambda ctx: hooks.append((ctx.tool_name, ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda _tid, text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call(args="{oops")], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True), renderer=renderer)
@@ -285,7 +285,7 @@ def test_background_placeholder_runs_after_tool_and_renders_result(monkeypatch):
     monkeypatch.setattr(step_mod, "start_background_task", lambda call, pool, tctx: "bg-1")
     monkeypatch.setattr(step_mod, "should_run_background", lambda *_: True)
     add_hook("after_tool", lambda ctx: hooks.append((ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda _tid, text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True, background=True), renderer=renderer)
@@ -301,7 +301,7 @@ def test_interrupted_call_runs_after_tool_and_renders_result(monkeypatch):
     ctx.cancelled.set()
     hooks, rendered = [], []
     add_hook("after_tool", lambda ctx: hooks.append((ctx.result, ctx.is_error)), "test")
-    renderer = StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err)))
+    renderer = StepRenderer(on_tool_result=lambda _tid, text, err, _diff: rendered.append((text, err)))
 
     outcome = _run(monkeypatch, [("", "", [_tool_call()], "tool_calls", None)],
                    policy=StepPolicy(use_extensions=True),
@@ -310,6 +310,31 @@ def test_interrupted_call_runs_after_tool_and_renders_result(monkeypatch):
     assert hooks == [("[User interrupted]", False)]
     assert rendered == [("[User interrupted]", False)]
     assert outcome.followup_messages[0]["content"] == "[User interrupted]"
+
+
+def test_unexecuted_call_renders_abort_placeholder_once(monkeypatch):
+    """收尾段上抛时，已执行的调用不重复渲染，未回填结果的调用补渲染占位结果。"""
+    rendered = []
+    real_dispatch = step_mod.dispatch
+
+    async def _fail_after_tool(event, ctx, *, include_external=True):
+        if event == "after_tool" and ctx.args.get("value") == "b":
+            raise RuntimeError("after_tool failed")
+        await real_dispatch(event, ctx, include_external=include_external)
+
+    monkeypatch.setattr(step_mod, "dispatch", _fail_after_tool)
+    renderer = StepRenderer(
+        on_tool_result=lambda tid, text, err, _diff: rendered.append((tid, text, err)))
+
+    with pytest.raises(RuntimeError):
+        _run(monkeypatch,
+             [("", "", [_tool_call(call_id="t1"),
+                         _tool_call(args='{"value": "b"}', call_id="t2")],
+               "tool_calls", None)],
+             policy=StepPolicy(use_extensions=True), renderer=renderer)
+
+    assert rendered == [("t1", "echo:x", False), ("t2", TOOL_ABORTED_PROMPT, True)], \
+        "已执行的 t1 不得重复渲染，未回填的 t2 应渲染一次占位结果"
 
 
 def _names(groups):
@@ -485,7 +510,7 @@ def test_interrupt_mid_parallel_group_places_prompts(monkeypatch, cancel_turn):
             tctx=ToolContext(agent_run=ctx),
             max_tokens=1000,
             policy=StepPolicy(use_extensions=False),
-            renderer=StepRenderer(on_tool_result=lambda text, err, _diff: rendered.append((text, err))),
+            renderer=StepRenderer(on_tool_result=lambda _tid, text, err, _diff: rendered.append((text, err))),
         ))
         await started.wait()
         ctx.cancel()
@@ -506,8 +531,8 @@ def test_parallel_group_renderer_order(monkeypatch):
 
     seen = []
     renderer = StepRenderer(
-        on_tool_call=lambda name, _args: seen.append(("call", name)),
-        on_tool_result=lambda text, _err, _diff: seen.append(("result", text)))
+        on_tool_call=lambda _tid, name, _args: seen.append(("call", name)),
+        on_tool_result=lambda _tid, text, _err, _diff: seen.append(("result", text)))
     _run(monkeypatch,
          [("", "", [_tool_call("read_file", '{"value": "a"}', "t1"),
                      _tool_call("grep", '{"value": "b"}', "t2")], "tool_calls", None)],

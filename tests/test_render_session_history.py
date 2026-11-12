@@ -7,9 +7,10 @@ from core.context.session.session import Session
 def _capture(monkeypatch):
     events = []
     monkeypatch.setattr(render, "render_user_input", lambda text: events.append(("user", text)))
-    monkeypatch.setattr(render, "render_tool_call", lambda name, args: events.append(("call", name)))
+    monkeypatch.setattr(render, "render_tool_call",
+                        lambda tid, name, args: events.append(("call", tid, name)))
     monkeypatch.setattr(render, "render_tool_result",
-                        lambda out, diff=None: events.append(("result", out, diff)))
+                        lambda tid, out, diff=None: events.append(("result", tid, out, diff)))
     monkeypatch.setattr(render, "render_assistant_response", lambda text: events.append(("assistant", text)))
     return events
 
@@ -34,8 +35,8 @@ def test_calls_interleave_with_results(monkeypatch):
     render.render_session_history(session)
     assert events == [
         ("user", "hi"),
-        ("call", "read"), ("result", "A", [("-", 1, "x")]),
-        ("call", "terminal"), ("result", "B", None),
+        ("call", "a", "read"), ("result", "a", "A", [("-", 1, "x")]),
+        ("call", "b", "terminal"), ("result", "b", "B", None),
         ("assistant", "done"),
     ]
 
@@ -53,7 +54,7 @@ def test_content_renders_before_tool_calls(monkeypatch):
     render.render_session_history(session)
     assert events == [
         ("assistant", "let me check"),
-        ("call", "read"), ("result", "A", None),
+        ("call", "a", "read"), ("result", "a", "A", None),
         ("assistant", "done"),
     ]
 
@@ -66,4 +67,4 @@ def test_unpaired_call_and_orphan_result(monkeypatch):
         Message(role="tool", tool_call_id="z", content="orphan"),
     ])
     render.render_session_history(session)
-    assert events == [("call", "read"), ("result", "orphan", None)]
+    assert events == [("call", "a", "read"), ("result", "z", "orphan", None)]

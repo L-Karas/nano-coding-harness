@@ -96,8 +96,9 @@ class StepPolicy:
 class StepRenderer:
     """step 的渲染槽：默认全 no-op；主循环从 TUI render 组装（候选 5 会把它挪到 interaction port 后面）。"""
     on_text: Callable[[str], None] | None = None
-    on_tool_call: Callable[[str, dict], None] = _noop
-    on_tool_result: Callable[[str, bool, list | None], None] = _noop
+    # 参数依次为 (tool_call_id, tool_name, args) / (tool_call_id, output, is_error, diff)
+    on_tool_call: Callable[[str, str, dict], None] = _noop
+    on_tool_result: Callable[[str, str, bool, list | None], None] = _noop
     thinking_status: Callable[[], ContextManager] = _null_cm
     working_status: Callable[[], ContextManager] = _null_cm
     scope: Callable[[], ContextManager] = _null_cm
@@ -289,7 +290,7 @@ async def _prepare_tool_call(
         item.outcome = ToolResult(content=tool_ctx.block_reason, is_error=True)
         return item
 
-    renderer.on_tool_call(tool_name, tool_args)
+    renderer.on_tool_call(item.tool_call_id, tool_name, tool_args)
 
     exec_ctx = ToolExecuteContext(tool_name=tool_name, args=tool_args, tctx=tctx)
     with renderer.working_status():
@@ -441,8 +442,9 @@ async def _run_tools(
                 output = result_ctx.result
                 injected.extend(result_ctx.inject_messages)
 
-                # diff 随结果一起交给渲染槽：write / edit 的结果与 diff 在同一张卡片内呈现
-                renderer.on_tool_result(output, is_error, item.diff if show_diff else None)
+                # 结果按调用 id 交回渲染槽：并进该调用已建好的卡片（含 write / edit 的 diff）
+                renderer.on_tool_result(item.tool_call_id, output, is_error,
+                                        item.diff if show_diff else None)
 
                 message = _tool_message(item.tool_call_id, output)
                 if show_diff:
@@ -454,11 +456,13 @@ async def _run_tools(
             injected.append(_image_followup_message(attachments, vision))
 
     finally:
-        # 未执行的 tool call 补占位：消息历史必须给每个 tool_call_id 一个结果
+        # 未执行的 tool call 补占位：消息历史必须给每个 tool_call_id 一个结果；同一段占位
+        # 文案也交给渲染槽，屏上已建好的调用卡才能收到结局（与回放按错误前缀判色的结果一致）
         for tool_call in tool_calls:
             tool_call_id = tool_call.get("id", "")
             if tool_call_id not in executed_ids:
                 results.append(_tool_message(tool_call_id, TOOL_ABORTED_PROMPT))
+                renderer.on_tool_result(tool_call_id, TOOL_ABORTED_PROMPT, True, None)
     return results, injected
 
 

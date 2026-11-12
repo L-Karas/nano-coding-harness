@@ -101,7 +101,7 @@ class _RenderSurface:
         cap: Optional[int] = None,
         reserved: int = 0,
         tail: Any = None,
-    ) -> Static:
+    ) -> Vertical:
         """追加卡片。
 
         Args:
@@ -112,22 +112,97 @@ class _RenderSurface:
             tail: 固定尾段；不参与折叠，排在正文之后。
 
         Returns:
-            卡片正文 Static。
+            卡片容器（正文 / 尾段为其子节点，供调用方追加段落）。
         """
         self._set_welcome(False)
-        body_w = (_CappedCardBody(
-            body,
-            cap,
-            reserved,
-            classes="card-body",
-            markup=False,
-        )
-                  if cap is not None else Static(body, classes="card-body", markup=False))
-        widgets = [body_w]
+        card = Vertical(classes=f"card {kind}")
+        self._chat().mount(card)
+        # 正文也用 mount 挂载（而非构造参数）：构造参数要等到 compose 才登记，
+        # 同 tick 追回的结果段会比它先登记，导致卡片内段落次序错位
+        card.mount(*self._card_body_widgets(body, cap, reserved, tail))
+        return card
+
+    @staticmethod
+    def _card_body_widgets(
+        body: Any,
+        cap: Optional[int],
+        reserved: int,
+        tail: Any,
+        classes: str = "card-body",
+    ) -> list[Static]:
+        """按「正文段 + 可选固定尾段」组装卡片的子部件。
+
+        Args:
+            body: 正文段。
+            cap: 正文段折叠行数上限；None 表示不折叠。
+            reserved: 正文段里的固定头行数，不参与折叠。
+            tail: 固定尾段；None 表示无。
+            classes: 正文段的 CSS 类。
+
+        Returns:
+            可直接 mount 进卡片容器的部件列表。
+        """
+        body_widget = (_CappedCardBody(body, cap, reserved, classes=classes, markup=False)
+                       if cap is not None else Static(body, classes=classes, markup=False))
+        widgets: list[Static] = [body_widget]
         if tail is not None:
             widgets.append(Static(tail, classes="card-body", markup=False))
-        self._chat().mount(Vertical(*widgets, classes=f"card {kind}"))
-        return body_w
+        return widgets
+
+    # ---------- 工具调用 / 结果（同卡） ----------
+
+    def _add_tool_card(
+        self,
+        tool_call_id: str,
+        body: Any,
+        cap: int,
+        reserved: int,
+    ) -> Vertical:
+        """追加工具调用卡，并按调用 id 登记以便结果并回。
+
+        Args:
+            tool_call_id: 本次调用的 id；空串（旧会话 / 无法配对）不登记。
+            body: 紧接在标题行之后的参数段全文。
+            cap: 参数段折叠行数上限。
+            reserved: 固定头行数（标题行）。
+
+        Returns:
+            新建的卡片容器。
+        """
+        card = self._add_card("tool", body, cap, reserved)
+        if tool_call_id:
+            self._tool_cards[tool_call_id] = card
+        return card
+
+    def _append_tool_result(
+        self,
+        tool_call_id: str,
+        kind: str,
+        body: Any,
+        cap: int,
+        reserved: int,
+        tail: Any,
+    ) -> None:
+        """把结果段并进对应调用卡，并把卡片样式换成结果样式。
+
+        Args:
+            tool_call_id: 对应调用的 id。
+            kind: 结果卡类型（result / error）。
+            body: 结果正文（带 diff 时为 diff 段），含固定首行 `Tool Result:`。
+            cap: body 折叠行数上限。
+            reserved: body 里的固定头行数（`Tool Result:` 标题行），不参与折叠。
+            tail: 固定尾段（带 diff 时的结果正文）；None 表示无。
+
+        无对应卡时按独立结果卡渲染（权限拦截 / 参数解析失败 / 清屏后再到的结果）。
+        登记项在合并后即移除：一次调用只并一次结果。
+        """
+        card = self._tool_cards.pop(tool_call_id, None) if tool_call_id else None
+        if card is None:
+            self._add_card(kind, body, cap, reserved, tail=tail)
+            return
+        card.remove_class("tool")
+        card.add_class(kind)
+        card.mount(*self._card_body_widgets(body, cap, reserved, tail, classes="card-body -merged"))
 
     def _toggle_expand(self, body_w: Static) -> None:
         """切换卡片正文的展开/折叠。
@@ -265,6 +340,7 @@ class _RenderSurface:
     def _clear_cards(self) -> None:
         """清空聊天卡片并恢复欢迎标题。"""
         self._stop_stream()  # 先停流再移除卡片，避免残留写入已移除的卡片
+        self._tool_cards.clear()  # 卡片已移除，登记项不可再指向旧卡
         self._chat().remove_children()
         self._chat().anchor()
         self._set_welcome(True)

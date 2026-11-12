@@ -10,8 +10,9 @@ from typing import Any, Callable, ContextManager
 _ask_permission: Callable[[str, list[str]], str] | None = None
 _ask_clarify: Callable[[list[str], bool], str] | None = None
 _stream_assistant_response: Callable[[str], None] | None = None
-_render_tool_call: Callable[[str, Any], None] | None = None
-_render_tool_result: Callable[[str, bool, list | None], None] | None = None
+# 参数依次为 (tool_call_id, tool_name, args) / (tool_call_id, output, is_error, diff)
+_render_tool_call: Callable[[str, str, Any], None] | None = None
+_render_tool_result: Callable[[str, str, bool, list | None], None] | None = None
 _render_background_notification: Callable[[str], None] | None = None
 _notify: Callable[[str, str, str], None] | None = None
 _render_thinking_status: Callable[[str], ContextManager] | None = None
@@ -37,8 +38,9 @@ def register_interaction(*, ask_permission: Callable[[str, list[str]], str] | No
 def register_render(
     *,
     stream_assistant_response: Callable[[str], None] | None = None,
-    render_tool_call: Callable[[str, Any], None] | None = None,
-    render_tool_result: Callable[[str, bool, list | None], None] | None = None,
+    # 参数依次为 (tool_call_id, tool_name, args) / (tool_call_id, output, is_error, diff)
+    render_tool_call: Callable[[str, str, Any], None] | None = None,
+    render_tool_result: Callable[[str, str, bool, list | None], None] | None = None,
     render_background_notification: Callable[[str], None] | None = None,
     notify: Callable[[str, str, str], None] | None = None,
     render_thinking_status: Callable[[str], ContextManager] | None = None,
@@ -119,27 +121,30 @@ def stream_assistant_response(chunk: str = "") -> None:
         _stream_assistant_response(chunk)
 
 
-def render_tool_call(name: str, args: Any) -> None:
+def render_tool_call(tool_call_id: str, name: str, args: Any) -> None:
     """把工具调用交给已注册的渲染器；未注册时静默。
 
     Args:
+        tool_call_id: 本次调用的 id，结果到达时用来并回同一张卡片。
         name: 工具名。
         args: 工具参数。
     """
     if _render_tool_call is not None:
-        _render_tool_call(name, args)
+        _render_tool_call(tool_call_id, name, args)
 
 
-def render_tool_result(text: str, is_error: bool = False, diff: list | None = None) -> None:
+def render_tool_result(tool_call_id: str, text: str, is_error: bool = False,
+                       diff: list | None = None) -> None:
     """工具结果：diff（write / edit）随结果一起交给 UI，由 UI 同卡渲染。
 
     Args:
+        tool_call_id: 对应调用的 id；UI 据此并进已渲染的调用卡。
         text: 结果文本。
         is_error: 是否为错误结果。
         diff: 变化行列表。
     """
     if _render_tool_result is not None:
-        _render_tool_result(text, is_error, diff)
+        _render_tool_result(tool_call_id, text, is_error, diff)
 
 
 def render_background_notification(message: str) -> None:
