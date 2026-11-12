@@ -62,3 +62,8 @@ cron / 后台结果注入自动回合）、后台任务、子代理任一在跑�
 | `cards.py` | 折叠卡片 |
 | `info_panel.py` | 右栏信息面板 |
 | `theme.py` / `app.css` | 主题与样式 |
+
+`ChatApp` 由三个 mixin（`_RenderSurface` / `_CommandFlow` / `_DockInteractions`）拼成：
+各 mixin 的自有状态在 `_init_*` 里初始化并由 `ChatApp.__init__` 调用；依赖的宿主成员与
+跨 mixin 调用方向写在各 mixin 类 docstring 的「宿主契约」一节。新增 mixin 遵循同样的
+私有命名 + 无 `__init__` + 单一宿主约定。

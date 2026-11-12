@@ -90,7 +90,17 @@ class _StatusLine(Static):
 
 
 class _RenderSurface:
-    """ChatApp 的渲染面 mixin（方法由 core.tui.render 经事件循环调用）。"""
+    """ChatApp 的渲染面 mixin（方法由 core.tui.render 经事件循环调用）。
+
+    宿主契约（ChatApp 提供）：_chat() 返回聊天滚动容器，卡片 / Markdown 都挂到它下面。
+    自有状态（_init_surface 初始化）：_markdown_stream、_keycap_carry、_tool_cards。
+    """
+
+    def _init_surface(self) -> None:
+        """初始化渲染面自有状态（由 ChatApp.__init__ 调用）。"""
+        self._markdown_stream: Any = None  # 流式卡片增量渲染句柄
+        self._tool_cards: dict[str, Vertical] = {}  # 工具调用卡登记：id → 卡片容器（结果并回同一张卡）
+        self._keycap_carry = ""  # 跨 chunk 的半截键帽前缀（见 _stream_update）
 
     # ---------- 卡片 ----------
 

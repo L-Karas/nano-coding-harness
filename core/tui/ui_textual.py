@@ -163,18 +163,10 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._runtime_state = runtime_state  # 右栏信息面板的数据源（测试可注入 fresh RuntimeState）
         self._manager = session_manager
         self._banner = banner
-        self._busy = False
-        self._markdown_stream: Any = None  # 流式卡片增量渲染句柄（surface._RenderSurface）
-        self._tool_cards: dict[str, Vertical] = {}  # 工具调用卡登记：id → 卡片容器（结果并回同一张卡）
-        self._keycap_carry = ""  # 跨 chunk 的半截键帽前缀（surface._RenderSurface._stream_update）
-        self._perm_pending = False
-        self._perm_future: Any = None
-        self._clarify_pending = False
-        self._clarify_future: Any = None
-        self._clarify_multi = False
-        self._clarify_chosen: set[int] = set()
-        self._clarify_options: list[str] = []
-        self._clarify_other = False
+        # 各 mixin 自有状态由各自初始化（归属见各类 docstring）
+        self._init_surface()
+        self._init_command_flow()
+        self._init_interactions()
         self._panel_pct: Optional[int] = None  # 右栏宽度百分比（Ctrl+←/→ 调整）；None = 默认 20%
         self._progress_state: Optional[tuple[int, Optional[int]]] = None  # 任务栏已写状态（_write_progress 去重）
         self._sections_non_empty = False  # 三区活动快照：驱动「全空 ↔ 非空」跳变的自动展开/收回

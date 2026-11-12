@@ -35,7 +35,20 @@ from core.tui.theme import PLACEHOLDER
 
 
 class _CommandFlow:
-    """ChatApp 指令与回合 mixin。"""
+    """ChatApp 指令与回合 mixin。
+
+    宿主契约（ChatApp 提供）：_handle、_manager、_runtime、_prompt()、
+    _refresh_footer()、_progress_sync()。
+    跨 mixin 依赖：_RenderSurface 的 _clear_cards / _notify /
+    _set_status_text；_DockInteractions._reset_interactions（_set_idle 收尾时
+    先复位挂起交互）。
+    自有状态（_init_command_flow 初始化）：_busy（只由本类写，宿主与
+    _DockInteractions 只读）。
+    """
+
+    def _init_command_flow(self) -> None:
+        """初始化指令流自有状态（由 ChatApp.__init__ 调用）。"""
+        self._busy = False
 
     _OPENERS = {  # / 指令 → 打开方法名（方法见下）
         "/sessions": "_open_sessions", "/fork": "_open_fork", "/skills": "_open_skills",

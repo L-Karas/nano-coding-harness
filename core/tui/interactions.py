@@ -40,7 +40,26 @@ def _permission_body(message: str, details: list[str]) -> Text:
 
 
 class _DockInteractions:
-    """权限确认与 clarify 的 mixin。"""
+    """权限确认与 clarify 的 mixin。
+
+    宿主契约（ChatApp 提供）：_interrupt、_runtime、_prompt()、_progress_sync()。
+    跨 mixin 依赖：_RenderSurface 的 _add_card / _set_status_text；
+    _CommandFlow 的 _busy（只读）、_set_idle（用户作答 / 拒绝后回合收尾）。
+    自有状态（_init_interactions 初始化）：_perm_pending、_perm_future、
+    _clarify_pending、_clarify_future、_clarify_multi、_clarify_chosen、
+    _clarify_options、_clarify_other（只由本类写；ChatApp 与 _ChatScreen 只读）。
+    """
+
+    def _init_interactions(self) -> None:
+        """初始化挂起交互状态（由 ChatApp.__init__ 调用）。"""
+        self._perm_pending = False
+        self._perm_future: Future[str] | None = None
+        self._clarify_pending = False
+        self._clarify_future: Future[str] | None = None
+        self._clarify_multi = False
+        self._clarify_chosen: set[int] = set()
+        self._clarify_options: list[str] = []
+        self._clarify_other = False
 
     # ---------- 权限确认 ----------
 
