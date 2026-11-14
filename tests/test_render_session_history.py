@@ -8,7 +8,7 @@ def _capture(monkeypatch):
     events = []
     monkeypatch.setattr(render, "render_user_input", lambda text: events.append(("user", text)))
     monkeypatch.setattr(render, "render_tool_call",
-                        lambda tid, name, args: events.append(("call", tid, name)))
+                        lambda tid, name, args, **_: events.append(("call", tid, name)))
     monkeypatch.setattr(render, "render_tool_result",
                         lambda tid, out, diff=None: events.append(("result", tid, out, diff)))
     monkeypatch.setattr(render, "render_assistant_response", lambda text: events.append(("assistant", text)))

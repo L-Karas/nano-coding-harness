@@ -25,5 +25,5 @@ APPROVAL_MODE_COLORS = {
     "Yolo": "#e78284",
 }
 
-# Braille spinner 帧；状态行 spin=True 与右栏进行中项轮播共用
+# Braille spinner 帧；右栏进行中项与 /mcp connecting 行轮播共用
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"

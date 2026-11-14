@@ -6,12 +6,13 @@ import asyncio
 import re
 from typing import Any, Optional
 
+from rich.spinner import Spinner
+from rich.text import Text
 from textual.containers import Vertical
 from textual.widgets import Markdown, Static
 from textual.widgets.markdown import MarkdownStream
 
 from core.tui.cards import _CappedCardBody
-from core.tui.theme import _SPINNER_FRAMES
 
 # 键帽 emoji（数字 / # / * + VS16 + U+20E3）：Windows Terminal 缺组合圈字形时把 U+20E3
 # 画成独立一格，终端走 3 格、Textual 只记 2 格，该行剩余单元格整体右移 1 列
@@ -34,7 +35,7 @@ def _strip_keycaps(text: str) -> str:
 
 
 class _StatusLine(Static):
-    """状态行：文本 + 可选 spinner 轮播（0.1s，惰性启动、非动画态停表）。"""
+    """状态行：文本 + 可选 Rich Spinner 轮播（Textual auto_refresh 驱动，非动画态停表）。"""
 
     def __init__(self, **kwargs: Any) -> None:
         """初始化状态行。
@@ -44,29 +45,24 @@ class _StatusLine(Static):
         """
         super().__init__("", **kwargs)
         self._text = ""
-        self._spin = False
-        self._cursor = 0
-        self._timer: Any = None
+        self._spinner: Spinner | None = None
 
     def set_text(self, text: str, spin: bool = False) -> None:
-        """设置状态文本；spin 为真时启动 spinner 轮播。
+        """设置状态文本（纯文本渲染）；spin 为真时用 Rich Spinner 轮播并自动重绘。
 
         Args:
             text: 状态文本。
             spin: 是否显示 spinner 动画。
         """
         self._text = text
-        self._spin = spin
-        if spin:
-            self._cursor = 0
-            self._tick()  # 立即出首帧（此后由 interval 推进）
-            if self._timer is None:
-                self._timer = self.set_interval(0.1, self._tick)
+        self._spinner = Spinner("dots", text=Text(text)) if spin else None
+        if self._spinner is not None:
+            if self.auto_refresh is None:
+                self.auto_refresh = self._spinner.interval / 1000
+            self.update(self._spinner)
         else:
-            self.update(text)
-            if self._timer is not None:
-                self._timer.stop()
-                self._timer = None
+            self.auto_refresh = None
+            self.update(Text(text))
 
     def swap(self, text: str, spin: bool = True) -> tuple[str, bool]:
         """切换状态文本。
@@ -78,15 +74,9 @@ class _StatusLine(Static):
         Returns:
             旧状态 (文本, 是否动画)，供调用方恢复。
         """
-        previous = (self._text, self._spin)
+        previous = (self._text, self._spinner is not None)
         self.set_text(text, spin=spin)
         return previous
-
-    def _tick(self) -> None:
-        """推进一帧 spinner 并刷新状态文本。"""
-        frame = _SPINNER_FRAMES[self._cursor % len(_SPINNER_FRAMES)]
-        self._cursor += 1
-        self.update(f"{frame} {self._text}")
 
 
 class _RenderSurface:
@@ -99,7 +89,7 @@ class _RenderSurface:
     def _init_surface(self) -> None:
         """初始化渲染面自有状态（由 ChatApp.__init__ 调用）。"""
         self._markdown_stream: Any = None  # 流式卡片增量渲染句柄
-        self._tool_cards: dict[str, Vertical] = {}  # 工具调用卡登记：id → 卡片容器（结果并回同一张卡）
+        self._tool_cards: dict[str, tuple[Vertical, _CappedCardBody]] = {}  # 工具调用卡登记：id → (卡片容器, 可停表的正文)
         self._keycap_carry = ""  # 跨 chunk 的半截键帽前缀（见 _stream_update）
 
     # ---------- 卡片 ----------
@@ -124,12 +114,24 @@ class _RenderSurface:
         Returns:
             卡片容器（正文 / 尾段为其子节点，供调用方追加段落）。
         """
-        self._set_welcome(False)
-        card = Vertical(classes=f"card {kind}")
-        self._chat().mount(card)
+        card = self._mount_card(kind)
         # 正文也用 mount 挂载（而非构造参数）：构造参数要等到 compose 才登记，
         # 同 tick 追回的结果段会比它先登记，导致卡片内段落次序错位
         card.mount(*self._card_body_widgets(body, cap, reserved, tail))
+        return card
+
+    def _mount_card(self, kind: str) -> Vertical:
+        """新建并挂载空白卡片容器。
+
+        Args:
+            kind: 卡片类型。
+
+        Returns:
+            已挂到聊天滚动容器下的卡片容器。
+        """
+        self._set_welcome(False)
+        card = Vertical(classes=f"card {kind}")
+        self._chat().mount(card)
         return card
 
     @staticmethod
@@ -167,21 +169,26 @@ class _RenderSurface:
         body: Any,
         cap: int,
         reserved: int,
+        spin: bool = True,
     ) -> Vertical:
         """追加工具调用卡，并按调用 id 登记以便结果并回。
 
         Args:
-            tool_call_id: 本次调用的 id；空串（旧会话 / 无法配对）不登记。
+            tool_call_id: 本次调用的 id；空串（旧会话 / 无法配对）不登记，也不轮播 spinner。
             body: 紧接在标题行之后的参数段全文。
             cap: 参数段折叠行数上限。
             reserved: 固定头行数（标题行）。
+            spin: 是否在标题行前轮播 spinner；回放等静态场景传 False。
 
         Returns:
             新建的卡片容器。
         """
-        card = self._add_card("tool", body, cap, reserved)
+        card = self._mount_card("tool")
+        body_widget = _CappedCardBody(
+            body, cap, reserved, spin=spin and bool(tool_call_id), classes="card-body", markup=False)
+        card.mount(body_widget)
         if tool_call_id:
-            self._tool_cards[tool_call_id] = card
+            self._tool_cards[tool_call_id] = (card, body_widget)
         return card
 
     def _append_tool_result(
@@ -206,10 +213,12 @@ class _RenderSurface:
         无对应卡时按独立结果卡渲染（权限拦截 / 参数解析失败 / 清屏后再到的结果）。
         登记项在合并后即移除：一次调用只并一次结果。
         """
-        card = self._tool_cards.pop(tool_call_id, None) if tool_call_id else None
-        if card is None:
+        entry = self._tool_cards.pop(tool_call_id, None) if tool_call_id else None
+        if entry is None:
             self._add_card(kind, body, cap, reserved, tail=tail)
             return
+        card, body_widget = entry
+        body_widget.stop_spin()  # 结果到达：标题行不再轮播，spinner 移除
         card.remove_class("tool")
         card.add_class(kind)
         card.mount(*self._card_body_widgets(body, cap, reserved, tail, classes="card-body -merged"))

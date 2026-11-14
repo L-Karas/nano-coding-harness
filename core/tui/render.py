@@ -150,6 +150,7 @@ def render_tool_call(
     tool_name: str,
     tool_args: Any,
     max_lines: int = TOOL_ARGS_MAX_LINES,
+    spin: bool = True,
 ) -> None:
     """渲染工具调用卡片；结果到达时按 id 并进同一张卡。
 
@@ -158,10 +159,12 @@ def render_tool_call(
         tool_name: 工具名。
         tool_args: 工具参数。
         max_lines: 参数段折叠前最多显示的正文行数。
+        spin: 等待结果期间是否在标题行前轮播 spinner；回放等静态场景传 False。
     """
     head = Text.assemble(("Tool Call: ", "bold #fde68a"), (tool_name, "bold white"), "\n")
     body, reserved = _with_head_line(head, _dim_body(_format_args(tool_args)))
-    _exec(lambda app: app._add_tool_card(tool_call_id, body, cap=max_lines, reserved=reserved))
+    _exec(lambda app: app._add_tool_card(
+        tool_call_id, body, cap=max_lines, reserved=reserved, spin=spin))
 
 
 def _diff_body(rows: list[tuple[str, int, str]]) -> Text:
@@ -271,8 +274,8 @@ def render_session_history(session: Any) -> None:
     Args:
         session: 会话对象。
 
-    跳过内部注入消息；助手消息的多个 tool_call 与其结果按 tool_call_id 配对：
-    call、result、call、result…
+    回放是静态的：工具调用不启动 spinner，结果直接按 id 并回。跳过内部注入消息；
+    助手消息的多个 tool_call 与其结果按 tool_call_id 配对：call、result、call、result…
     """
     messages = session.messages
     pending: dict[str, Any] = {m.tool_call_id: m for m in messages
@@ -291,7 +294,7 @@ def render_session_history(session: Any) -> None:
                     args = json.loads(fn.get("arguments", ""))
                 except (TypeError, ValueError):
                     args = fn.get("arguments", "")
-                render_tool_call(tool_call.get("id", ""), fn.get("name", "tool"), args)
+                render_tool_call(tool_call.get("id", ""), fn.get("name", "tool"), args, spin=False)
                 result = pending.pop(tool_call.get("id", ""), None)
                 if result is not None:
                     _render_tool_message(result)

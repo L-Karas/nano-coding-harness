@@ -2,32 +2,38 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from rich.spinner import Spinner
 from rich.text import Text
-from textual import events
 from textual.content import Content
 from textual.geometry import Size
 from textual.strip import Strip
 from textual.visual import RenderOptions
 from textual.widgets import Static
 
+if TYPE_CHECKING:
+    from textual.app import RenderResult
+
 _TRUNCATED_HINT = "... [truncated {hidden} lines] · click to expand"  # 折叠态末行（点击展开）
 _COLLAPSE_HINT = "· click to collapse"  # 展开态末行（点击收回）
 _HINT_STYLE = "dim yellow"  # 提示行样式，与正文暗灰区分
+_SPIN_STYLE = "bold #fde68a"  # 工具调用 spinner 帧样式（同 Tool Call 标题色）
 
 
 class _CappedCardBody(Static):
     """卡片正文：超出 cap 行时折叠（前 cap 行 + 1 行提示，点击展开/收回）。
 
-    行数取自 get_content_height（按渲染宽度换行后的视觉行，长行折出的行同样计入）；
-    reserved 为固定头行数，不参与折叠；-expandable 类随宽度变化在 on_resize 中同步。"""
+    可选在正文最前轮播 Rich Spinner（工具调用等待结果期间）；行数取自 get_content_height
+    （按渲染宽度换行后的视觉行，长行折出的行同样计入）；reserved 为固定头行数，不参与折叠；
+    -expandable 类在内容高度重算时同步。"""
 
     def __init__(
         self,
         content: Any,
         cap: int,
         reserved: int = 0,
+        spin: bool = False,
         **kwargs: Any,
     ) -> None:
         """初始化折叠正文。
@@ -36,13 +42,36 @@ class _CappedCardBody(Static):
             content: 传给 Static 的正文内容。
             cap: 折叠时最多显示的正文视觉行数。
             reserved: 固定头行数，不参与折叠。
+            spin: 是否在正文最前轮播 spinner；仅工具调用卡使用。
             kwargs: 透传给 Static 的其余参数。
         """
+        # Rich（Textual 的渲染层）自带 Spinner：时间驱动帧、自带 dots 帧（同为 Braille）
         super().__init__(content, **kwargs)
+        self._spinner = Spinner("dots", text=content, style=_SPIN_STYLE) if spin else None
         self._cap = cap
         self._reserved = reserved
         self._expanded = False
         self._full_height = 0  # 当前宽度下完整内容的视觉行数（get_content_height 记录）
+
+    def on_mount(self) -> None:
+        """挂载后让 Textual 按 Spinner 帧间隔自动重绘（结果先到则已停表）。"""
+        if self._spinner is not None:
+            self.auto_refresh = self._spinner.interval / 1000
+
+    def render(self) -> RenderResult:
+        """返回当前 spinner 帧 + 正文；未轮播时走 Static 的常规内容。"""
+        if self._spinner is None:
+            return super().render()
+        return self._spinner.render(self.app.console.get_time())
+
+    def stop_spin(self) -> None:
+        """停止轮播并还原无 spinner 的正文（结果到达时调用）。"""
+        if self._spinner is None:
+            return
+        self._spinner = None
+        self.auto_refresh = None
+        self.clear_cached_dimensions()  # spinner 前缀占 2 列，移除后需重新测量折行
+        self.refresh(layout=True)
 
     @property
     def _truncated(self) -> bool:
@@ -73,15 +102,14 @@ class _CappedCardBody(Static):
         full = super().get_content_height(container, viewport, width)
         self._full_height = full
         body = max(0, full - self._reserved)  # 扣除固定头行后的正文行数
+        self._sync_expandable()
         return self._reserved + (body + 1 if self._expanded else min(body, self._cap + 1))
 
-    def on_resize(self, event: events.Resize) -> None:
-        """宽度变化会改变折行，重新同步 -expandable 类。
-
-        Args:
-            event: 尺寸变化事件。
-        """
-        self.set_class(self._truncated or self._expanded, "-expandable")
+    def _sync_expandable(self) -> None:
+        """按当前截断 / 展开状态同步 -expandable 类（控制指针与点击展开）。"""
+        expandable = self._truncated or self._expanded
+        if self.has_class("-expandable") != expandable:
+            self.set_class(expandable, "-expandable")
 
     def toggle_expand(self) -> None:
         """截断 ↔ 完整（正文常驻，只切展开标记并按当前宽度重排）"""

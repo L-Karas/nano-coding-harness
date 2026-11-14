@@ -43,6 +43,44 @@ def test_result_merges_into_call_card_and_swaps_style():
     asyncio.run(main())
 
 
+def test_tool_call_spins_until_result_arrives():
+    """工具调用未出结果时标题行前有 spinner；结果到达后停表并移除。"""
+    async def main() -> None:
+        async with chat_app(size=(100, 30)) as (app, pilot):
+            with render_bridge(app):
+                render.render_tool_call("c1", "terminal", {"command": "ls"})
+                await pilot.pause(0.05)
+                body = app.query("#chat .card.tool .card-body").first()
+                head = body.render_line(0).text
+                assert head.endswith(" Tool Call: terminal") and head != "Tool Call: terminal", head
+
+                await pilot.pause(0.35)
+                later = body.render_line(0).text
+                assert later != head, "spinner 帧应持续轮播"
+
+                render.render_tool_result("c1", "ok")
+                await pilot.pause(0.1)
+                assert body.render_line(0).text == "Tool Call: terminal", \
+                    "结果到达后应停表并移除 spinner"
+                assert body.auto_refresh is None
+
+    asyncio.run(main())
+
+
+def test_tool_call_without_id_does_not_spin():
+    """无法与结果配对的空 id 调用不启动 spinner，避免永久轮播。"""
+    async def main() -> None:
+        async with chat_app(size=(100, 30)) as (app, pilot):
+            with render_bridge(app):
+                render.render_tool_call("", "terminal", {"command": "ls"})
+                await pilot.pause(0.05)
+                body = app.query("#chat .card.tool .card-body").first()
+                assert body.render_line(0).text == "Tool Call: terminal"
+                assert body.auto_refresh is None
+
+    asyncio.run(main())
+
+
 def test_error_result_swaps_to_error_card():
     async def main() -> None:
         async with chat_app(size=(100, 30)) as (app, pilot):
@@ -131,6 +169,27 @@ def test_replay_merges_call_and_result_into_one_card():
                 assert cards[0].has_class("result") and not cards[0].has_class("tool")
                 assert "path: a.py" in _card_text(cards[0])
                 assert "file contents" in _card_text(cards[0])
+                body = cards[0].query(".card-body").first()
+                assert body.render_line(0).text == "Tool Call: read_file"
+                assert body.auto_refresh is None, "回放不应启动 spinner 定时器"
+
+    asyncio.run(main())
+
+
+def test_replay_without_result_does_not_spin():
+    """历史里有调用无结果（异常退出）时，回放卡不残留 spinner。"""
+    async def main() -> None:
+        async with chat_app(size=(100, 30)) as (app, pilot):
+            with render_bridge(app):
+                render.render_session_history(Session(messages=[
+                    Message(role="assistant", tool_calls=[
+                        {"id": "a", "function": {"name": "read_file", "arguments": '{"path": "a.py"}'}},
+                    ]),
+                ]))
+                await pilot.pause(0.05)
+                body = app.query("#chat .card.tool .card-body").first()
+                assert body.render_line(0).text == "Tool Call: read_file"
+                assert body.auto_refresh is None
 
     asyncio.run(main())
 
