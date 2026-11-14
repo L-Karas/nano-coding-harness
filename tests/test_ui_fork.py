@@ -11,6 +11,7 @@ from rich.console import Console
 import core.tui.commands as commands
 from core.tui.screens.fork import ForkScreen, _preview, _FORK_PREVIEW_CHARS as MESSAGE_PREVIEW_CHARS
 from core.tui.ui_textual import ChatApp
+from tests.support import mark_busy
 from core.tui.utils import SLASH_COMMANDS
 
 
@@ -68,7 +69,7 @@ def _app(monkeypatch, events):
     app = ChatApp(handle_query=lambda query: None, on_interrupt=lambda: None)
     app.notify = lambda message, title="", severity="information", **kw: events.append(
         ("notice", title, message, severity))
-    app._clear_cards = lambda: events.append(("clear",))
+    app.board.clear = lambda: events.append(("clear",))
     prompt = _FakePrompt(events)
     app._prompt = lambda: prompt
     pushed = []
@@ -121,14 +122,14 @@ def test_open_fork_guards(monkeypatch):
     assert "unavailable" in events[-1][2] and not pushed
 
     events.clear()
-    app._busy = True
+    mark_busy(app, True)
     app._manager = _FakeManager([_Message("m1", "x")])
     app._open_fork()  # 回合进行中：换会话须拒绝
     assert events == [("notice", "⏳ Busy", "Previous turn is still running, please wait…", "information")] \
         and not pushed
 
     events.clear()
-    app._busy = False
+    mark_busy(app, False)
     app._manager = _FakeManager()  # load_user_messages -> None
     app._open_fork()
     assert "No user messages" in events[-1][2] and not pushed

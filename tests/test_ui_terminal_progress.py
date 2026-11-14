@@ -12,7 +12,7 @@ import core.tui.render as _render
 from core.runtime_state import RuntimeState, TodoEntry
 from core.tools import ToolResult
 from core.tui.ui_textual import ChatApp
-from tests.support import RecordingDriver, chat_app
+from tests.support import RecordingDriver, chat_app, render_bridge, mark_busy
 
 _WORKING = "\x1b]9;4;3\x07"
 _WAITING = "\x1b]9;4;4;100\x07"
@@ -125,7 +125,7 @@ def test_runtime_turn_sets_running_without_ui_busy():
 def test_progress_sync_is_idempotent():
     """同一状态重复同步不重复写 OSC（1s tick 可任意调用）。"""
     app, driver = _app_with_driver()
-    app._busy = True
+    mark_busy(app, True)
     app._progress_sync()
     app._progress_sync()
     app._progress_sync()
@@ -196,8 +196,7 @@ def test_turn_sets_indeterminate_then_clears(monkeypatch):
 
     async def main() -> None:
         app = ChatApp(handle_query=lambda _query: release.wait(5))
-        _render._APP = app  # run_test 不经 run()：照 smoke 手动挂渲染桥接
-        try:
+        with render_bridge(app):  # run_test 不经 run()：同一挂载入口
             async with app.run_test():
                 app._send_user_query("hello")
                 await asyncio.sleep(0.05)
@@ -205,14 +204,12 @@ def test_turn_sets_indeterminate_then_clears(monkeypatch):
                 release.set()
                 for _ in range(200):
                     await asyncio.sleep(0.01)
-                    if not app._busy:
+                    if not app.turn.busy:
                         break
-                assert not app._busy
-        finally:
-            _render._APP = None
+                assert not app.turn.busy
 
     asyncio.run(main())
-    assert _progress_seqs(writes) == [_WORKING, _CLEAR, _CLEAR]  # _set_idle + 退出兜底
+    assert _progress_seqs(writes) == [_WORKING, _CLEAR, _CLEAR]  # Turn.finish + 退出兜底
 
 
 def test_permission_pauses_progress_and_answer_restores_working(monkeypatch):
@@ -220,10 +217,10 @@ def test_permission_pauses_progress_and_answer_restores_working(monkeypatch):
 
     async def main() -> None:
         async with chat_app() as (app, _):
-            app._busy = True  # 前景回合仍在跑
+            mark_busy(app, True)  # 前景回合仍在跑
             app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]  # 等待用户：黄色暂停
-            app._answer_permission("yes")
+            app._answer("yes")
             assert _progress_seqs(writes) == [_WAITING, _WORKING]
 
     asyncio.run(main())
@@ -238,7 +235,7 @@ def test_permission_answered_outside_turn_clears_progress(monkeypatch):
         async with chat_app() as (app, _):
             app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]
-            app._answer_permission("yes")
+            app._answer("yes")
             assert _progress_seqs(writes) == [_WAITING, _CLEAR]
 
     asyncio.run(main())
@@ -250,10 +247,10 @@ def test_clarify_pauses_progress_and_answer_restores_working(monkeypatch):
 
     async def main() -> None:
         async with chat_app() as (app, _):
-            app._busy = True  # 前景回合仍在跑
+            mark_busy(app, True)  # 前景回合仍在跑
             app._begin_clarify(["Which one?"], False, Future())
             assert _progress_seqs(writes) == [_WAITING]  # 等待用户：黄色暂停
-            app._answer_clarify("Which one?")
+            app._answer("Which one?")
             assert _progress_seqs(writes) == [_WAITING, _WORKING]
 
     asyncio.run(main())
@@ -268,7 +265,7 @@ def test_clarify_answered_outside_turn_clears_progress(monkeypatch):
         async with chat_app() as (app, _):
             app._begin_clarify(["Which one?"], False, Future())
             assert _progress_seqs(writes) == [_WAITING]
-            app._answer_clarify("Which one?")
+            app._answer("Which one?")
             assert _progress_seqs(writes) == [_WAITING, _CLEAR]
 
     asyncio.run(main())
@@ -283,10 +280,10 @@ def test_turn_end_keeps_running_while_background_active(monkeypatch):
     async def main() -> None:
         async with chat_app(runtime_state=state) as (app, _):
             state.register_background("bg-1", "terminal(pytest)")
-            app._busy = True
+            mark_busy(app, True)
             app._progress_sync()
             assert _progress_seqs(writes) == [_WORKING]
-            app._set_idle()
+            app.turn.finish()
             assert _progress_seqs(writes) == [_WORKING]  # 不闪空闲
             state.complete_background("bg-1", ToolResult(content="done"))
             app._progress_sync()
@@ -303,10 +300,10 @@ def test_turn_end_clears_pending_waiting_progress(monkeypatch):
     async def main() -> None:
         app = ChatApp(handle_query=lambda _query: None, runtime_state=RuntimeState())
         async with app.run_test():
-            app._busy = True
+            mark_busy(app, True)
             app._begin_permission("Allow?", [], Future())
             assert _progress_seqs(writes) == [_WAITING]
-            app._set_idle()  # 回合结束：_reset_interactions 先清挂起，再重估进度
+            app.turn.finish()  # 回合结束：dock.cancel 先清挂起，再重估进度
             assert _progress_seqs(writes) == [_WAITING, _CLEAR]
 
     asyncio.run(main())
@@ -325,7 +322,7 @@ def test_permission_answer_resumes_running_while_background_active(monkeypatch):
             assert _progress_seqs(writes) == [_WAITING]
             app._progress_sync()  # tick 到点：等待优先，不覆盖黄色
             assert _progress_seqs(writes) == [_WAITING]
-            app._answer_permission("yes")
+            app._answer("yes")
             assert _progress_seqs(writes) == [_WAITING, _WORKING]
 
     asyncio.run(main())

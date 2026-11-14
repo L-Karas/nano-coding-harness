@@ -5,23 +5,22 @@ import asyncio
 
 from textual.widgets import Markdown
 
-from core.tui.surface import _strip_keycaps
+from core.tui import blocks
+from core.tui.blocks import dim_body, strip_keycaps
 from tests.support import chat_app
 
 
 def test_strip_keycaps_helper():
-    assert _strip_keycaps("## 1️⃣ 最新") == "## 1 最新"
-    assert _strip_keycaps("1⃣ #️⃣ *️⃣") == "1 # *"
+    assert strip_keycaps("## 1️⃣ 最新") == "## 1 最新"
+    assert strip_keycaps("1⃣ #️⃣ *️⃣") == "1 # *"
     # 非键帽字符不动：VS16 emoji、破折号、CJK 宽度口径与终端一致
-    assert _strip_keycaps("❤️ ⚠️ — 中文 1.5") == "❤️ ⚠️ — 中文 1.5"
+    assert strip_keycaps("❤️ ⚠️ — 中文 1.5") == "❤️ ⚠️ — 中文 1.5"
 
 
 def test_dim_body_strips_keycaps():
-    """工具卡 / 结果卡 / notice 正文共用 _dim_body，同样降级键帽。"""
-    from core.tui.render import _dim_body
-
-    assert _dim_body("run 1️⃣ now").plain == "run 1 now"
-    assert _dim_body("❤️ 保留").plain == "❤️ 保留"
+    """工具卡 / 结果卡 / notice 正文共用 dim_body，同样降级键帽。"""
+    assert dim_body("run 1️⃣ now").plain == "run 1 now"
+    assert dim_body("❤️ 保留").plain == "❤️ 保留"
 
 
 def test_info_panel_row_strips_keycaps():
@@ -39,8 +38,9 @@ def test_info_panel_row_strips_keycaps():
 def test_static_markdown_card_sanitized():
     async def main() -> None:
         async with chat_app() as (app, pilot):
-            md = app._add_markdown_card("## 2️⃣ 资本\n")
+            app.board.add(blocks.assistant_markdown("## 2️⃣ 资本\n"))
             await pilot.pause(0.2)
+            md = app.query_one("#chat .card.assistant Markdown", Markdown)
             assert md.source == "## 2 资本\n", repr(md.source)
 
     asyncio.run(main())
@@ -49,9 +49,9 @@ def test_static_markdown_card_sanitized():
 def test_stream_sanitizes_inline_keycap():
     async def main() -> None:
         async with chat_app() as (app, pilot):
-            app._stream_update("### 3️⃣ 竞品\n")
+            app.board.stream("### 3️⃣ 竞品\n")
             await pilot.pause(0.2)
-            app._stop_stream()
+            app.board.end_stream()
             await pilot.pause(0.2)
             md = app.query_one("#chat .card.assistant Markdown", Markdown)
             assert md.source == "### 3 竞品\n", repr(md.source)
@@ -63,9 +63,9 @@ def test_stream_keycap_split_across_chunks_and_tail_digit_kept():
     async def main() -> None:
         async with chat_app() as (app, pilot):
             for chunk in ("## 1", "\ufe0f", "\u20e3 最新\n", "end 42"):
-                app._stream_update(chunk)
+                app.board.stream(chunk)
                 await pilot.pause(0.05)
-            app._stop_stream()
+            app.board.end_stream()
             await pilot.pause(0.2)
             md = app.query_one("#chat .card.assistant Markdown", Markdown)
             assert md.source == "## 1 最新\nend 42", repr(md.source)
@@ -79,9 +79,9 @@ def test_whole_turn_is_bare_digit_prefix_not_lost():
 
     async def main() -> None:
         async with chat_app() as (app, pilot):
-            app._stream_update("1")
+            app.board.stream("1")
             await pilot.pause(0.1)
-            app._stop_stream()
+            app.board.end_stream()
             await pilot.pause(0.2)
             md = app.query_one("#chat .card.assistant Markdown", Markdown)
             assert md.source == "1", repr(md.source)
@@ -94,9 +94,9 @@ def test_stop_stream_drops_split_vs16_tail():
 
     async def main() -> None:
         async with chat_app() as (app, pilot):
-            app._stream_update("count 1\ufe0f")
+            app.board.stream("count 1\ufe0f")
             await pilot.pause(0.1)
-            app._stop_stream()
+            app.board.end_stream()
             await pilot.pause(0.2)
             md = app.query_one("#chat .card.assistant Markdown", Markdown)
             assert md.source == "count 1", repr(md.source)

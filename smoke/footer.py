@@ -6,6 +6,7 @@ from textual.widgets import Static
 
 async def run(app, pilot) -> None:
     import core.tui.footer as _mod
+    import core.tui.utils as _utils
     from core.tui.footer import format_compact_threshold
     from core.tui.utils import format_context_length
 
@@ -32,12 +33,12 @@ async def run(app, pilot) -> None:
     approval_widget = app.query_one("#approval-mode", Static)
     empty_bar = f"{_mod.TOKEN_LABEL}: [" + "-" * _mod.TOKEN_BAR_CELLS + "] -- / --"
     prefix = f"{_mod.TOKEN_LABEL}: ["
-    _manager, _ctx_len = app._manager, _mod.current_context_length
-    _wd, _gb = _mod.working_directory, _mod.current_git_branch
-    _model_state = _mod.current_model_state
-    _approval_mode = _mod.current_approval_mode
-    _compact = _mod.current_compact_trigger_tokens
-    _auto_compact = _mod.current_auto_compact
+    _manager, _ctx_len = app._manager, _utils.current_context_length
+    _wd, _gb = _utils.working_directory, _utils.current_git_branch
+    _model_state = _utils.current_model_state
+    _approval_mode = _utils.current_approval_mode
+    _compact = _utils.current_compact_trigger_tokens
+    _auto_compact = _utils.current_auto_compact
     _has_client = True
     try:
         import core.client as _cm3
@@ -57,12 +58,12 @@ async def run(app, pilot) -> None:
     try:
         # 模型状态与审批模式同行、在右下角；占用条钉成空灰条，右对齐可精确断言
         if _has_client:
-            _mod.working_directory = lambda: "cwd"
-            _mod.current_git_branch = lambda: ""
-            _mod.current_context_length = lambda: 0
-            _mod.current_compact_trigger_tokens = lambda: 0
-            _mod.current_auto_compact = lambda: True
-            _mod.current_approval_mode = lambda: "Manual"
+            _utils.working_directory = lambda: "cwd"
+            _utils.current_git_branch = lambda: ""
+            _utils.current_context_length = lambda: 0
+            _utils.current_compact_trigger_tokens = lambda: 0
+            _utils.current_auto_compact = lambda: True
+            _utils.current_approval_mode = lambda: "Manual"
             _cm3.shared_model_client = lambda: _FakeModelState("p", "m", "max")
             app._refresh_footer()
             foot, bar_row = _rows()
@@ -87,8 +88,8 @@ async def run(app, pilot) -> None:
             print("[smoke] footer row OK: cwd line + token bar line, '(provider) model * level' bottom-right of approval row")
 
         # 审批模式：占用条下方单独一行，随配置实时刷新
-        _mod.current_model_state = lambda: ("", "", "")  # 去掉模型段
-        _mod.current_approval_mode = lambda: "Yolo"
+        _utils.current_model_state = lambda: ("", "", "")  # 去掉模型段
+        _utils.current_approval_mode = lambda: "Yolo"
         app._refresh_footer()
         assert str(approval_widget.render()) == "Approval Mode: Yolo", \
             f"审批模式行不符: {approval_widget.render()!r}"
@@ -96,11 +97,11 @@ async def run(app, pilot) -> None:
 
         # 占用条：盲文点阵（20 格 × 8 点，末格按点亮点数呈现部分填充）+ 占用百分比 /
         # 上下文长度（K/M 一位小数）+ 压缩阈值提示（K/M）；阈值 40% / 80% 转绿→黄→红
-        _mod.current_model_state = lambda: ("", "", "")  # 去掉模型段，行内容 = 纯占用条
+        _utils.current_model_state = lambda: ("", "", "")  # 去掉模型段，行内容 = 纯占用条
         app._manager = _FakeSession(250_000)  # 25%：5 格满点，绿
-        _mod.current_context_length = lambda: 1_000_000
-        _mod.current_compact_trigger_tokens = lambda: 800_000
-        _mod.current_auto_compact = lambda: True
+        _utils.current_context_length = lambda: 1_000_000
+        _utils.current_compact_trigger_tokens = lambda: 800_000
+        _utils.current_auto_compact = lambda: True
         app._refresh_footer()
         assert _rows()[1] == f"{prefix}{'⣿' * 5}{' ' * 15}] 25.0% / 1.0M (compact at 800K)", \
             f"占用条 M 单位/压缩阈值不符: {_rows()[1]!r}"
@@ -113,8 +114,8 @@ async def run(app, pilot) -> None:
             f"末格应显示格内精度: {_rows()[1]!r}"
 
         app._manager = _FakeSession(51_200)  # 40.0% 阈值：黄
-        _mod.current_context_length = lambda: 128_000
-        _mod.current_compact_trigger_tokens = lambda: 96_000
+        _utils.current_context_length = lambda: 128_000
+        _utils.current_compact_trigger_tokens = lambda: 96_000
         app._refresh_footer()
         assert _rows()[1] == f"{prefix}{'⣿' * 8}{' ' * 12}] 40.0% / 128.0K (compact at 96K)", \
             f"占用条渲染不符: {_rows()[1]!r}"
@@ -126,26 +127,26 @@ async def run(app, pilot) -> None:
             f"占用条 80% 边界不符: {_rows()[1]!r}"
         assert _has("#f87171", "248,113,113"), f">=80% 应为红: {_bar_styles()}"
 
-        _mod.current_auto_compact = lambda: False  # 关闭自动压缩：提示换为无压缩
+        _utils.current_auto_compact = lambda: False  # 关闭自动压缩：提示换为无压缩
         app._refresh_footer()
         assert _rows()[1] == f"{prefix}{'⣿' * 16}{' ' * 4}] 80.0% / 128.0K (auto-compact off)", \
             f"auto_compact 关闭时提示不符: {_rows()[1]!r}"
-        _mod.current_auto_compact = lambda: True
+        _utils.current_auto_compact = lambda: True
 
         app._manager = _FakeSession(1_234)
-        _mod.current_context_length = lambda: 0
-        _mod.current_compact_trigger_tokens = lambda: 0
+        _utils.current_context_length = lambda: 0
+        _utils.current_compact_trigger_tokens = lambda: 0
         app._refresh_footer()
         assert _rows()[1] == empty_bar, f"未配置模型时应显示灰条 -- / --: {_rows()[1]!r}"
         assert _has("#94a3b8", "148,163,184"), f"未配置模型条应为灰: {_bar_styles()}"
         print("[smoke] token context bar OK: braille dot bar + percent / context length + compact threshold (or 'auto-compact off'), colors at 40%/80%")
     finally:
-        _mod.working_directory, _mod.current_git_branch = _wd, _gb
-        _mod.current_model_state = _model_state
-        _mod.current_context_length = _ctx_len
-        _mod.current_approval_mode = _approval_mode
-        _mod.current_compact_trigger_tokens = _compact
-        _mod.current_auto_compact = _auto_compact
+        _utils.working_directory, _utils.current_git_branch = _wd, _gb
+        _utils.current_model_state = _model_state
+        _utils.current_context_length = _ctx_len
+        _utils.current_approval_mode = _approval_mode
+        _utils.current_compact_trigger_tokens = _compact
+        _utils.current_auto_compact = _auto_compact
         if _has_client:
             _cm3.shared_model_client = _shared
         app._manager = _manager

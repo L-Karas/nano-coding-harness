@@ -143,7 +143,7 @@ async def run(app, pilot) -> None:
     prompt.text = "/provider"
     await pilot.press("enter")
     await settle(pilot, 10)
-    assert not app._busy, "/provider 不应触发 agent 回合"
+    assert not app.turn.busy, "/provider 不应触发 agent 回合"
     assert app._exception is None, f"渲染异常: {app._exception}"
     if isinstance(app.screen_stack[-1], ProviderScreen):  # 真实数据源可用：能打开弹窗
         await pilot.press("escape")

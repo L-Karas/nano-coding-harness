@@ -11,3 +11,10 @@ accepted
 - **扩展既有端口**（采纳）：一个 module 承载交互与渲染，headless 默认值集中可见；域层不再 import `core.tui`。
 - **新建独立渲染端口**（拒绝）：域层要依赖两个 port，注册点分裂。
 - **step 直接调用端口全局函数**（拒绝）：丢失 per-step 的 `StepRenderer` 注入 seam；端口若提供 renderer 工厂又会与 agent_step / tools 成环。
+
+## 更新（2026-11-14）
+
+端口 Adapter 不再靠 import 副作用注册：`core.tui.render.attach(app)` 在注册实现的同时挂上
+App 句柄，`run()`、`run_test` 与 smoke 共用这一个入口；`import core.tui.render` 不再注册。
+展示值构造移到 `core.tui.blocks`（纯），询问状态机移到 `core.tui.ask`（纯）、部件层在
+`core.tui.dock`。设计见 `docs/superpowers/specs/2026-11-14-tui-deepening-design.md`。

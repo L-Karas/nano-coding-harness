@@ -67,7 +67,7 @@ def test_current_approval_mode_falls_back_to_manual(monkeypatch):
 def test_footer_shows_approval_mode_and_refreshes(monkeypatch):
     config = SimpleNamespace(approval_mode="Manual")
     monkeypatch.setattr(core.config, "CONFIGMANAGER", SimpleNamespace(config=config))
-    monkeypatch.setattr(footer, "current_model_state", lambda: ("", "", ""))  # 固定为无模型段
+    monkeypatch.setattr(utils, "current_model_state", lambda: ("", "", ""))  # 固定为无模型段
 
     async def main() -> None:
         async with chat_app() as (app, _):
@@ -188,10 +188,10 @@ def test_format_compact_threshold_uses_k_or_m_units():
 
 def test_footer_puts_model_state_on_approval_row(monkeypatch):
     """模型段移到审批模式行右端，占用条行不再包含模型。"""
-    monkeypatch.setattr(footer, "current_model_state", lambda: ("p", "m", "max"))
-    monkeypatch.setattr(footer, "current_approval_mode", lambda: "Manual")
-    monkeypatch.setattr(footer, "current_context_length", lambda: 0)
-    monkeypatch.setattr(footer, "current_compact_trigger_tokens", lambda: 0)
+    monkeypatch.setattr(utils, "current_model_state", lambda: ("p", "m", "max"))
+    monkeypatch.setattr(utils, "current_approval_mode", lambda: "Manual")
+    monkeypatch.setattr(utils, "current_context_length", lambda: 0)
+    monkeypatch.setattr(utils, "current_compact_trigger_tokens", lambda: 0)
 
     async def main() -> None:
         async with chat_app() as (app, _):
@@ -208,10 +208,10 @@ def test_footer_puts_model_state_on_approval_row(monkeypatch):
 
 
 def test_footer_token_bar_includes_compact_threshold(monkeypatch):
-    monkeypatch.setattr(footer, "current_model_state", lambda: ("", "", ""))
-    monkeypatch.setattr(footer, "current_context_length", lambda: 200_000)
-    monkeypatch.setattr(footer, "current_compact_trigger_tokens", lambda: 160_000)
-    monkeypatch.setattr(footer, "current_auto_compact", lambda: True)
+    monkeypatch.setattr(utils, "current_model_state", lambda: ("", "", ""))
+    monkeypatch.setattr(utils, "current_context_length", lambda: 200_000)
+    monkeypatch.setattr(utils, "current_compact_trigger_tokens", lambda: 160_000)
+    monkeypatch.setattr(utils, "current_auto_compact", lambda: True)
 
     async def main() -> None:
         async with chat_app() as (app, _):
@@ -229,7 +229,7 @@ def test_footer_shows_no_compaction_hint_when_auto_compact_is_off(monkeypatch):
     monkeypatch.setattr(core.client, "shared_model_client",
                         lambda: SimpleNamespace(load_context_length=lambda: 200_000,
                                                 compact_trigger_tokens=lambda: 160_000))
-    monkeypatch.setattr(footer, "current_model_state", lambda: ("", "", ""))
+    monkeypatch.setattr(utils, "current_model_state", lambda: ("", "", ""))
 
     async def main() -> None:
         async with chat_app() as (app, _):

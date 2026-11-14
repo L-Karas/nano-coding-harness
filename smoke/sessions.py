@@ -31,8 +31,8 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert fake.created == 0 and fake.current_session == "", \
         "/new 应立即创建会话（延迟到首条消息，由 add_message 建）"
-    assert not app._busy
-    app._busy = True  # 模拟回合进行中：/new 应提示并保持会话指针不动
+    assert not app.turn.busy
+    app.turn._busy = True  # 模拟回合进行中：/new 应提示并保持会话指针不动
     prompt.text = "/new"
     await pilot.press("enter")
     await settle(pilot)
@@ -40,9 +40,9 @@ async def run(app, pilot) -> None:
         "忙碌中 /new 不应清空会话指针"
     toasts = [n.message for n in app._notifications]
     assert any("Previous turn is still running" in message for message in toasts), "忙碌中 /new 应提示"
-    app._busy = False
+    app.turn._busy = False
     app._manager = None
-    app._clear_cards()
+    app.board.clear()
     print("[smoke] /new defers session creation until first message OK")
 
     # 会话选择弹窗：大量会话时弹窗不得超出屏幕/裁剪列表，↓ 可滚动到最后一个会话

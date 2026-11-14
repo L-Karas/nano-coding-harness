@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+from dataclasses import dataclass
 
 from core.config import DEFAULT_APPROVAL_MODE
 
@@ -169,6 +170,44 @@ def current_approval_mode() -> str:
     except Exception:
         return DEFAULT_APPROVAL_MODE
     return mode if mode in _IMPLEMENTED_APPROVAL_MODES else DEFAULT_APPROVAL_MODE
+
+
+@dataclass(frozen=True)
+class FooterEnv:
+    """页脚一次读取的环境快照：cwd / git / 模型 / 上下文 / 压缩 / 审批模式。
+
+    每个字段都可能因环境缺依赖而退化（空串 / 0 / 默认值），由各自的读取函数保证不抛。
+    """
+
+    cwd: str
+    branch: str
+    provider: str
+    model: str
+    level: str
+    context_length: int
+    compact_trigger: int
+    auto_compact: bool
+    approval_mode: str
+
+
+def read_footer_env() -> FooterEnv:
+    """读取一次页脚环境快照。
+
+    Returns:
+        供页脚三行使用的不可变快照；单项读取失败按各自默认值退化。
+    """
+    provider, model, level = current_model_state()
+    return FooterEnv(
+        cwd=working_directory(),
+        branch=current_git_branch(),
+        provider=provider,
+        model=model,
+        level=level,
+        context_length=current_context_length(),
+        compact_trigger=current_compact_trigger_tokens(),
+        auto_compact=current_auto_compact(),
+        approval_mode=current_approval_mode(),
+    )
 
 
 def format_context_length(value: int) -> str:

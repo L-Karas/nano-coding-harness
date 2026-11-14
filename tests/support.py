@@ -194,6 +194,16 @@ def option_texts(widget) -> list[str]:
     return [widget.get_option_at_index(i).prompt.plain for i in range(widget.option_count)]
 
 
+def mark_busy(app, busy: bool = True) -> None:
+    """测试布置：把前台回合标记为在跑（生产代码里 busy 只由 Turn 写）。
+
+    Args:
+        app: ChatApp。
+        busy: 是否标记为运行中。
+    """
+    app.turn._busy = busy
+
+
 @asynccontextmanager
 async def chat_app(*, size=None, handle_query=None, **kwargs):
     """创建 ChatApp 并在 run_test 中交给测试，统一 handle_query 默认值。"""
@@ -207,7 +217,7 @@ async def chat_app(*, size=None, handle_query=None, **kwargs):
 
 @contextmanager
 def render_bridge(app):
-    """把 ChatApp 挂到渲染桥接全局（run_test 不经 run()，同 smoke 的用法）。
+    """把端口 Adapter 挂到 ChatApp（run_test 不经 run()，同 smoke 的用法）。
 
     Args:
         app: 待挂载的 ChatApp。
@@ -217,8 +227,5 @@ def render_bridge(app):
     """
     import core.tui.render as render  # 延迟导入：只有 UI 测试需要拉起 Textual
 
-    render._APP = app
-    try:
+    with render.attach(app):
         yield
-    finally:
-        render._APP = None

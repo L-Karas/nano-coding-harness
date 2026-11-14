@@ -28,7 +28,7 @@ async def run(app, pilot) -> None:
     prompt.text = "/mcp"
     await pilot.press("enter")
     await settle(pilot, 10)
-    assert not app._busy, "/mcp 不应触发 agent 回合"
+    assert not app.turn.busy, "/mcp 不应触发 agent 回合"
     assert app._exception is None, f"渲染异常: {app._exception}"
     assert isinstance(app.screen_stack[-1], MCPServersScreen), "/mcp 未打开 MCP 弹窗"
     mcp_lst = app.screen_stack[-1].query_one("#mcp-list", OptionList)
@@ -275,7 +275,7 @@ async def run(app, pilot) -> None:
     prompt.text = "/mcp"
     await pilot.press("enter")
     await settle(pilot, 10)
-    assert not app._busy, "/mcp 不应触发 agent 回合"
+    assert not app.turn.busy, "/mcp 不应触发 agent 回合"
     assert isinstance(app.screen_stack[-1], MCPServersScreen), "无 server 时应开空窗（可在窗内 Insert 配置）"
     empty_lst = app.screen_stack[-1].query_one("#mcp-list", OptionList)
     assert empty_lst.option_count == 0, "空 server 列表不应有行"

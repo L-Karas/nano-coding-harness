@@ -51,20 +51,30 @@ cron / 后台结果注入自动回合）、后台任务、子代理任一在跑�
 
 | 文件 | 职责 |
 | --- | --- |
-| `ui_textual.py` | App 装配 + 入口（含 `--smoke` 无头自检） |
-| `surface.py` | 卡片 / 流式 / 状态行 |
-| `footer.py` | 页脚 |
-| `commands.py` | 弹窗指令 / 回合 / 压缩 |
-| `interactions.py` | 权限 / clarify |
-| `render.py` | 线程安全渲染 |
+| `__init__.py` | 包级 Interface：`run` / `ChatApp`（惰性导入） |
+| `ui_textual.py` | App 装配 + 事件路由 + 入口（含 `--smoke` 自检） |
+| `parts.py` | 部件取件门面：唯一知道 `#id` ↔ 部件类型 |
+| `board.py` | 聊天画板：卡片 / 工具卡并回 / 流式 Markdown / 清板 |
+| `blocks.py` | 展示值构造：卡片正文 / diff / 折叠头行 / 键帽降级（纯，无 Textual） |
+| `status.py` | 状态行部件（文本 + spinner） |
+| `ask.py` | 待答请求状态机（权限 / clarify 共用，纯） |
+| `ask_panel.py` | 询问视图 → 部件（幂等 reconcile） |
+| `turn.py` | 前台回合 runner：busy 唯一写者 / 工作线程 / 收尾顺序 |
+| `right_panel.py` | 右栏折叠态 / 宽度 / 手动展开意图 |
+| `footer.py` | 页脚三行（环境快照 + token 来源均注入） |
+| `commands.py` | `/` 指令、会话历史、用户消息分派（无自有状态） |
+| `interactions.py` | 权限 / clarify 的 Textual 事件路由（无自有状态） |
+| `render.py` | 端口 Adapter：线程桥接 + `attach()` + 调 App；展示规则在 `blocks` |
 | `widgets.py` | 输入框与补全 |
 | `screens/` | 会话 / 模型 / MCP / 登录等弹窗 |
-| `panels.py` | 左栏分区 |
+| `panels.py` | 左栏分区与底部停靠区 |
 | `cards.py` | 折叠卡片 |
 | `info_panel.py` | 右栏信息面板 |
 | `theme.py` / `app.css` | 主题与样式 |
 
-`ChatApp` 由三个 mixin（`_RenderSurface` / `_CommandFlow` / `_DockInteractions`）拼成：
-各 mixin 的自有状态在 `_init_*` 里初始化并由 `ChatApp.__init__` 调用；依赖的宿主成员与
-跨 mixin 调用方向写在各 mixin 类 docstring 的「宿主契约」一节。新增 mixin 遵循同样的
-私有命名 + 无 `__init__` + 单一宿主约定。
+包级 Interface 只有 `run` 与 `ChatApp`（`core.tui.__init__` 的 `__all__`）；`import core.tui`
+不拉起 Textual。端口在 `render.attach(app)` 时注册（`run()`、`run_test`、smoke 共用），
+`import` 无副作用。`ChatApp` 由两个无状态 mixin（`_CommandFlow` / `_DockInteractions`）
+与五个 Module（`Board` / `AskState` + `AskPanel` / `Turn` / `RightPanel` / `Parts`）装配而成：
+状态分别只存在于对应 Module，mixin 只把 Textual 事件翻译成对它们的调用。
+`Turn.busy` 在生产代码中只有一个写者（`Turn`）；测试布置用 `tests/support.mark_busy`。

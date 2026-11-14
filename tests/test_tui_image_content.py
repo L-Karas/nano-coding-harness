@@ -6,12 +6,21 @@ from core.template import INJECTION_MESSAGES_TEMPLATE
 from core.tui.screens.fork import _preview
 
 
+class _Board:
+    def __init__(self, cards):
+        self.cards = cards
+
+    def add(self, block, **kwargs):
+        self.cards.append((block.kind, block.body))
+
+    def merge(self, block):
+        self.add(block)
+
+
 class _App:
     def __init__(self):
         self.cards = []
-
-    def _add_card(self, kind, body, **kwargs):
-        self.cards.append((kind, body))
+        self.board = _Board(self.cards)
 
 
 def test_render_user_input_flattens_array(monkeypatch):

@@ -7,13 +7,14 @@ from concurrent.futures import Future
 
 from textual.widgets import OptionList
 
+from core.tui import blocks
 from tests.support import chat_app
 
 
 def test_permission_click_elsewhere_keeps_list_focused():
     async def main() -> None:
         async with chat_app(size=(100, 32)) as (app, pilot):
-            app._add_card("user", "hello")  # 让 #chat 可见（欢迎态下隐藏）
+            app.board.add(blocks.user_input("hello"))  # 让 #chat 可见（欢迎态下隐藏）
             await pilot.pause()
             future: Future[str] = Future()
             app._begin_permission("Allow?", [], future)
@@ -37,7 +38,7 @@ def test_permission_click_elsewhere_keeps_list_focused():
 def test_clarify_click_elsewhere_keeps_list_focused():
     async def main() -> None:
         async with chat_app(size=(100, 32)) as (app, pilot):
-            app._add_card("user", "hello")
+            app.board.add(blocks.user_input("hello"))
             await pilot.pause()
             app._begin_clarify(["A", "B", "C"], False, Future())
             await pilot.pause()
@@ -57,7 +58,7 @@ def test_clarify_click_elsewhere_keeps_list_focused():
 def test_clarify_other_click_elsewhere_keeps_prompt_focused():
     async def main() -> None:
         async with chat_app(size=(100, 32)) as (app, pilot):
-            app._add_card("user", "hello")
+            app.board.add(blocks.user_input("hello"))
             await pilot.pause()
             app._begin_clarify(["A"], False, Future())
             await pilot.pause()

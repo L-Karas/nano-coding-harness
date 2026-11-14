@@ -311,13 +311,13 @@ def test_ctrl_left_expands_from_collapsed_and_widens_to_cap():
         async with app.run_test():
             assert _is_collapsed(app)
             app.action_widen_info_panel()  # 折叠态 Ctrl+←：展开到默认 20%
-            assert not _is_collapsed(app) and app._panel_pct == 20
+            assert not _is_collapsed(app) and app.right_panel.pct == 20
             app.action_widen_info_panel()
-            assert app._panel_pct == 30
+            assert app.right_panel.pct == 30
             app.action_widen_info_panel()
-            assert app._panel_pct == 40
+            assert app.right_panel.pct == 40
             app.action_widen_info_panel()  # 封顶不超 40%
-            assert app._panel_pct == 40
+            assert app.right_panel.pct == 40
 
     asyncio.run(main())
 
@@ -332,7 +332,7 @@ def test_ctrl_right_narrows_to_collapse_and_back():
             app.action_narrow_info_panel()  # 已是最低，空转
             assert _is_collapsed(app)
             app.action_widen_info_panel()  # 再次展开回 20%
-            assert not _is_collapsed(app) and app._panel_pct == 20
+            assert not _is_collapsed(app) and app.right_panel.pct == 20
 
     asyncio.run(main())
 
@@ -352,7 +352,7 @@ def test_auto_expand_restores_last_width():
             _refresh(app)
             state.set_todos([TodoEntry("again", "pending")])
             _refresh(app)  # 自动展开应回到用户宽度
-            assert not _is_collapsed(app) and app._panel_pct == 40
+            assert not _is_collapsed(app) and app.right_panel.pct == 40
 
     asyncio.run(main())
 

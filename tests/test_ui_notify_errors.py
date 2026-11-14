@@ -1,11 +1,14 @@
 """TUI 错误分支统一走 error 级 toast：失败不能被静默吞掉。
 
-覆盖 `_spawn_worker` / `_client_call` / `_open_mcp` / `_turn_worker` 四条迁移点；
+覆盖 `Turn` 工作线程 / `_client_call` / `_open_mcp` / `_turn_worker` 四条迁移点；
 info 级（busy / 不可用 / 中断）由 fork / compact 测试覆盖。
 """
+import asyncio
+
 import core.client as client_mod
 import core.mcp.mcp_client as mcp_client
 from core.tui.ui_textual import ChatApp
+from tests.support import chat_app
 
 
 def _app(events):
@@ -17,18 +20,27 @@ def _app(events):
 
 
 def test_worker_exception_notifies_error():
-    events = []
-    app = _app(events)
-    app.call_from_thread = lambda fn, *a, **kw: fn()
-    app._set_idle = lambda: events.append(("idle",))
+    async def main() -> None:
+        events = []
+        async with chat_app(size=(80, 24)) as (app, _pilot):
+            app.notify = lambda message, title="", severity="information", **kw: events.append(
+                ("notice", title, message, severity))
 
-    def _boom():
-        raise RuntimeError("boom")
+            def _boom():
+                raise RuntimeError("boom")
 
-    app._spawn_worker(_boom, "agent-turn", "⚠️ Agent Error").join()
+            thread = app.turn.start(_boom, status_text="Working…", thread_name="agent-turn",
+                                    error_title="⚠️ Agent Error")
+            for _ in range(300):
+                await asyncio.sleep(0.01)
+                if not thread.is_alive() and not app.turn.busy:
+                    break
 
-    assert ("notice", "⚠️ Agent Error", "RuntimeError: boom", "error") in events, events
-    assert events[-1] == ("idle",), "收尾仍须复位忙碌态"
+            assert ("notice", "⚠️ Agent Error", "RuntimeError: boom", "error") in events, events
+            assert not app.turn.busy, "收尾仍须复位忙碌态"
+            assert not app.parts.prompt.disabled
+
+    asyncio.run(main())
 
 
 def test_client_call_failure_notifies_error(monkeypatch):

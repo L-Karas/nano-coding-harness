@@ -22,17 +22,17 @@ _SPIN_STYLE = "bold #fde68a"  # 工具调用 spinner 帧样式（同 Tool Call �
 
 
 class _CappedCardBody(Static):
-    """卡片正文：超出 cap 行时折叠（前 cap 行 + 1 行提示，点击展开/收回）。
+    """卡片正文：超出 max_lines 行时折叠（前 max_lines 行 + 1 行提示，点击展开/收回）。
 
     可选在正文最前轮播 Rich Spinner（工具调用等待结果期间）；行数取自 get_content_height
-    （按渲染宽度换行后的视觉行，长行折出的行同样计入）；reserved 为固定头行数，不参与折叠；
+    （按渲染宽度换行后的视觉行，长行折出的行同样计入）；head_lines 为固定头行数，不参与折叠；
     -expandable 类在内容高度重算时同步。"""
 
     def __init__(
         self,
         content: Any,
-        cap: int,
-        reserved: int = 0,
+        max_lines: int,
+        head_lines: int = 0,
         spin: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -40,16 +40,16 @@ class _CappedCardBody(Static):
 
         Args:
             content: 传给 Static 的正文内容。
-            cap: 折叠时最多显示的正文视觉行数。
-            reserved: 固定头行数，不参与折叠。
+            max_lines: 折叠时最多显示的正文视觉行数。
+            head_lines: 固定头行数，不参与折叠。
             spin: 是否在正文最前轮播 spinner；仅工具调用卡使用。
             kwargs: 透传给 Static 的其余参数。
         """
         # Rich（Textual 的渲染层）自带 Spinner：时间驱动帧、自带 dots 帧（同为 Braille）
         super().__init__(content, **kwargs)
         self._spinner = Spinner("dots", text=content, style=_SPIN_STYLE) if spin else None
-        self._cap = cap
-        self._reserved = reserved
+        self._max_lines = max_lines
+        self._head_lines = head_lines
         self._expanded = False
         self._full_height = 0  # 当前宽度下完整内容的视觉行数（get_content_height 记录）
 
@@ -78,9 +78,9 @@ class _CappedCardBody(Static):
         """正文是否超过折叠上限。
 
         Returns:
-            当前宽度下正文行数大于 cap 时为 True。
+            当前宽度下正文行数大于 max_lines 时为 True。
         """
-        return self._full_height - self._reserved > self._cap
+        return self._full_height - self._head_lines > self._max_lines
 
     def get_content_height(
         self,
@@ -96,14 +96,14 @@ class _CappedCardBody(Static):
             width: 渲染宽度。
 
         Returns:
-            折叠态为头行 + min(正文行数, cap + 1)（未超上限时即完整高度、无提示行）；
+            折叠态为头行 + min(正文行数, max_lines + 1)（未超上限时即完整高度、无提示行）；
             展开态为完整高度 + 1 行收起提示。
         """
         full = super().get_content_height(container, viewport, width)
         self._full_height = full
-        body = max(0, full - self._reserved)  # 扣除固定头行后的正文行数
+        body = max(0, full - self._head_lines)  # 扣除固定头行后的正文行数
         self._sync_expandable()
-        return self._reserved + (body + 1 if self._expanded else min(body, self._cap + 1))
+        return self._head_lines + (body + 1 if self._expanded else min(body, self._max_lines + 1))
 
     def _sync_expandable(self) -> None:
         """按当前截断 / 展开状态同步 -expandable 类（控制指针与点击展开）。"""
@@ -129,8 +129,8 @@ class _CappedCardBody(Static):
         """
         if self._expanded and y == self._full_height:
             return self._hint_strip(_COLLAPSE_HINT)
-        if not self._expanded and y == self._reserved + self._cap and self._truncated:
-            hidden = self._full_height - self._reserved - self._cap
+        if not self._expanded and y == self._head_lines + self._max_lines and self._truncated:
+            hidden = self._full_height - self._head_lines - self._max_lines
             return self._hint_strip(_TRUNCATED_HINT.format(hidden=hidden))
         return super().render_line(y)
 

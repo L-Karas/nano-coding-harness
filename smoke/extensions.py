@@ -29,7 +29,7 @@ async def run(app, pilot) -> None:
         assert prompt._candidates == ["/extensions"], prompt._candidates
         await pilot.press("enter")
         await settle(pilot, 10)
-        assert not app._busy, "/extensions 不应触发 agent 回合"
+        assert not app.turn.busy, "/extensions 不应触发 agent 回合"
         assert app._exception is None, f"渲染异常: {app._exception}"
         screen = app.screen_stack[-1]
         assert isinstance(screen, ExtensionsScreen), "/extensions 未打开扩展弹窗"

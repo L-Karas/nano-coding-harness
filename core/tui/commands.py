@@ -6,8 +6,7 @@
 
 from __future__ import annotations
 
-import threading
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from core.context.message import content_text
 from core.extension import list_extensions as _list_extensions
@@ -31,24 +30,14 @@ from core.tui.screens import (
     SettingsScreen,
     SkillsScreen,
 )
-from core.tui.theme import PLACEHOLDER
 
 
 class _CommandFlow:
-    """ChatApp 指令与回合 mixin。
+    """ChatApp 的 / 指令、会话历史与用户消息分派 mixin（无自有状态）。
 
-    宿主契约（ChatApp 提供）：_handle、_manager、_runtime、_prompt()、
-    _refresh_footer()、_progress_sync()。
-    跨 mixin 依赖：_RenderSurface 的 _clear_cards / _notify /
-    _set_status_text；_DockInteractions._reset_interactions（_set_idle 收尾时
-    先复位挂起交互）。
-    自有状态（_init_command_flow 初始化）：_busy（只由本类写，宿主与
-    _DockInteractions 只读）。
+    宿主契约（ChatApp 提供）：_handle、_manager、_runtime、turn（Turn：回合 runner）、
+    board（Board）、_notify()、_refresh_footer()。
     """
-
-    def _init_command_flow(self) -> None:
-        """初始化指令流自有状态（由 ChatApp.__init__ 调用）。"""
-        self._busy = False
 
     _OPENERS = {  # / 指令 → 打开方法名（方法见下）
         "/sessions": "_open_sessions", "/fork": "_open_fork", "/skills": "_open_skills",
@@ -87,7 +76,7 @@ class _CommandFlow:
         if not self._manager.load_session_list():
             render_sessions()  # 空列表提示卡片
             return
-        self.push_screen(SessionPickerScreen(self._manager, on_delete_current=self._clear_cards),
+        self.push_screen(SessionPickerScreen(self._manager, on_delete_current=self.board.clear),
                          callback=self._on_session_picked)
 
     def _open_fork(self) -> None:
@@ -95,7 +84,7 @@ class _CommandFlow:
         if self._manager is None:
             self._notify("SessionManager not connected — /fork unavailable", title="⚠️ Fork")
             return
-        if self._busy:  # 分叉会换当前会话，进行中的回合必须拒绝
+        if self.turn.busy:  # 分叉会换当前会话，进行中的回合必须拒绝
             self._reject_busy()
             return
         messages = self._manager.load_user_messages()
@@ -123,7 +112,7 @@ class _CommandFlow:
         if forked.messages:
             self._reload_history()
         else:
-            self._clear_cards()  # 分叉到起点：新会话尚无历史
+            self.board.clear()  # 分叉到起点：新会话尚无历史
         content = content_text(next((m.content for m in messages if m.id == message_id), ""))
         prompt = self._prompt()
         prompt.text = content
@@ -155,7 +144,7 @@ class _CommandFlow:
         skill_name, with_message = picked
         if not skill_name:
             return
-        if self._busy:
+        if self.turn.busy:
             self._reject_busy()
             return
         query = SKILL_INVOCATION_TEMPLATE.format(name=skill_name)
@@ -233,7 +222,7 @@ class _CommandFlow:
             return
         session = self._manager.load_session(session_id)
         if session is not None:
-            self._clear_cards()
+            self.board.clear()
             render_session_history(session)
 
     def _on_session_picked(self, result: tuple[Optional[str], bool]) -> None:
@@ -258,13 +247,14 @@ class _CommandFlow:
             query: 输入文本。
 
         顺序：exit → opener → 忙时拒绝 → compact → new → 发送。
+        入口忙门禁是 UX 策略（不进入任何命令分支）；Turn.start 的状态门禁仍在（直接调用时兜底）。
         """
         cmd = query.lower()
         if cmd in ("/exit", "/quit"):
             self.exit()
         elif opener := self._OPENERS.get(cmd):
             getattr(self, opener)()
-        elif self._busy:
+        elif self.turn.busy:
             # 回合进行中拒绝 /compact /new 与普通消息：/new 清空会话指针后，本轮后续 add_message
             # 会把回话写进新建会话（见 session.py：current_session 为空时自动 new_session）
             self._reject_busy()
@@ -273,7 +263,7 @@ class _CommandFlow:
         elif cmd == "/new":
             if self._manager is not None:
                 self._manager.reset()  # 延迟建会话：下条消息到达时自动创建
-            self._clear_cards()
+            self.board.clear()
         else:
             self._send_user_query(query)
 
@@ -289,13 +279,12 @@ class _CommandFlow:
 
         输入条回车与 /skills 选中技能共用。
         """
-        self._prompt().text = ""  # 输入已消费即清空
-        self._busy = True
-        self._prompt().disabled = True
-        self._set_status_text("Working…", spin=True)
-        self._progress_sync()
+        if not self.turn.start(lambda: self._turn_worker(query),
+                               status_text="Working…", thread_name="agent-turn",
+                               error_title="⚠️ Agent Error"):
+            self._reject_busy()
+            return
         render_user_input(query)
-        self._spawn_worker(lambda: self._turn_worker(query), "agent-turn", "⚠️ Agent Error")
 
     def _turn_worker(self, query: str) -> None:
         """回合线程主体：保存用户消息后交给 agent 处理。
@@ -310,51 +299,6 @@ class _CommandFlow:
                 self._notify(f"保存会话消息失败：{exc}", title="⚠️ Session Error", severity="error")
         self._handle(query)
 
-    def _spawn_worker(
-        self,
-        work: Callable[[], None],
-        name: str,
-        title: str,
-    ) -> threading.Thread:
-        """启动后台线程执行 work。
-
-        Args:
-            work: 线程主体。
-            name: 线程名。
-            title: 异常提示标题。
-
-        Returns:
-            已启动的守护线程（daemon=True）；线程内异常上屏，收尾回 App 线程复位忙碌态
-            （App 已退出则忽略）。
-        """
-
-        def _run() -> None:
-            """执行 work，异常上屏并在 finally 中复位忙碌态。"""
-            try:
-                work()
-            except Exception as exc:
-                self._notify(f"{type(exc).__name__}: {exc}", title=title, severity="error")
-            finally:
-                try:
-                    self.call_from_thread(self._set_idle)
-                except RuntimeError:
-                    pass  # App 已退出
-
-        thread = threading.Thread(target=_run, daemon=True, name=name)
-        thread.start()
-        return thread
-
-    def _set_idle(self) -> None:
-        """回合 / 压缩结束：复位忙碌态、收起权限与 clarify 列表、恢复输入条并收回焦点。"""
-        self._busy = False
-        self._reset_interactions()  # 先清挂起：_progress_sync 据此判断等待优先级
-        self._progress_sync()  # 后台任务 / 子代理仍在跑则保持动态条，否则清除
-        self._set_status_text("")
-        prompt = self._prompt()
-        prompt.placeholder = PLACEHOLDER
-        prompt.disabled = False
-        prompt.focus()
-
     # ---------- 手动压缩（/compact） ----------
 
     def _run_compact(self) -> None:
@@ -367,11 +311,10 @@ class _CommandFlow:
             self._notify("Current session is empty — /compact unavailable",
                          title="⚠️ Compact")
             return
-        self._busy = True
-        self._prompt().disabled = True
-        self._set_status_text("Compacting…", spin=True)
-        self._progress_sync()
-        self._spawn_worker(lambda: self._compact_worker(self._runtime), "agent-compact", "⚠️ Compact Error")
+        if not self.turn.start(lambda: self._compact_worker(self._runtime),
+                               status_text="Compacting…", thread_name="agent-compact",
+                               error_title="⚠️ Compact Error"):
+            self._reject_busy()
 
     def _compact_worker(self, runtime: Any) -> None:
         """压缩线程主体。

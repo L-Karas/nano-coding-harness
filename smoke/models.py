@@ -121,7 +121,7 @@ async def run(app, pilot) -> None:
     prompt.text = "/model"
     await pilot.press("enter")
     await settle(pilot, 10)
-    assert not app._busy, "/model 不应触发 agent 回合"
+    assert not app.turn.busy, "/model 不应触发 agent 回合"
     assert app._exception is None, f"渲染异常: {app._exception}"
     if isinstance(app.screen_stack[-1], ModelPickerScreen):  # 真实数据源可用：能打开弹窗
         await pilot.press("escape")
@@ -229,7 +229,7 @@ async def run(app, pilot) -> None:
     prompt.text = "/effort"
     await pilot.press("enter")
     await settle(pilot, 10)
-    assert not app._busy, "/effort 不应触发 agent 回合"
+    assert not app.turn.busy, "/effort 不应触发 agent 回合"
     assert app._exception is None, f"渲染异常: {app._exception}"
     if isinstance(app.screen_stack[-1], EffortScreen):  # 真实数据源可用：能打开弹窗
         await pilot.press("escape")

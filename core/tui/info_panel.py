@@ -17,7 +17,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from core.runtime_state import DEFAULT_SUBAGENT_ROLE, RUNTIME_STATE, RuntimeSnapshot, RuntimeState
-from core.tui.surface import _strip_keycaps
+from core.tui.blocks import strip_keycaps
 from core.tui.theme import SECONDARY_TEXT, _SPINNER_FRAMES
 
 _RUNNING_STATUSES = ("in_progress", "running")  # 需要轮播字形的状态
@@ -115,14 +115,14 @@ class _InfoRow(Horizontal):
             thinking = it["phase"] != "tool"
             glyph, color = frame, "#facc15" if thinking else "#60a5fa"
             text_style = color
-        lines = _strip_keycaps(it["text"]).splitlines() or [""]
+        lines = strip_keycaps(it["text"]).splitlines() or [""]
         clip = self._CLIP[self._kind]
         row = Text()
         row.append("▾ " if self._expanded else "▸ ", style=SECONDARY_TEXT)
         if self._kind == "todos":
             row.append(f"{glyph} ", style=color)
         elif self._kind == "subagents":
-            role = _strip_keycaps(it.get("role") or DEFAULT_SUBAGENT_ROLE)
+            role = strip_keycaps(it.get("role") or DEFAULT_SUBAGENT_ROLE)
             row.append(f"{glyph} {role} ", style=color)
         else:
             row.append(f"{glyph} {it['id']} ", style=color)
@@ -133,7 +133,7 @@ class _InfoRow(Horizontal):
         elif len(lines[0]) > clip or len(lines) > 1:
             row.append("…", style=text_style)
         if self._kind in ("bg", "subagents") and self._expanded and it.get("expand_text"):
-            for line in _strip_keycaps(it["expand_text"]).splitlines():  # 折叠时完全不占位
+            for line in strip_keycaps(it["expand_text"]).splitlines():  # 折叠时完全不占位
                 row.append(f"\n  {line}", style=SECONDARY_TEXT)
         return row
 

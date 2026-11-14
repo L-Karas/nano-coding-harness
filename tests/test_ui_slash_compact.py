@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import core.tui.commands as commands
 from core.runtime_context import AgentInterrupted
 from core.tui.ui_textual import ChatApp
+from tests.support import mark_busy
 from core.tui.utils import SLASH_COMMANDS
 
 
@@ -23,8 +24,8 @@ def _app(monkeypatch, events):
     app.notify = lambda message, title="", severity="information", **kw: events.append(
         ("notice", title, message, severity))
     app.call_from_thread = lambda fn, *a, **kw: fn()  # 测试线程内直接执行（App 未运行）
-    app._set_idle = lambda: events.append(("idle",))
-    app._clear_cards = lambda: events.append(("clear",))
+    app.turn.finish = lambda: events.append(("idle",))
+    app.board.clear = lambda: events.append(("clear",))
     app._prompt = lambda: SimpleNamespace(disabled=False)
     app._set_status_text = lambda *a, **k: None
     return app
@@ -41,7 +42,8 @@ def test_compact_command_compacts_then_rerenders_history(monkeypatch):
     app._runtime = runtime
     app._manager = SimpleNamespace(load_session=lambda sid="": session)
     # 直接跑 worker 主体并 join（不起 _run_compact：其 runtime=None / 忙碌分支见下一个测试）
-    app._spawn_worker(lambda: app._compact_worker(runtime), "agent-compact", "⚠️ Compact Error").join()
+    app.turn.start(lambda: app._compact_worker(runtime), status_text="Compacting…",
+                        thread_name="agent-compact", error_title="⚠️ Compact Error").join()
     assert runtime.compacted == 1, "未调用 AgentRuntime.compact"
     assert [e[0] for e in events] == ["clear", "render", "notice", "idle"], events
     assert events[1][1] is session, "重放的不是当前会话消息"
@@ -56,7 +58,8 @@ def test_compact_worker_reports_noop_without_rerender(monkeypatch):
             return False
 
     app = _app(monkeypatch, events)
-    app._spawn_worker(lambda: app._compact_worker(_NoopRuntime()), "agent-compact", "⚠️ Compact Error").join()
+    app.turn.start(lambda: app._compact_worker(_NoopRuntime()), status_text="Compacting…",
+                        thread_name="agent-compact", error_title="⚠️ Compact Error").join()
     assert [e[0] for e in events] == ["notice", "idle"], events
     assert "Nothing to compact" in events[0][2], events
 
@@ -70,7 +73,8 @@ def test_compact_worker_reports_interrupt_as_info_notification(monkeypatch):
             raise AgentInterrupted("User interrupted")
 
     app = _app(monkeypatch, events)
-    app._spawn_worker(lambda: app._compact_worker(_Interrupting()), "agent-compact", "⚠️ Compact Error").join()
+    app.turn.start(lambda: app._compact_worker(_Interrupting()), status_text="Compacting…",
+                        thread_name="agent-compact", error_title="⚠️ Compact Error").join()
     notices = [e for e in events if e[0] == "notice"]
     assert notices and notices[0][1] == "⏹ Compact" and "interrupted" in notices[0][2], events
     assert notices[0][3] == "information", "中断不是错误，保持默认 info 级"
@@ -84,8 +88,8 @@ def test_compact_command_guards(monkeypatch):
     assert events and "unavailable" in events[0][2], events
     events.clear()
     # 回合进行中：/compact 在 on_input_submitted 里走 busy 分支被拒，到不了 _run_compact
-    app._busy = True
-    app._chat = lambda: SimpleNamespace(anchor=lambda: None)
+    mark_busy(app, True)
+    app.parts = SimpleNamespace(board=SimpleNamespace(anchor=lambda: None))
     app._run_compact = lambda: events.append(("ran",))
     app.on_input_submitted(SimpleNamespace(value="/compact"))
     assert events == [("notice", "⏳ Busy", "Previous turn is still running, please wait…", "information")], events

@@ -19,7 +19,7 @@ async def run(app, pilot) -> None:
     assert app._prompt().disabled, "作答前输入条应禁用"
     await pilot.press("down", "enter")
     assert future.result() == "Use Postgres?", future.result()
-    assert ol.styles.display == "none" and not app._clarify_pending, "作答后应收起列表"
+    assert ol.styles.display == "none" and app.asks.view() is None, "作答后应收起列表"
     print("[smoke] clarify single-select OK")
 
     # 多选：Space 切换勾选（◉/◯ 标记），Enter 提交全部勾选项
@@ -44,7 +44,7 @@ async def run(app, pilot) -> None:
     assert ol.highlighted == 2
     await pilot.press("enter")
     await settle(pilot)
-    assert app._clarify_other and not app._prompt().disabled and app._prompt().has_focus
+    assert app.asks.view().other_mode and not app._prompt().disabled and app._prompt().has_focus
     assert app._prompt().placeholder == "Type your own answer…", app._prompt().placeholder
     app._prompt().text = "custom reply"
     await pilot.press("enter")
@@ -75,9 +75,9 @@ async def run(app, pilot) -> None:
     thread.start()
     for _ in range(100):
         await pilot.pause(0.05)
-        if app._clarify_pending:
+        if app.asks.view() is not None:
             break
-    assert app._clarify_pending, "Clarify.run 未经渲染桥拉起澄清列表"
+    assert app.asks.view() is not None, "Clarify.run 未经渲染桥拉起澄清列表"
     await pilot.press("enter")
     thread.join(timeout=5)
     assert result.get("answer") == "Bridge [A]?", result

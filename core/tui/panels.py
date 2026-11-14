@@ -12,7 +12,7 @@ from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from core.tui.footer import _FooterBar
-from core.tui.surface import _StatusLine
+from core.tui.status import _StatusLine
 from core.tui.theme import SECONDARY_TEXT, PLACEHOLDER
 from core.tui.widgets import _ClarifyList, _CommandInput
 
@@ -71,7 +71,18 @@ class _ChatBoard(VerticalScroll):
 class _ChatDock(Vertical):
     """底部固定区：状态行 + / 与 @ 候选列表 + 权限 / clarify 列表 + 输入条 + 页脚三行。
 
-    候选 OptionList 默认隐藏，由 _CommandInput 按 id 整批重建；同刻至多一组可见。"""
+    候选 OptionList 默认隐藏，由 _CommandInput 按 id 整批重建；同刻至多一组可见。
+    token 来源由 App 注入页脚，页脚不反向访问 App。"""
+
+    def __init__(self, *, session_tokens: Any = None, **kwargs: Any) -> None:
+        """初始化停靠区。
+
+        Args:
+            session_tokens: 当前会话 token 来源（传给页脚）；None 表示恒 0。
+            kwargs: 透传给 Vertical 的参数。
+        """
+        super().__init__(**kwargs)
+        self._session_tokens = session_tokens or (lambda: 0)
 
     def compose(self) -> ComposeResult:
         """组装状态行、候选列表、交互列表、输入条与页脚。
@@ -87,4 +98,4 @@ class _ChatDock(Vertical):
         with Horizontal(id="inputbar"):  # 上下粗实线输入条：>> 前缀 + 输入框
             yield Static(">> ", id="prompt-mark")
             yield _CommandInput(placeholder=PLACEHOLDER, id="prompt")
-        yield _FooterBar(id="footer-bar")
+        yield _FooterBar(id="footer-bar", session_tokens=self._session_tokens)

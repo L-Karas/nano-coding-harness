@@ -59,9 +59,9 @@ async def wait_idle(app, pilot, *, timeout: float = 15.0) -> None:
     """等演示 / 真实回合收尾；超时视为冒烟失败。"""
     for _ in range(int(timeout / 0.05)):
         await pilot.pause(0.05)  # 至少让出一帧，避免回合刚好结束时跳过 UI 收尾
-        if not app._busy:
+        if not app.turn.busy:
             return
-    assert not app._busy, "回合未结束"
+    assert not app.turn.busy, "回合未结束"
 
 
 def assert_scrollbar_style(widget, what: str) -> None:

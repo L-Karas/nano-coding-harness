@@ -2,6 +2,7 @@
 import asyncio
 
 import core.tui.render as render
+from core.tui import blocks
 from core.context.message import Message
 from core.context.session.session import Session
 from tests.support import chat_app, render_bridge
@@ -43,7 +44,7 @@ def test_long_diff_collapses_without_hiding_result():
                 bodies = list(app.query("#chat .card .card-body"))
                 assert len(bodies) == 2
                 assert bodies[0].has_class("-expandable"), "长 diff 应可折叠"
-                assert bodies[0].size.height == render.DEFAULT_MAX_LINES + 2, \
+                assert bodies[0].size.height == blocks.DEFAULT_MAX_LINES + 2, \
                     "diff 折叠为 1 行标题 + max_lines 行 + 1 行提示"
                 assert not bodies[-1].has_class("-expandable"), "结果尾段不应参与折叠"
                 assert _RESULT in str(bodies[-1].render()), "diff 折叠不应吞掉结果尾段"

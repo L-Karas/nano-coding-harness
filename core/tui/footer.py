@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
 from core.tui.theme import APPROVAL_MODE_COLORS, COMPACT_HINT, SECONDARY_TEXT
-from core.tui.utils import (
-    current_approval_mode,
-    current_auto_compact,
-    current_compact_trigger_tokens,
-    current_context_length,
-    current_git_branch,
-    current_model_state,
-    format_context_length,
-    working_directory,
-)
+from core.tui.utils import FooterEnv, format_context_length, read_footer_env
 
 TOKEN_BAR_CELLS = 20  # 占用条固定格数
 _BRAILLE_BASE = 0x2800
@@ -44,16 +38,18 @@ def approval_mode_text(mode: str) -> Text:
     return text
 
 
-def _model_label() -> str:
+def _model_label(env: FooterEnv) -> str:
     """构造模型状态文本。
+
+    Args:
+        env: 环境快照。
 
     Returns:
         '(provider) model * level'；未配置 provider/model 时为空串，无 level 时省略后缀。
     """
-    provider, model, level = current_model_state()
-    if not provider or not model:
+    if not env.provider or not env.model:
         return ""
-    return f"({provider}) {model}" + (f" * {level}" if level else "")
+    return f"({env.provider}) {env.model}" + (f" * {env.level}" if env.level else "")
 
 
 def format_compact_threshold(tokens: int) -> str:
@@ -136,7 +132,26 @@ class _FooterBar(Vertical):
     """#footer（cwd 行）+ #token-bar（占用条 + 压缩阈值）+ #approval-mode（当前审批模式
     + 右下角模型状态，按实际行宽填隙对齐）。
 
-    2s 自轮询（cwd / git 分支 / token / 阈值 / 审批模式可能被其它进程或回合改变）；宽度变化由 App 触发重算。"""
+    2s 自轮询（cwd / git 分支 / token / 阈值 / 审批模式可能被其它进程或回合改变）；宽度变化由 App 触发重算。
+    环境读取与 token 来源经构造参数注入，本部件不反向访问 App。"""
+
+    def __init__(
+        self,
+        *,
+        env: Callable[[], FooterEnv] = read_footer_env,
+        session_tokens: Callable[[], int] = lambda: 0,
+        **kwargs: Any,
+    ) -> None:
+        """初始化页脚。
+
+        Args:
+            env: 环境快照来源（默认一次读取全部字段）。
+            session_tokens: 当前会话 token 估算来源；未接 SessionManager 时恒 0。
+            kwargs: 透传给 Vertical 的参数。
+        """
+        super().__init__(**kwargs)
+        self._env = env
+        self._session_tokens = session_tokens
 
     def compose(self) -> ComposeResult:
         """组装 cwd、占用条与审批模式三行。
@@ -156,19 +171,18 @@ class _FooterBar(Vertical):
 
     def refresh_data(self) -> None:
         """重新读取 cwd / 分支 / token / 阈值 / 审批模式 / 模型状态并更新三行。"""
-        cwd = working_directory()
-        branch = current_git_branch()
-        label = f"{cwd} ({branch})" if branch else cwd
+        env = self._env()
+        label = f"{env.cwd} ({env.branch})" if env.branch else env.cwd
         self.query_one("#footer", Static).update(Text(label, no_wrap=True, style=_TEXT_STYLE))
 
         self.query_one("#token-bar", Static).update(token_bar_text(
-            self._session_tokens(), current_context_length(),
-            compact_threshold=current_compact_trigger_tokens(),
-            auto_compact=current_auto_compact()))
+            self._session_tokens(), env.context_length,
+            compact_threshold=env.compact_trigger,
+            auto_compact=env.auto_compact))
 
         row = self.query_one("#approval-mode", Static)
-        text = approval_mode_text(current_approval_mode())
-        model_label = _model_label()
+        text = approval_mode_text(env.approval_mode)
+        model_label = _model_label(env)
         if model_label:
             model = Text(model_label, no_wrap=True, style=_TEXT_STYLE)
             gap = row.content_region.width - text.cell_len - model.cell_len
@@ -176,17 +190,3 @@ class _FooterBar(Vertical):
                 text.append(" " * gap)
                 text.append_text(model)
         row.update(text)
-
-    def _session_tokens(self) -> int:
-        """当前会话 token 估算数。
-
-        Returns:
-            估算值；未接 SessionManager / 取值失败时为 0。
-        """
-        manager = getattr(self.app, "_manager", None)
-        if manager is None:
-            return 0
-        try:
-            return manager.load_session_tokens()
-        except Exception:
-            return 0

@@ -6,8 +6,8 @@
      OptionList / TextArea 的 $surface、Toast 的 $panel 时才声明背景；
    - Vertical / Horizontal 默认 1fr × 1fr，Static 默认填宽 + 高自适应，
      OptionList 默认 height:auto —— 这些值一律省略；
-   - 类 / 伪类选择器（-collapsed、-effort-*）由 info_panel.py、surface.py、
-     interactions.py、screens/ 维护，改类名需同步此处。
+   - 类 / 伪类选择器（-collapsed、-effort-*）由 info_panel.py、ask_panel.py、
+     right_panel.py、screens/ 维护，改类名需同步此处。
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── 终端底色 ──
@@ -28,9 +28,9 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* 右栏默认折叠（compose 挂 -collapsed）：收成左缘标签一列，聊天区吃满其余宽度；
    三区（Todos / Background Tasks / Subagents）全空 ↔ 非空的跳变由
-   ui_textual._sync_info_panel 自动展开 / 收回。Ctrl+←/→
-   （ui_textual._resize_info_panel）调整后的内联百分比宽度优先于本规则，
-   折叠/展开由 _set_info_collapsed 同步设宽（1 ↔ 原百分比，低于 20% 即折叠） */
+   right_panel.sync 自动展开 / 收回。Ctrl+←/→
+   （right_panel.widen / narrow）调整后的内联百分比宽度优先于本规则，
+   折叠/展开由 RightPanel.set_collapsed 同步设宽（1 ↔ 原百分比，低于 20% 即折叠） */
 #right.-collapsed { width: 1; }
 #right.-collapsed > #info-panel { display: none; }
 /* 右栏左缘常驻 »/« 标签：点击折叠/展开右栏（height:1fr 占满整列，字形垂直居中） */
@@ -103,7 +103,7 @@ Toast, Toast:ansi { background: #1e293b; }
 
 /* ── 空聊板欢迎标题 ──
    聊板为空（首次启动 / 新建会话）时居中显示：大字标题 + 下方小字副标题；
-   #left 的 -welcome 类（surface._set_welcome 切换）控制欢迎与聊板互斥显隐 */
+   #left 的 -welcome 类（Board 的 on_welcome 回调切换）控制欢迎与聊板互斥显隐 */
 #welcome { height: 1fr; content-align: center middle; padding: 1 2; display: none; }
 #left.-welcome #welcome { display: block; }
 #left.-welcome #chat { display: none; }
@@ -171,7 +171,7 @@ Toast, Toast:ansi { background: #1e293b; }
 }
 
 /* clarify 选项列表（含末尾 Other）：青色描边，默认隐藏，工具请求时显示并聚焦；
-   多选勾选标记 ◉/◯ 由 interactions.py 换行实现，行数 = 选项数 + Other */
+   多选勾选标记 ◉/◯ 由 ask_panel.py 就地刷新，行数 = 选项数 + Other */
 #clarify-list {
     display: none;
     margin: 0 2;
@@ -208,7 +208,7 @@ Toast, Toast:ansi { background: #1e293b; }
    height:auto 才能随内容伸缩（Vertical 默认 1fr 会均分视口并裁掉超出内容）；
    无左右 margin 保证与终端同宽。类别：user 用户 · assistant 回复 · tool 工具调用 ·
    result 工具输出（含 write / edit 的 diff）· error 工具错误 · notice 提示 · sessions 会话列表 · perm 权限确认
-   工具结果到达后卡片由 tool 换成 result / error（同一张卡，surface._append_tool_result） */
+   工具结果到达后卡片由 tool 换成 result / error（同一张卡，Board.merge） */
 .card {
     height: auto;
     margin-bottom: 1;
@@ -219,7 +219,7 @@ Toast, Toast:ansi { background: #1e293b; }
 .card .card-body.-expandable { pointer: pointer; }
 
 /* 工具结果并入调用卡后追加的第一段（diff 优先 / 无 diff 即结果）：与参数段之间留一空白行，
-   切分「入参」与「产出」两类内容（-merged 见 surface._append_tool_result） */
+   切分「入参」与「产出」两类内容（-merged 见 Board.merge） */
 .card .card-body.-merged { margin-top: 1; }
 
 /* Markdown 自带 padding 0 2，去掉以与其它卡片左对齐；

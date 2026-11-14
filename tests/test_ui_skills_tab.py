@@ -5,7 +5,7 @@ import pytest
 
 import core.tui.screens.skills as skills_screen
 from core.tui.screens import MCPToolsScreen, SkillsScreen
-from tests.support import chat_app, make_skill
+from tests.support import chat_app, make_skill, mark_busy
 
 _HINT = ("  ↑/↓ browse    Enter/click invoke    Tab invoke with message"
          "    Ctrl+E enable/disable    Esc close")
@@ -54,7 +54,7 @@ def test_tab_fills_prompt_instead_of_sending():
             assert prompt.text == "[Invoke skill 'review'] ", "应覆盖草稿并填入调用信息"
             assert prompt.cursor_location == prompt.document.end, "光标应位于填入文本末尾"
             assert prompt.has_focus, "应聚焦输入栏以便继续补充"
-            assert not app._busy, "Tab 不应触发回合"
+            assert not app.turn.busy, "Tab 不应触发回合"
     asyncio.run(main())
 
 
@@ -62,7 +62,7 @@ def test_skill_pick_rejected_while_busy():
     async def main():
         async with chat_app() as (app, pilot):
             prompt = app.query_one("#prompt")
-            app._busy = True
+            mark_busy(app, True)
             app._on_skill_picked(("review", True))
             await pilot.pause()
             assert prompt.text == "", "忙时不应填入"
@@ -79,7 +79,7 @@ def test_empty_skill_name_is_ignored():
             app._on_skill_picked(("", False))
             await pilot.pause()
             assert prompt.text == "draft", "空技能名不应覆盖输入栏"
-            assert not app._busy, "空技能名不应触发回合"
+            assert not app.turn.busy, "空技能名不应触发回合"
     asyncio.run(main())
 
 

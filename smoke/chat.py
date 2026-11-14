@@ -74,7 +74,7 @@ async def run(app, pilot) -> None:
         "再点未收回截断"
     # 结果/调用卡：同一展开逻辑（exp_bodies 按挂载序 = result / tool / 超长单行 / diff 段）
     for w, tail in ((exp_bodies[0], None), (exp_bodies[1], "  14")):
-        app._toggle_expand(w)
+        w.toggle_expand()
         await settle(pilot, 5)
         full = str(w.render())
         if tail is None:
@@ -83,7 +83,7 @@ async def run(app, pilot) -> None:
             assert tail in full, f"展开应显示被折叠的参数尾部: {full!r}"
         assert "· click to collapse" in w.render_line(w.size.height - 1).text, \
             "展开态末行应为收回提示"
-        app._toggle_expand(w)
+        w.toggle_expand()
         await settle(pilot, 5)
         assert "... [truncated " in w.render_line(w.size.height - 1).text, "收回后应回到截断态"
     print("[smoke] expandable tool cards OK: click expands/collapses full content")
@@ -145,17 +145,17 @@ async def run(app, pilot) -> None:
         f"卡片宽度异常: {cards[0].region.width} (左栏 {left_now})"
     assert any("assistant" in c.classes for c in cards), "缺少 Assistant 卡片"
     # 增量流式自检：每 chunk 只传新增片段 → 内容逐字拼接，不丢不重
-    app._stop_stream()
+    app.board.end_stream()
     parts = ["## Title\n", "First paragraph text\n\n", "```python\nprint(1)\n```\n", "end"]
     for p in parts:
-        app._stream_update(p)
+        app.board.stream(p)
         await settle(pilot)
     md = list(app.query("#chat .card.assistant Markdown"))[-1]  # 本轮新卡（demo 卡在前）
     assert md.source == "".join(parts), \
         f"增量流式内容不一致: {md.source!r}"
     # 末块 margin-bottom 归零（:last-child 规则仍生效，且已限定 MarkdownBlock 类型）
     assert md.query("MarkdownBlock")[-1].styles.margin.bottom == 0, "末块 margin-bottom 未归零"
-    app._stop_stream()  # 停掉本轮 MarkdownStream 后台任务
+    app.board.end_stream()  # 停掉本轮 MarkdownStream 后台任务
     await settle(pilot)
     print("[smoke] markdown incremental stream OK (chunk append, no drop)")
     chat = app.query_one("#chat", VerticalScroll)
@@ -224,7 +224,7 @@ async def run(app, pilot) -> None:
     assert suggest.option_count == 3, f"过滤候选条数错误: {suggest.option_count}"
     await pilot.press("enter")  # Enter 应用高亮项（首项 /sessions）并提交
     await settle(pilot, 20)
-    assert not app._busy, "Enter 应提交补全后的 /sessions（走会话分支，不起 agent 回合）"
+    assert not app.turn.busy, "Enter 应提交补全后的 /sessions（走会话分支，不起 agent 回合）"
     toasts = [n.message for n in app._notifications]
     assert any("SessionManager not connected" in message for message in toasts), \
         "Enter 未提交 /sessions"

@@ -35,13 +35,10 @@ _SECTIONS = (chat, providers, models, login, footer, mentions, sessions, panels,
 
 async def _smoke() -> None:
     app = ChatApp(handle_query=_demo_agent)
-    _render._APP = app  # 冒烟不经 run()：直接把实例挂到渲染桥接全局
-    try:
+    with _render.attach(app):  # 冒烟不经 run()：同一挂载入口
         async with app.run_test() as pilot:
             for section in _SECTIONS:
                 await section.run(app, pilot)
-    finally:
-        _render._APP = None
 
 
 def main() -> None:

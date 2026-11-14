@@ -66,7 +66,7 @@ async def run(app, pilot) -> None:
     # 列出全部已扫描技能，行 = ● 技能名（绿色加粗）+ 描述（暗灰完整多行）；Esc 关闭；
     # 无技能时给出 toast 提示而非空弹窗（点击右栏条目后焦点可能已不在输入框：先显式聚焦）
     await open_command(app, pilot, "/skills")
-    assert not app._busy, "/skills 不应触发 agent 回合"
+    assert not app.turn.busy, "/skills 不应触发 agent 回合"
     assert app._exception is None, f"渲染异常: {app._exception}"
     assert isinstance(app.screen_stack[-1], SkillsScreen), "/skills 未打开技能弹窗"
     sk_lst = app.screen_stack[-1].query_one("#skills-list", OptionList)
@@ -118,7 +118,7 @@ async def run(app, pilot) -> None:
     await pilot.press("enter")
     await settle(pilot, 5)
     assert not isinstance(app.screen_stack[-1], SkillsScreen), "Enter 选中技能后弹窗应关闭"
-    assert app._busy, "技能调用应以用户回合发出"
+    assert app.turn.busy, "技能调用应以用户回合发出"
     bodies = [str(w.render()) for w in app.query(".card-body")]
     assert any("[Invoke skill 'smoke-skill-a']" in b for b in bodies), bodies
     await wait_idle(app, pilot)
@@ -137,7 +137,7 @@ async def run(app, pilot) -> None:
     await pilot.press("tab")
     await settle(pilot, 5)
     assert not isinstance(app.screen_stack[-1], SkillsScreen), "Tab 选中技能后弹窗应关闭"
-    assert not app._busy, "Tab 不应触发回合"
+    assert not app.turn.busy, "Tab 不应触发回合"
     assert prompt.has_focus, "Tab 后应聚焦输入栏"
     assert prompt.text == "[Invoke skill 'smoke-skill-a'] ", repr(prompt.text)
     assert prompt.cursor_location == prompt.document.end, \
@@ -147,7 +147,7 @@ async def run(app, pilot) -> None:
     assert prompt.text == "[Invoke skill 'smoke-skill-a'] extra", repr(prompt.text)
     await pilot.press("enter")
     await settle(pilot, 5)
-    assert app._busy, "补充消息应随技能调用一起发出"
+    assert app.turn.busy, "补充消息应随技能调用一起发出"
     bodies = [str(w.render()) for w in app.query(".card-body")]
     assert any("[Invoke skill 'smoke-skill-a'] extra" in b for b in bodies), bodies
     await wait_idle(app, pilot)
@@ -166,7 +166,7 @@ async def run(app, pilot) -> None:
     await pilot.press("enter")
     await settle(pilot, 5)
     assert isinstance(app.screen_stack[-1], SkillsScreen), "禁用技能 Enter 不应关窗"
-    assert not app._busy, "禁用技能 Enter 不应触发回合"
+    assert not app.turn.busy, "禁用技能 Enter 不应触发回合"
     await pilot.press("ctrl+e")
     await settle(pilot)
     rows = option_texts(sk_lst)
@@ -177,7 +177,7 @@ async def run(app, pilot) -> None:
     print("[smoke] /skills Ctrl+E OK: toggles enabled/disabled, disabled Enter is rejected")
     _skills_mod.SKILL_REGISTRY.clear()  # 无技能场景：应给 toast 提示而非空弹窗
     await open_command(app, pilot, "/skills")
-    assert not app._busy and not isinstance(app.screen_stack[-1], SkillsScreen), \
+    assert not app.turn.busy and not isinstance(app.screen_stack[-1], SkillsScreen), \
         "无技能时不应打开空弹窗"
     toasts = [n.message for n in app._notifications]
     assert any("No skills found" in message for message in toasts), toasts

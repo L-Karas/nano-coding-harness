@@ -1,5 +1,5 @@
 """删除当前会话时立即清空聊板（不等 /sessions 弹窗关闭）：SessionPickerScreen 删除
-当前会话会即刻回调 on_delete_current；ChatApp 以 _clear_cards 作为该回调。"""
+当前会话会即刻回调 on_delete_current；ChatApp 以 board.clear 作为该回调。"""
 import core.tui.commands as commands
 from core.tui import ui_textual
 from core.tui.screens import SessionPickerScreen

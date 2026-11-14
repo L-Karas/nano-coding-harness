@@ -1,5 +1,5 @@
 """权限确认卡：确认文本保持原样式（加粗琥珀），触发数据段落（details）按工具卡正文
-（`core.tui.render._DIM`，dim #e2e8f0）展示，段间空一行。"""
+（`core.tui.blocks.dim_body`，dim #e2e8f0）展示，段间空一行。"""
 import asyncio
 import threading
 from concurrent.futures import Future
@@ -8,9 +8,9 @@ from rich.text import Text
 from textual.widgets import Static
 
 import core.tui.render as _render
-from core.tui.render import _DIM
+from core.tui.blocks import DIM
 from core.tui.ui_textual import ChatApp
-from tests.support import chat_app
+from tests.support import chat_app, render_bridge
 
 _REASON = "Destructive command detected"
 _DETAIL = "command: rm old.txt"
@@ -39,7 +39,7 @@ def test_permission_card_detail_uses_tool_card_body_style():
             body, console = _body(app), app.console
             assert body.get_style_at_offset(console, 0) == console.get_style("bold #fef3c7")
             assert (body.get_style_at_offset(console, len(_REASON) + 2)
-                    == console.get_style(_DIM)), "触发摘要颜色 / 暗度须与工具卡正文一致"
+                    == console.get_style(DIM)), "触发摘要颜色 / 暗度须与工具卡正文一致"
     asyncio.run(main())
 
 
@@ -65,7 +65,7 @@ def test_permission_card_styles_multiline_details_like_tool_card():
             assert body.plain == f"{message}\n\n" + "\n\n".join(details)
             offset = len(message) + 2
             for detail in details:
-                assert body.get_style_at_offset(console, offset) == console.get_style(_DIM)
+                assert body.get_style_at_offset(console, offset) == console.get_style(DIM)
                 offset += len(detail) + 2
     asyncio.run(main())
 
@@ -74,8 +74,7 @@ def test_render_bridge_passes_details_into_card():
     """render.ask_permission（后台线程）→ _begin_permission 的桥接不丢 details。"""
     async def main() -> None:
         app = ChatApp(handle_query=lambda _query: None)
-        _render._APP = app  # run_test 不经 run()：照 smoke 手动挂渲染桥接
-        try:
+        with render_bridge(app):  # run_test 不经 run()：同一挂载入口
             async with app.run_test(size=(100, 32)):
                 answer: Future[str] = Future()
                 threading.Thread(
@@ -83,16 +82,14 @@ def test_render_bridge_passes_details_into_card():
                         _render.ask_permission(_REASON, [_DETAIL]))).start()
                 for _ in range(200):
                     await asyncio.sleep(0.01)
-                    if app._perm_pending:
+                    if app.asks.view() is not None:
                         break
-                assert app._perm_pending, "桥接调用应挂起权限确认"
+                assert app.asks.view() is not None, "桥接调用应挂起权限确认"
                 assert _body(app).plain == f"{_REASON}\n\n{_DETAIL}"
-                app._answer_permission("yes")
+                app._answer("yes")
                 for _ in range(200):
                     await asyncio.sleep(0.01)
                     if answer.done():
                         break
                 assert answer.result(timeout=0) == "yes"
-        finally:
-            _render._APP = None
     asyncio.run(main())

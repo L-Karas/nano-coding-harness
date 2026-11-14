@@ -2,6 +2,7 @@
 import asyncio
 
 import core.tui.render as render
+from core.tui import blocks
 from core.context.message import Message
 from core.context.session.session import Session
 from tests.support import chat_app, render_bridge
@@ -38,7 +39,9 @@ def test_result_merges_into_call_card_and_swaps_style():
                 assert "demo.txt" in str(bodies[-1].render())
                 assert bodies[-1].has_class("-merged"), "追加的结果段应与参数段留一空白行"
                 assert bodies[-1].styles.margin.top == 1
-                assert app._tool_cards == {}, "合并后应移除登记项"
+                render.render_tool_result("c1", "second result")
+                await pilot.pause(0.1)
+                assert len(list(app.query("#chat .card"))) == 2,                     "登记项在合并后即消费：同一 id 的第二个结果独立成卡"
 
     asyncio.run(main())
 
@@ -143,9 +146,9 @@ def test_args_capped_at_four_lines():
                 render.render_tool_call("c1", "terminal", args)
                 await pilot.pause(0.1)
                 body = app.query("#chat .card.tool .card-body").first()
-                assert render.TOOL_ARGS_MAX_LINES == 4
+                assert blocks.TOOL_ARGS_MAX_LINES == 4
                 assert body.has_class("-expandable")
-                assert body.size.height == 1 + render.TOOL_ARGS_MAX_LINES + 1, \
+                assert body.size.height == 1 + blocks.TOOL_ARGS_MAX_LINES + 1, \
                     "标题 1 行 + 参数 4 行 + 折叠提示 1 行"
                 hint = body.render_line(body.size.height - 1).text
                 assert "truncated 13 lines" in hint, hint
@@ -194,13 +197,13 @@ def test_replay_without_result_does_not_spin():
     asyncio.run(main())
 
 
-def test_clear_cards_drops_tool_card_registry():
+def test_clear_drops_tool_card_registry():
     async def main() -> None:
         async with chat_app(size=(100, 30)) as (app, pilot):
             with render_bridge(app):
                 render.render_tool_call("c1", "terminal", {"command": "ls"})
                 await pilot.pause(0.1)
-                app._clear_cards()
+                app.board.clear()
                 render.render_tool_result("c1", "late output")
                 await pilot.pause(0.1)
                 cards = list(app.query("#chat .card"))

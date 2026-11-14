@@ -90,9 +90,9 @@ async def run(app, pilot) -> None:
     await settle(pilot)
     assert prompt.text == "edit @core/tui/utils.py", prompt.text
     assert flv.styles.display == "none", "补全为完整文件名后列表应隐藏"
-    assert not app._busy, "Enter 选中 @ 文件不应提交回合"
+    assert not app.turn.busy, "Enter 选中 @ 文件不应提交回合"
     prompt.text = "/new"  # 复位（指令提交不触发 agent 回合）
     await pilot.press("enter")
     await settle(pilot)
-    assert not app._busy and flv.styles.display == "none"
+    assert not app.turn.busy and flv.styles.display == "none"
     print("[smoke] @ file completion OK: leaf name + relative path, same-level list, / drill-down, full-path insert")

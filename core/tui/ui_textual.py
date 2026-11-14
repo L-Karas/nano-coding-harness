@@ -1,7 +1,8 @@
 """Textual 全屏对话界面：ChatApp 装配 + run() 启动入口（`python -m core.tui.ui_textual [--smoke]`）。
 
-职责分片：surface.py（卡片 / 流式 / 状态行）、footer.py（页脚）、commands.py（弹窗指令 / 回合 /
-压缩）、interactions.py（权限确认 / clarify）；弹窗 screens/、右栏 info_panel.py、渲染桥 render.py。
+职责分片：board.py（聊天画板）、turn.py（前台回合）、ask.py + dock.py（权限 / clarify）、
+right_panel.py（右栏）、commands.py（/ 指令与消息分派）、interactions.py（交互事件路由）；
+弹窗 screens/、右栏 info_panel.py、端口 Adapter render.py、部件取件 parts.py。
 
 线程模型：App 事件循环跑主线程；每回合在后台线程调 handle_query；render 可从任意线程调用
 （App 线程内直接执行，其它线程经 call_from_thread 桥接）；ask_permission / ask_clarify 只能
@@ -17,7 +18,6 @@ from typing import Any, Callable, Optional
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widget import Widget
 from textual.widgets import Input, OptionList, Static
@@ -25,13 +25,17 @@ from textual.widgets import Input, OptionList, Static
 import core.tui.render as _render  # run() 把 ChatApp 挂到渲染桥接的 _APP 全局
 from core.context.session import SessionManager
 from core.runtime_state import RUNTIME_STATE, RuntimeState
+from core.tui.ask import AskState
+from core.tui.board import Board
 from core.tui.commands import _CommandFlow
-from core.tui.footer import _FooterBar
+from core.tui.ask_panel import AskPanel
 from core.tui.info_panel import _InfoPanel
 from core.tui.interactions import _DockInteractions
 from core.tui.panels import _ChatBoard, _ChatDock, _Welcome
-from core.tui.surface import _RenderSurface
+from core.tui.parts import Parts
+from core.tui.right_panel import RightPanel
 from core.tui.theme import DEFAULT_SUBTITLE, DEFAULT_TITLE, SECONDARY_TEXT, TERMINAL_TITLE
+from core.tui.turn import Turn
 from core.tui.widgets import _CommandInput
 
 
@@ -53,31 +57,8 @@ class _ChatScreen(Screen):
             from_app_focus: 是否由 App 级焦点变更触发。
         """
         if widget is not None and self.app.screen is self:
-            widget = self._dock_focus_target(widget)
+            widget = self.app.ask_panel.focus_target(widget)  # 权限/clarify 挂起时改道
         super().set_focus(widget, scroll_visible=scroll_visible, from_app_focus=from_app_focus)
-
-    def _dock_focus_target(self, widget: Widget | None) -> Widget | None:
-        """把焦点改道到当前交互。
-
-        Args:
-            widget: 原焦点目标。
-
-        Returns:
-            改道后的目标；取不到部件时保持原目标。权限挂起 → #perm-list；
-            clarify 挂起 → #clarify-list（Other 输入模式归 #prompt）；否则 #prompt
-            （/ 与 @ 候选导航依赖它；输入条禁用时不改道）。
-        """
-        if self.app._perm_pending:
-            target_id = "#perm-list"
-        elif self.app._clarify_pending and not self.app._clarify_other:
-            target_id = "#clarify-list"
-        else:
-            target_id = "#prompt"
-        try:
-            target = self.query_one(target_id)
-        except NoMatches:  # 挂载早期 / 卸载期无停靠区部件
-            return widget
-        return widget if widget is target or target.disabled else target
 
 
 def _set_terminal_title(driver: Any, title: str) -> None:
@@ -108,7 +89,7 @@ def _set_terminal_progress(driver: Any, state: int, value: Optional[int] = None)
         driver.write(f"\x1b]9;4;{state}{tail}\x07")
 
 
-class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
+class ChatApp(_CommandFlow, _DockInteractions, App):
     """Nano Harness 对话主界面。
 
     handle_query(query)：每轮消息回调，后台线程执行（不传用真实 agent 回合，见 _default_agent_turn）；
@@ -155,6 +136,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
             runtime_state: 右栏信息面板的数据源。
         """
         super().__init__(ansi_color=True)  # 按终端调色板显示 ANSI 色，避免与终端主题不一致
+        self.parts = Parts(self)  # #id ↔ 部件类型的唯一收口（惰性取件）
         if handle_query is None:
             handle_query, on_interrupt, runtime = _default_agent_turn()
         self._handle = handle_query
@@ -163,14 +145,23 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         self._runtime_state = runtime_state  # 右栏信息面板的数据源（测试可注入 fresh RuntimeState）
         self._manager = session_manager
         self._banner = banner
-        # 各 mixin 自有状态由各自初始化（归属见各类 docstring）
-        self._init_surface()
-        self._init_command_flow()
-        self._init_interactions()
-        self._panel_pct: Optional[int] = None  # 右栏宽度百分比（Ctrl+←/→ 调整）；None = 默认 20%
+        self.board = Board(lambda: self.parts.board, on_welcome=self._set_welcome)
+        self.asks = AskState()  # 至多一个挂起询问（权限 / clarify 共用）
+        self.ask_panel = AskPanel(self.parts, self.asks)  # 询问视图 → 部件（幂等 reconcile）
+        # prompt / status / call_on_app_thread 用 lambda 延迟到调用时解析（测试会替换它们）
+        self.turn = Turn(  # 前台回合：busy 的唯一写者
+            prompt=lambda: self._prompt(),
+            status=lambda *a, **k: self._set_status_text(*a, **k),
+            progress=self._progress_sync,
+            cancel_asks=self.ask_panel.cancel,
+            notify=self._notify,
+            call_on_app_thread=lambda fn: self.call_from_thread(fn),
+        )
+        self.right_panel = RightPanel(  # 折叠态 / 宽度 / 手动展开意图的唯一真值
+            self.parts,
+            on_layout_changed=lambda: self.call_after_refresh(self._refresh_footer),
+        )
         self._progress_state: Optional[tuple[int, Optional[int]]] = None  # 任务栏已写状态（_write_progress 去重）
-        self._sections_non_empty = False  # 三区活动快照：驱动「全空 ↔ 非空」跳变的自动展开/收回
-        self._manual_expand = False  # 用户手动展开后，三区清空也不自动收回
 
     def get_default_screen(self) -> Screen:
         """创建默认主屏。
@@ -194,19 +185,19 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
             with Vertical(id="left"):
                 yield _Welcome(title, subtitle)
                 yield _ChatBoard(id="chat")
-                yield _ChatDock(id="dock")
-            with Vertical(id="right", classes="-collapsed"):  # 默认折叠，三区非空时 _sync_info_panel 自动展开
+                yield _ChatDock(id="dock", session_tokens=self._session_tokens)
+            with Vertical(id="right", classes="-collapsed"):  # 默认折叠，三区非空时 right_panel.sync 自动展开
                 with Vertical(id="info-tab"):  # 分栏线旁的 »/« 折叠开关
                     tab = Static("«", id="info-tab-glyph")
                     tab.tooltip = "Expand info panel"
                     yield tab
                 yield _InfoPanel(id="info-panel", state=self._runtime_state,
-                                 on_sections_changed=self._sync_info_panel)
+                                 on_sections_changed=self.right_panel.sync)
 
     def on_mount(self) -> None:
         """挂载后聚焦输入框、钉底聊板并启动状态轮询。"""
         self._prompt().focus()
-        self._chat().anchor()  # 钉底：溢出时保持贴底，用户上滚解除、滚回底部恢复
+        self.parts.board.anchor()  # 钉底：溢出时保持贴底，用户上滚解除、滚回底部恢复
         self._set_welcome(True)
         self._refresh_footer()
         _set_terminal_title(self._driver, TERMINAL_TITLE)
@@ -254,12 +245,12 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         return self._runtime_state.snapshot().has_running_background()
 
     def _progress_sync(self) -> None:
-        """任务栏进度唯一决策点（等待作答 > 运行中 > 清除）：前台回合 _busy、runtime 回合、
+        """任务栏进度唯一决策点（等待作答 > 运行中 > 清除）：前台回合 Turn.busy、runtime 回合、
         后台任务、子代理任一在跑即动态条；权限 / clarify 挂起时黄色。每次实时重算并以写去重，
         可被 1s 兜底 tick 反复调用。"""
-        if self._perm_pending or self._clarify_pending:
+        if self.asks.view() is not None:
             self._progress_waiting()
-        elif self._busy or self._agent_running() or self._background_active():
+        elif self.turn.busy or self._agent_running() or self._background_active():
             self._progress_working()
         else:
             self._progress_clear()
@@ -282,84 +273,22 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         """
         target = event.widget
         if target.has_class("-expandable"):
-            self._toggle_expand(target)
+            target.toggle_expand()
             return
         if target.id != "info-tab-glyph":
             return
-        collapsed = not self.query_one("#right", Vertical).has_class("-collapsed")
-        self._set_info_collapsed(collapsed, manual_expand=not collapsed)
+        collapsed = not self.right_panel.collapsed
+        self.right_panel.set_collapsed(collapsed, manual=not collapsed)
 
     # ---------- 右栏折叠 / 展开与调宽（Ctrl+←/→，绑定见 _CommandInput.BINDINGS） ----------
 
-    def _set_info_collapsed(self, collapsed: bool, *, manual_expand: bool = False) -> None:
-        """折叠或展开右栏。
-
-        Args:
-            collapsed: 是否折叠；折叠只留左缘 »/« 标签一列。
-            manual_expand: 是否记录用户展开意图，使三区清空后不再自动收回。
-        """
-        right = self.query_one("#right", Vertical)
-        right.set_class(collapsed, "-collapsed")
-        glyph = self.query_one("#info-tab-glyph", Static)
-        glyph.update("«" if collapsed else "»")
-        glyph.tooltip = "Expand info panel" if collapsed else "Collapse info panel"
-        if self._panel_pct is not None:  # 内联宽度优先于 CSS 折叠规则，折叠/展开须同步设宽
-            right.styles.width = 1 if collapsed else f"{self._panel_pct}%"
-        if manual_expand:
-            self._manual_expand = True
-        self.call_after_refresh(self._refresh_footer)  # 左栏宽度随右栏变化
-
-    def _sync_info_panel(self, non_empty: bool) -> None:
-        """按三区活动状态自动展开/收回右栏。
-
-        Args:
-            non_empty: 三区是否有内容。
-
-        仅在「全空 ↔ 非空」跳变时动作（_InfoPanel 每次轮询后回调）。
-
-        - 非空跳变：折叠则自动展开（手动折叠只保持到这次跳变）；
-        - 全空跳变：仅当用户没手动展开过才自动收回（手动展开优先保持）。
-        """
-        if non_empty == self._sections_non_empty:
-            return
-        self._sections_non_empty = non_empty
-        right = self.query_one("#right", Vertical)
-        if non_empty:
-            if right.has_class("-collapsed"):
-                self._set_info_collapsed(False)
-        elif not self._manual_expand:
-            self._set_info_collapsed(True)
-
     def action_narrow_info_panel(self) -> None:
         """Ctrl+→：收窄右栏一档；低于 20% 即折叠。"""
-        self._resize_info_panel(-10)
+        self.right_panel.narrow()
 
     def action_widen_info_panel(self) -> None:
         """Ctrl+←：折叠态展开到（或恢复到）上次宽度；已展开则加宽一档（封顶 40%）。"""
-        if self.query_one("#right", Vertical).has_class("-collapsed"):
-            self._panel_pct = self._panel_pct or 20  # None = 默认 20%
-            self._set_info_collapsed(False, manual_expand=True)
-            return
-        self._resize_info_panel(10)
-
-    def _resize_info_panel(self, delta: int) -> None:
-        """按档位调整右栏宽度。
-
-        Args:
-            delta: 宽度增量（百分比）。
-
-        默认 20%，每档 10%，夹在 20%–40%；低于 20% 即收成折叠态。
-        """
-        right = self.query_one("#right", Vertical)
-        if right.has_class("-collapsed"):
-            return  # 折叠态已是最低宽度
-        pct = (self._panel_pct or 20) + delta
-        if pct < 20:
-            self._set_info_collapsed(True)
-            return
-        self._panel_pct = min(40, pct)
-        right.styles.width = f"{self._panel_pct}%"
-        self.call_after_refresh(self._refresh_footer)
+        self.right_panel.widen()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """处理停靠区列表选中。
@@ -373,7 +302,7 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         oid = event.option_list.id
         if oid == "perm-list":
             event.stop()
-            self._answer_permission(event.option_id or "no")
+            self._answer(event.option_id or "no")
             return
         if oid == "clarify-list":
             event.stop()
@@ -391,15 +320,53 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
             if prompt.apply_file_candidate(event.option_index):
                 prompt.focus()
 
-    # ---------- 取件 ----------
+    # ---------- 状态行 / 通知 / 欢迎态 ----------
 
-    def _chat(self) -> _ChatBoard:
-        """取聊天画板。
+    def _set_status_text(self, text: str, spin: bool = False) -> None:
+        """设置状态行文本。
+
+        Args:
+            text: 状态文本。
+            spin: 是否显示 spinner 动画。
+        """
+        self.parts.status.set_text(text, spin=spin)
+
+    def _status_swap(self, text: str, spin: bool = False) -> tuple[str, bool]:
+        """设置状态并返回旧状态。
+
+        Args:
+            text: 新状态文本。
+            spin: 是否显示 spinner 动画。
 
         Returns:
-            #chat 部件。
+            旧状态 (文本, 是否动画)；状态上下文从不嵌套，退出时恢复旧状态即可。
         """
-        return self.query_one("#chat", _ChatBoard)
+        return self.parts.status.swap(text, spin=spin)
+
+    def _notify(self, message: str, title: str = "", severity: str = "information") -> None:
+        """显示即时 toast。
+
+        Args:
+            message: 通知正文。
+            title: 通知标题。
+            severity: 严重级别。
+
+        正文按纯文本渲染，避免工具输出 / 异常文本里的方括号被 Rich 解析；
+        App.notify 线程安全，worker 线程可直接调用。
+        """
+        self.notify(message, title=title, severity=severity, markup=False)
+
+    def _set_welcome(self, show: bool) -> None:
+        """切换欢迎标题与聊板的显隐。
+
+        Args:
+            show: 是否显示欢迎标题。
+
+        -welcome 类挂在 #left 上，两者互斥（规则见 app.css）。
+        """
+        self.parts.left.set_class(show, "-welcome")
+
+    # ---------- 取件 ----------
 
     def _prompt(self) -> _CommandInput:
         """取输入框。
@@ -407,11 +374,25 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         Returns:
             #prompt 输入框。
         """
-        return self.query_one("#prompt", _CommandInput)
+        return self.parts.prompt
 
     def _refresh_footer(self) -> None:
         """立即刷新页脚数据。"""
-        self.query_one(_FooterBar).refresh_data()
+        self.parts.footer.refresh_data()
+
+    def _session_tokens(self) -> int:
+        """当前会话 token 估算数。
+
+        Returns:
+            估算值；未接 SessionManager / 取值失败时为 0。
+        """
+        manager = self._manager
+        if manager is None:
+            return 0
+        try:
+            return manager.load_session_tokens()
+        except Exception:
+            return 0
 
     # ---------- 输入回合 ----------
 
@@ -421,19 +402,15 @@ class ChatApp(_RenderSurface, _CommandFlow, _DockInteractions, App):
         Args:
             event: 提交事件。
         """
-        if self._clarify_pending and self._clarify_other:  # clarify 的 Other 输入：不当作新回合
-            self._prompt().text = ""
-            text = event.value.strip()
-            if text:
-                self._answer_clarify(self._clarify_answer(text) if self._clarify_multi else text)
-            else:
-                self._leave_clarify_other()  # 空提交：回到选项列表继续选择
+        view = self.asks.view()
+        if view is not None and view.other_mode:  # clarify 的 Other 输入：不当作新回合
+            self._after_ask(self.ask_panel.submit_other(event.value))  # 空提交退回选项列表
             return
         query = event.value.strip()
         self._prompt().text = ""
         if not query:
             return
-        self._chat().anchor()  # 新回合开始：滚回底部并重新钉底
+        self.parts.board.anchor()  # 新回合开始：滚回底部并重新钉底
         self._dispatch_query(query)
 
 
@@ -479,18 +456,17 @@ def run(
         on_interrupt=on_interrupt,
         runtime=runtime,
     )
-    _render._APP = app  # run 期间渲染 API（core.tui.render）经此全局桥接进事件循环
-    old_sigint = None
-    try:
-        if threading.current_thread() is threading.main_thread():
-            # Ctrl+C 在部分终端（Windows 控制台 / mintty 等）以 SIGINT 送达而非按键事件；
-            # Textual 运行期终端处于 raw 模式，按键通道由 BINDINGS 处理（ctrl+c 已空操作）
-            old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
-        app.run()
-    finally:
-        if old_sigint is not None:
-            signal.signal(signal.SIGINT, old_sigint)
-        _render._APP = None
+    with _render.attach(app):  # 端口 Adapter 的唯一挂载点（run_test 走同一入口）
+        old_sigint = None
+        try:
+            if threading.current_thread() is threading.main_thread():
+                # Ctrl+C 在部分终端（Windows 控制台 / mintty 等）以 SIGINT 送达而非按键事件；
+                # Textual 运行期终端处于 raw 模式，按键通道由 BINDINGS 处理（ctrl+c 已空操作）
+                old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+            app.run()
+        finally:
+            if old_sigint is not None:
+                signal.signal(signal.SIGINT, old_sigint)
 
 
 if __name__ == "__main__":

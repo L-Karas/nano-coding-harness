@@ -162,35 +162,35 @@ async def run(app, pilot) -> None:
     right = app.query_one("#right", Vertical)
     app.query_one("#prompt").focus()
     await pilot.pause(0.1)
-    assert app._panel_pct is None, "初始应为未调整（默认 1fr）"
+    assert app.right_panel.pct is None, "初始应为未调整（默认 1fr）"
     await pilot.press("ctrl+left")
     await pilot.pause(0.1)
-    assert app._panel_pct == 30 and right.size.width == int(app.size.width * 0.3), \
-        (app._panel_pct, right.size.width, app.size.width)
+    assert app.right_panel.pct == 30 and right.size.width == int(app.size.width * 0.3), \
+        (app.right_panel.pct, right.size.width, app.size.width)
     await pilot.press("ctrl+right")
     await pilot.pause(0.1)
-    assert app._panel_pct == 20 and right.size.width == int(app.size.width * 0.2), \
-        (app._panel_pct, right.size.width, app.size.width)
+    assert app.right_panel.pct == 20 and right.size.width == int(app.size.width * 0.2), \
+        (app.right_panel.pct, right.size.width, app.size.width)
     for _ in range(10):  # 连按收窄：夹在下界 20%
         await pilot.press("ctrl+right")
     await pilot.pause(0.1)
-    assert app._panel_pct == 20, app._panel_pct
+    assert app.right_panel.pct == 20, app.right_panel.pct
     for _ in range(10):  # 连按加宽：夹在上界 40%
         await pilot.press("ctrl+left")
     await pilot.pause(0.1)
-    assert app._panel_pct == 40, app._panel_pct
+    assert app.right_panel.pct == 40, app.right_panel.pct
     await pilot.click(tab)  # 折叠：收 1 列，组合键忽略
     await pilot.pause(0.1)
     await pilot.press("ctrl+right")
     await pilot.pause(0.1)
-    assert right.has_class("-collapsed") and app._panel_pct == 40, "折叠态调宽应被忽略"
+    assert right.has_class("-collapsed") and app.right_panel.pct == 40, "折叠态调宽应被忽略"
     await pilot.click(tab)  # 展开：还原调整值 40%
     await pilot.pause(0.1)
     assert right.size.width == int(app.size.width * 0.4), (right.size.width, app.size.width)
     for _ in range(2):  # 复位为默认档，后续分区不受宽度影响
         await pilot.press("ctrl+right")
     await pilot.pause(0.1)
-    assert app._panel_pct == 20, app._panel_pct
+    assert app.right_panel.pct == 20, app.right_panel.pct
     # 底部组合键提示：一行次级灰，随右栏折叠一起隐藏（在 #info-panel 内）
     hint = app.query_one("#info-hint", Static)
     assert "resize panel" in str(hint.render()), hint.render()

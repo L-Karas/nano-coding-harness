@@ -1,6 +1,9 @@
 """线程安全渲染 API：任意线程调用，App 线程内直接执行、其它线程经 call_from_thread 桥接。
 
-run()（core.tui.ui_textual）期间把 ChatApp 实例挂到 _APP；未启动时调用抛 RuntimeError。
+本模块只做「线程桥接 + 调 App」：卡片长什么样（参数格式化 / diff / 键帽降级 / 折叠头行）
+在 core.tui.blocks。生命周期只经 attach(app) 一处进入（run()、run_test、smoke 共用）：
+挂载后把端口实现注册到 core.interaction 并持有 App 句柄；未挂载时调用抛 RuntimeError。
+import 本模块本身无副作用。
 """
 
 from __future__ import annotations
@@ -9,28 +12,54 @@ import json
 import threading
 from concurrent.futures import Future
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Optional
-
-from rich.text import Text
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional
 
 from core.interaction import register_interaction, register_render
 from core.context.message import content_text, is_injected_content
-from core.template import (
-    TOOL_ERROR_PREFIX,
-    UNKNOWN_TOOL_PREFIX,
-)
-from core.tui.surface import _strip_keycaps
+from core.tui import blocks
 
 if TYPE_CHECKING:  # 仅类型标注：运行时经 duck-typing 访问 ChatApp，避免循环导入
     from core.tui.ui_textual import ChatApp
 
 _APP: Optional[ChatApp] = None
+_registered = False  # 端口实现只在首次 attach 时注册（import 无副作用）
 
-DEFAULT_MAX_LINES = 10  # 可折叠正文默认行数上限（渲染宽度下换行的视觉行）
-TOOL_ARGS_MAX_LINES = 4  # 工具调用卡参数段上限：结果到达后卡片仍保持紧凑
 
-_DIM = "dim #e2e8f0"  # 卡片正文（暗灰）
-_DIFF_STYLES = {"+": "#b5bd68", "-": "#f87171"}  # diff 行：+ 绿 / - 淡红，其余 dim
+@contextmanager
+def attach(app: ChatApp) -> Iterator[None]:
+    """把端口 Adapter 挂到一个 App 上（run() 与 run_test / smoke 共用）。
+
+    Args:
+        app: 已构造的 ChatApp；其事件循环可在挂载后再启动。
+
+    Yields:
+        None；退出时卸载句柄（端口实现保留注册，卸载后调用抛 RuntimeError）。
+
+    Raises:
+        RuntimeError: 已有另一个 App 挂载（不可嵌套）。
+    """
+    global _APP, _registered
+    if _APP is not None:
+        raise RuntimeError("UI port is already attached to a running app")
+    if not _registered:  # 域层端口默认 no-op；首次挂载时接上本模块的实现
+        register_interaction(ask_permission=ask_permission, ask_clarify=ask_clarify)
+        register_render(
+            stream_assistant_response=stream_assistant_response,
+            render_tool_call=render_tool_call,
+            render_tool_result=render_tool_result,
+            render_background_notification=render_background_notification,
+            notify=notify,
+            render_thinking_status=render_thinking_status,
+            render_working_status=render_working_status,
+            render_scope=render_scope,
+        )
+        _registered = True
+    _APP = app
+    try:
+        yield
+    finally:
+        app.asks.cancel()  # App 退出/卸载：挂起询问按取消落地，等待线程不会永久阻塞
+        _APP = None
 
 
 def _require_app() -> ChatApp:
@@ -66,90 +95,21 @@ def _exec(fn: Callable[[ChatApp], Any]) -> Any:
         return None  # App 退出竞态
 
 
-def _dim_body(text: str) -> Text:
-    """构造暗灰正文。
-
-    Args:
-        text: 原始正文。
-
-    Returns:
-        暗灰 Text；用 Text 而非 Rich 标记，正文里的方括号不会被解析成样式标签。
-    """
-    return Text(_strip_keycaps(text), style=_DIM)
-
-
-def _with_head_line(head: Text, body: Text) -> tuple[Text, int]:
-    """把固定首行拼到正文前，并给出首行占用的固定行数。
-
-    Args:
-        head: 固定首行，通常以换行结尾；不参与折叠。
-        body: 正文。
-
-    Returns:
-        (合并后的正文, 首行固定行数)。
-    """
-    return head + body, head.plain.count("\n")
-
-
 def render_user_input(user_text: Any) -> None:
     """渲染用户输入卡片。
 
     Args:
         user_text: 用户消息内容；content 数组只取文本 part。
     """
-    _exec(lambda app: app._add_card("user", Text(_strip_keycaps(content_text(user_text)), style="bold #f9fafb")))
-
-
-def _format_arg_value(value: Any) -> str:
-    """把单个工具参数值转成单行文本。
-
-    Args:
-        value: 参数值。
-
-    Returns:
-        单行文本；字符串换行转义为字面 \\n，bool / null 用小写字面量，
-        嵌套 dict / list 用紧凑 JSON，序列化失败回退 str。
-    """
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if value is None:
-        return "null"
-    if isinstance(value, str):
-        return value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
-    if isinstance(value, (dict, list)):
-        try:
-            return json.dumps(value, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return str(value)
-    return str(value)
-
-
-def _format_args(tool_args: Any) -> str:
-    """把工具参数转成展示文本。
-
-    Args:
-        tool_args: 工具参数。
-
-    Returns:
-        dict 每参一行 `key: value`；list 为缩进 JSON；其余为 str。
-    """
-    if isinstance(tool_args, dict):
-        if not tool_args:
-            return "{}"
-        return "\n".join(f"{key}: {_format_arg_value(value)}" for key, value in tool_args.items())
-    if not isinstance(tool_args, list):
-        return str(tool_args)
-    try:
-        return json.dumps(tool_args, ensure_ascii=False, indent=2)
-    except (TypeError, ValueError):
-        return str(tool_args)
+    block = blocks.user_input(content_text(user_text))
+    _exec(lambda app: app.board.add(block))
 
 
 def render_tool_call(
     tool_call_id: str,
     tool_name: str,
     tool_args: Any,
-    max_lines: int = TOOL_ARGS_MAX_LINES,
+    max_lines: int = blocks.TOOL_ARGS_MAX_LINES,
     spin: bool = True,
 ) -> None:
     """渲染工具调用卡片；结果到达时按 id 并进同一张卡。
@@ -161,26 +121,8 @@ def render_tool_call(
         max_lines: 参数段折叠前最多显示的正文行数。
         spin: 等待结果期间是否在标题行前轮播 spinner；回放等静态场景传 False。
     """
-    head = Text.assemble(("Tool Call: ", "bold #fde68a"), (tool_name, "bold white"), "\n")
-    body, reserved = _with_head_line(head, _dim_body(_format_args(tool_args)))
-    _exec(lambda app: app._add_tool_card(
-        tool_call_id, body, cap=max_lines, reserved=reserved, spin=spin))
-
-
-def _diff_body(rows: list[tuple[str, int, str]]) -> Text:
-    """构造 diff 正文。
-
-    Args:
-        rows: (标记, 行号, 内容) 列表。
-
-    Returns:
-        每行 "标记 行号 │ 内容" 的 Text（+ 绿 / - 淡红，其余 dim）。
-    """
-    width = max((len(str(n)) for _, n, _ in rows), default=1)
-    return Text("\n").join(
-        Text(f"{kind}{n:>{width}} │ {_strip_keycaps(line)}", style=_DIFF_STYLES.get(kind, "dim"))
-        for kind, n, line in rows
-    )
+    block = blocks.tool_call(tool_call_id, tool_name, tool_args, max_lines=max_lines)
+    _exec(lambda app: app.board.add(block, spin=spin))
 
 
 def render_tool_result(
@@ -188,7 +130,7 @@ def render_tool_result(
     output: Any,
     is_error: bool | None = None,
     diff: list[tuple[str, int, str]] | None = None,
-    max_lines: int = DEFAULT_MAX_LINES,
+    max_lines: int = blocks.DEFAULT_MAX_LINES,
 ) -> None:
     """渲染工具结果：并进对应调用的卡片，卡片样式改按结果（result / error）。
 
@@ -202,15 +144,9 @@ def render_tool_result(
     带 diff 时 diff 在前、超长可折叠，结果固定收尾，不拆成两张卡片。结果段以固定首行
     `Tool Result:` 开头（样式同 `Tool Call:`），标题行不参与折叠。
     """
-    output_str = str(output)
-    failed = is_error if is_error is not None else output_str.startswith((TOOL_ERROR_PREFIX, UNKNOWN_TOOL_PREFIX))
-    kind = "error" if failed else "result"
-    head = Text.assemble(("Tool Result: ", "bold #fde68a"), "\n")
-    content = _diff_body(diff) if diff else _dim_body(output_str)
-    body, reserved = _with_head_line(head, content)
-    tail = _dim_body(output_str) if diff else None
-    _exec(lambda app: app._append_tool_result(
-        tool_call_id, kind, body, cap=max_lines, reserved=reserved, tail=tail))
+    block = blocks.tool_result(tool_call_id, output, is_error=is_error, diff=diff,
+                               max_lines=max_lines)
+    _exec(lambda app: app.board.merge(block))
 
 
 def render_background_notification(message: str) -> None:
@@ -221,9 +157,8 @@ def render_background_notification(message: str) -> None:
 
     卡片为加粗固定标题行 + 暗灰正文，正文超出折叠。
     """
-    head = Text.assemble(("🔔 Background Task", "bold #f8fafc"), "\n")
-    body, reserved = _with_head_line(head, _dim_body(message))
-    _exec(lambda app: app._add_card("notice", body, cap=DEFAULT_MAX_LINES, reserved=reserved))
+    block = blocks.background_notice(message)
+    _exec(lambda app: app.board.add(block))
 
 
 def notify(message: str, title: str = "", severity: str = "information") -> None:
@@ -234,7 +169,7 @@ def notify(message: str, title: str = "", severity: str = "information") -> None
         title: 通知标题。
         severity: 严重级别。
 
-    正文按纯文本渲染（markup=False 见 `_RenderSurface._notify`），避免工具输出 /
+    正文按纯文本渲染（markup=False 见 `ChatApp._notify`），避免工具输出 /
     异常文本里的方括号被 Rich 当成标记解析。
     """
     _exec(lambda app: app._notify(message, title, severity))
@@ -242,19 +177,8 @@ def notify(message: str, title: str = "", severity: str = "information") -> None
 
 def render_sessions() -> None:
     """空会话提示卡片（非空列表见 SessionPickerScreen）。"""
-    _exec(lambda app: app._add_card("sessions", _dim_body("No sessions yet")))
-
-
-def _is_injected_message(content: Any) -> bool:
-    """判断是否为内部注入消息。
-
-    Args:
-        content: 消息内容。
-
-    Returns:
-        按 <injection_messages> 前后缀识别时为 True；这类消息只喂模型，回放时跳过。
-    """
-    return is_injected_content(content)
+    block = blocks.sessions_empty()
+    _exec(lambda app: app.board.add(block))
 
 
 def _render_tool_message(message: Any) -> None:
@@ -283,7 +207,7 @@ def render_session_history(session: Any) -> None:
 
     for message in messages:
         if message.role == "user":
-            if not _is_injected_message(message.content):
+            if not is_injected_content(message.content):
                 render_user_input(message.content)
         elif message.role == "assistant":
             if message.content:  # 与流式实况一致：先正文，再其后的工具调用
@@ -315,7 +239,7 @@ def render_scope():
     try:
         yield
     finally:
-        _exec(lambda app: app._stop_stream())
+        _exec(lambda app: app.board.end_stream())
 
 
 def stream_assistant_response(chunk: str = "") -> None:
@@ -325,7 +249,7 @@ def stream_assistant_response(chunk: str = "") -> None:
         chunk: 本次新增片段；首次调用自动建卡，勿传累计全量。
     """
     if chunk:
-        _exec(lambda app: app._stream_update(chunk))
+        _exec(lambda app: app.board.stream(chunk))
 
 
 def render_assistant_response(content: str) -> None:
@@ -336,8 +260,10 @@ def render_assistant_response(content: str) -> None:
 
     链接经系统默认浏览器打开。
     """
-    if content:
-        _exec(lambda app: app._add_markdown_card(content))
+    if not content:
+        return
+    block = blocks.assistant_markdown(content)
+    _exec(lambda app: app.board.add(block))
 
 
 @contextmanager
@@ -382,7 +308,7 @@ def render_working_status(message: str = "Working..."):
     return _status_context(message)
 
 
-def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: str) -> str:
+def _ask_blocking(begin: Callable[[ChatApp, Future[str]], bool], thread_error: str) -> str:
     """权限 / 澄清询问共用的桥接骨架。
 
     Args:
@@ -398,7 +324,9 @@ def _ask_blocking(begin: Callable[[ChatApp, Future[str]], None], thread_error: s
 
     future: Future[str] = Future()
     try:
-        _exec(lambda a: begin(a, future))
+        # App 线程不可用 / App 正在退出时 begin 根本没跑，直接返回，不等一个永不落地的 Future
+        if not _exec(lambda a: begin(a, future)):
+            return ""
         return future.result()
     except Exception:
         return ""
@@ -436,18 +364,3 @@ def ask_clarify(questions: list[str], multi_select: bool = False) -> str:
     """
     return _ask_blocking(lambda app, future: app._begin_clarify(questions, multi_select, future),
                          "ask_clarify must be called from a non-App thread (e.g. inside a tool handler)")
-
-
-# 渲染桥接入域层 UI 端口：工具（clarify）/ 内置权限门提问与渲染事件都经 core.interaction，
-# 域层不再反向 import TUI；未导入本模块的场景（子代理 / 队友 / 测试）走端口默认（拒绝 / 取消 / no-op）。
-register_interaction(ask_permission=ask_permission, ask_clarify=ask_clarify)
-register_render(
-    stream_assistant_response=stream_assistant_response,
-    render_tool_call=render_tool_call,
-    render_tool_result=render_tool_result,
-    render_background_notification=render_background_notification,
-    notify=notify,
-    render_thinking_status=render_thinking_status,
-    render_working_status=render_working_status,
-    render_scope=render_scope,
-)
