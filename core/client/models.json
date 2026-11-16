@@ -33,6 +33,19 @@
   "Qwen": {
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "model_list": {
+      "qwen4-max": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "xhigh"
+        },
+        "context_length": 1000000,
+        "max_output": 262144
+      },
       "qwen3.8-max": {
         "vision": true,
         "thinking": true,
@@ -142,13 +155,39 @@
   "Kimi": {
     "base_url": "https://api.moonshot.cn/v1",
     "model_list": {
+      "kimi-k3.1-pro": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1048576,
+        "max_output": 1048576
+      },
+      "kimi-k3.1-pro-highspeed": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1048576,
+        "max_output": 1048576
+      },
       "kimi-k3": {
         "vision": true,
         "thinking": true,
         "thinking_level_map": {
-          "minimal": false,
+          "minimal": "low",
           "low": "low",
-          "medium": false,
+          "medium": "high",
           "high": "high",
           "max": "max"
         },
@@ -256,6 +295,19 @@
   "MiniMax": {
     "base_url": "https://api.minimax.cn/v1/chat/completions",
     "model_list": {
+      "MiniMax-M3.1-Flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "medium",
+          "medium": "high",
+          "high": "xhigh",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": null
+      },
       "MiniMax-M3.1-Flash-Preview": {
         "vision": true,
         "thinking": true,
@@ -313,6 +365,19 @@
   "MiniMax Token Plan": {
     "base_url": "https://api.minimax.cn/v1",
     "model_list": {
+      "MiniMax-M3.1-Flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "medium",
+          "medium": "high",
+          "high": "xhigh",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": null
+      },
       "MiniMax-M3.1-Flash-Preview": {
         "vision": true,
         "thinking": true,
@@ -458,6 +523,32 @@
   "Tencent TokenHub": {
     "base_url": "https://tokenhub.tencentmaas.com/v1",
     "model_list": {
+      "hy4": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 1000000,
+        "max_output": 65536
+      },
+      "hy4-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 1000000,
+        "max_output": 65536
+      },
       "hy4-preview": {
         "vision": true,
         "thinking": true,
@@ -489,6 +580,32 @@
   "Tencent TokenPlan": {
     "base_url": "https://api.lkeap.cloud.tencent.com/plan/v3",
     "model_list": {
+      "hy4": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 1000000,
+        "max_output": 65536
+      },
+      "hy4-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": false,
+          "low": false,
+          "medium": "high",
+          "high": "high",
+          "max": "high"
+        },
+        "context_length": 1000000,
+        "max_output": 65536
+      },
       "hy4-preview": {
         "vision": true,
         "thinking": true,
