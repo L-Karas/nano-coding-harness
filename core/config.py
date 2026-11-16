@@ -61,7 +61,9 @@ class Paths:
     LOG_DIR: Path
     SKILL_DIR: Path
     EXTENSION_DIR: Path
-    MEMORY_DIR: Path
+    MEMORY_ROOT_DIR: Path
+    LOCAL_MEMORY_DIR: Path
+    GLOBAL_MEMORY_DIR: Path
     TOOL_RESULTS_DIR: Path
     MCP_DIR: Path
     SESSION_ROOT_DIR: Path
@@ -91,6 +93,7 @@ class Paths:
         root = (WORKDIR if mode == "dev" else Path.home()) / HARNESS_DIR_NAME
         session_root = root / ".session"
         session_dir = session_root / format_workdir_name(WORKDIR)
+        memory_dir = root / ".memory"
         mcp_dir = root / ".mcp"
         return cls(
             MODE=mode,
@@ -98,7 +101,9 @@ class Paths:
             LOG_DIR=root / "log",
             SKILL_DIR=root / "skills",
             EXTENSION_DIR=root / "extensions",
-            MEMORY_DIR=root / ".memory",
+            MEMORY_ROOT_DIR=memory_dir,
+            LOCAL_MEMORY_DIR=memory_dir / format_workdir_name(WORKDIR),
+            GLOBAL_MEMORY_DIR=memory_dir / "global-memories",
             TOOL_RESULTS_DIR=root / ".task_outputs" / "tool_results",
             MCP_DIR=mcp_dir,
             SESSION_ROOT_DIR=session_root,

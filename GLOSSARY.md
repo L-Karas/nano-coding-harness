@@ -68,6 +68,13 @@ _Avoid_: 固定压缩阈值、按 max_output 计算阈值
 关闭后从系统提示词移除，并让 `load_skill` 拒绝。
 _Avoid_: 技能配置、enabled 列表
 
+**Memory scope**:
+长期记忆的存储作用域，与 `mem_type` 正交：`local` 只属于当前工作目录，存于
+`.nano-harness/.memory/<格式化工作目录>/`；`global` 跨工作目录共享，存于
+`.nano-harness/.memory/global-memories/`。作用域由存储目录决定，不写进记忆 JSON；
+`save_memory` 缺省 `local`。
+_Avoid_: 共享记忆、工作区记忆
+
 **Server enabled state**:
 MCP server 的用户开关，存在 `.mcp.json` 的 `enabled` 字段（缺省启用）；关闭 = 断开连接、
 工具下架，但配置保留，可重新启用。

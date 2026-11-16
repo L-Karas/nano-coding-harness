@@ -53,8 +53,11 @@ description: 一句话说明这个技能做什么
 
 ## Memory
 
-`save_memory` 把记忆写为 `.nano-harness/.memory/memory-<id>.json`，
-标题与内容会在每轮构建系统提示词时注入 Memories 段，因此适合沉淀用户偏好与项目约定。
+`save_memory` 按 `scope` 把记忆写为 `.nano-harness/.memory/` 下两类文件之一：
+`local`（默认，仅当前工作目录）写入 `.nano-harness/.memory/<格式化工作目录>/memory-<id>.json`，
+`global`（跨工作目录共享）写入 `.nano-harness/.memory/global-memories/memory-<id>.json`。
+工作目录名与会话目录同一规则。`scope` 由所在目录决定、不写进文件；标题、内容、类型与作用域会在
+每轮构建系统提示词时注入 Memories 段（global 在前），因此适合沉淀用户偏好与项目约定。
 
 ## Cron 调度
 

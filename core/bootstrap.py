@@ -19,8 +19,8 @@ def _config_dirs() -> tuple[Path, ...]:
         需要创建的配置目录列表。
     """
     return (PATHS.HARNESS_CONFIG_DIR, PATHS.LOG_DIR, PATHS.SKILL_DIR,
-            PATHS.EXTENSION_DIR, PATHS.MEMORY_DIR, PATHS.SESSION_DIR,
-            PATHS.TOOL_RESULTS_DIR, PATHS.MCP_DIR)
+            PATHS.EXTENSION_DIR, PATHS.LOCAL_MEMORY_DIR, PATHS.GLOBAL_MEMORY_DIR,
+            PATHS.SESSION_DIR, PATHS.TOOL_RESULTS_DIR, PATHS.MCP_DIR)
 
 
 def _json_files() -> dict[Path, dict]:

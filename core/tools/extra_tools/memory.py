@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from core.context import memory
+from core.context.memory import MemoryScope
 from core.runtime_context import ToolContext
 from core.tools.tool_base import BaseTool
 
@@ -17,6 +18,9 @@ class SaveMemory(BaseTool):
         description="user=preferences, feedback=corrections, "
                     "project=non-obvious project conventions or decision reasons, "
                     "reference=external resource pointers")
+    scope: MemoryScope = Field(
+        default="local",
+        description="local = only this working directory; global = shared across working directories")
 
     agent_type: set = {"main"}
     parallel_safe: bool = True
@@ -30,4 +34,4 @@ class SaveMemory(BaseTool):
         Returns:
             (创建结果提示, 新记忆 id)。
         """
-        return memory.run_save_memory(self.title, self.content, self.mem_type)
+        return memory.run_save_memory(self.title, self.content, self.mem_type, scope=self.scope)

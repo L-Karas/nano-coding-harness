@@ -139,6 +139,8 @@ def test_init_harness_creates_tree_under_configured_root(fake_home, restore_dev_
     assert (root / ".settings.json").is_file()
     assert (root / ".mcp" / ".mcp.json").is_file()
     assert (root / ".session" / config.format_workdir_name(config.WORKDIR)).is_dir()
+    assert (root / ".memory" / config.format_workdir_name(config.WORKDIR)).is_dir()
+    assert (root / ".memory" / "global-memories").is_dir()
     assert (root / "log").is_dir()
 
 

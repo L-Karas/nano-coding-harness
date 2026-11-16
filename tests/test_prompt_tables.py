@@ -57,18 +57,20 @@ def test_build_memories_table_renders_rows(monkeypatch):
             title="语言",
             content="用中文回复",
             mem_type="user",
+            scope="local",
         ),
         Memory(
             id="m2",
             title="环境",
             content="Windows",
             mem_type="project",
+            scope="global",
         ),
     ]
     monkeypatch.setattr(prompt.MEMORY_MANAGER, "load_memories", lambda: memories)
     assert prompt.build_memories_table() == (
-        "|Memory title|Memory content|Memory type|\n|---|---|---|\n"
-        "|语言|用中文回复|user|\n|环境|Windows|project|"
+        "|Memory title|Memory content|Memory type|Scope|\n|---|---|---|---|\n"
+        "|语言|用中文回复|user|local|\n|环境|Windows|project|global|"
     )
 
 
@@ -149,6 +151,7 @@ def test_build_system_prompt_main_includes_all_tables(monkeypatch):
                             title="t",
                             content="c",
                             mem_type="user",
+                            scope="local",
                         )])
     monkeypatch.setattr(prompt, "load_skills",
                         lambda: {"s": Skill(
@@ -160,7 +163,7 @@ def test_build_system_prompt_main_includes_all_tables(monkeypatch):
                         )})
     text = prompt.build_system_prompt("main", [_tool("read", "Read a file")])
     assert "|`read`|Read a file|" in text
-    assert "|t|c|user|" in text
+    assert "|t|c|user|local|" in text
     assert "|`s`|d|`/skills/s`|" in text
     assert "(none)" not in text
 
@@ -186,14 +189,15 @@ def test_build_memories_table_escapes_pipes_and_newlines(monkeypatch):
             title="a|b",
             content="line1\r\nline2",
             mem_type="user",
+            scope="global",
         ),
     ])
     table = prompt.build_memories_table()
     assert table == (
-        "|Memory title|Memory content|Memory type|\n|---|---|---|\n"
-        "|a\\|b|line1<br>line2|user|"
+        "|Memory title|Memory content|Memory type|Scope|\n|---|---|---|---|\n"
+        "|a\\|b|line1<br>line2|user|global|"
     )
-    assert _table_widths(table) == [{5}]
+    assert _table_widths(table) == [{6}]
 
 
 def test_build_skills_table_escapes_pipes_and_newlines(monkeypatch):
@@ -228,6 +232,7 @@ def test_build_system_prompt_tables_keep_uniform_width(monkeypatch):
             title="t|1",
             content="c\n2",
             mem_type="user",
+            scope="local",
         ),
     ])
     monkeypatch.setattr(prompt, "load_skills", lambda: {
@@ -241,5 +246,5 @@ def test_build_system_prompt_tables_keep_uniform_width(monkeypatch):
     })
     text = prompt.build_system_prompt("main", [_tool("read", "r|1\n2")])
 
-    # 工具 2 列、记忆 3 列、技能 3 列；每张表内各行宽度须一致
-    assert _table_widths(text) == [{4}, {5}, {5}]
+    # 工具 2 列、记忆 4 列、技能 3 列；每张表内各行宽度须一致
+    assert _table_widths(text) == [{4}, {6}, {5}]

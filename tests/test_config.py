@@ -174,3 +174,11 @@ def test_session_dir_is_scoped_by_workdir():
     assert config_mod.PATHS.SESSION_DIR.parent == config_mod.PATHS.SESSION_ROOT_DIR
     assert config_mod.PATHS.SESSION_DIR.name == name
     assert config_mod.PATHS.SESSION_INDEX_FILE == config_mod.PATHS.SESSION_DIR / "session_index.jsonl"
+
+
+def test_memory_dirs_are_scoped_by_workdir():
+    """local 记忆跟随格式化工作目录，global 记忆固定在 global-memories/。"""
+    name = config_mod.format_workdir_name(config_mod.WORKDIR)
+    assert config_mod.PATHS.MEMORY_ROOT_DIR == config_mod.PATHS.HARNESS_CONFIG_DIR / ".memory"
+    assert config_mod.PATHS.LOCAL_MEMORY_DIR == config_mod.PATHS.MEMORY_ROOT_DIR / name
+    assert config_mod.PATHS.GLOBAL_MEMORY_DIR == config_mod.PATHS.MEMORY_ROOT_DIR / "global-memories"

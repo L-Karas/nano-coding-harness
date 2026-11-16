@@ -75,9 +75,9 @@ def build_memories_table() -> str:
     memories = MEMORY_MANAGER.load_memories()
     if not memories:
         return "(none)"
-    sections = ["|Memory title|Memory content|Memory type|", "|---|---|---|"]
+    sections = ["|Memory title|Memory content|Memory type|Scope|", "|---|---|---|---|"]
     for memory in memories:
-        sections.append(_row(memory.title, memory.content, memory.mem_type))
+        sections.append(_row(memory.title, memory.content, memory.mem_type, memory.scope))
 
     return "\n".join(sections)
 
