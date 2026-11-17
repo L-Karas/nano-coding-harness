@@ -12,6 +12,7 @@ import threading
 import time
 
 import core.background_task as bt
+from core.context.truncate import MAX_OUTPUT_LINES
 from core.runtime_context import AgentRunContext, ToolContext
 from core.runtime_state import RuntimeState
 from core.template import USER_INTERRUPT_PROMPT
@@ -102,6 +103,15 @@ def test_spawn_subagent_always_background():
     assert bt.should_run_background("spawn_subagent", {"should_run_in_background": False})
 
 
+def test_background_flag_requires_actual_true():
+    """只有 JSON 布尔 true 才是显式后台请求；"yes" / 1 / "false" 都不能触发。"""
+    args = {"command": "echo hi"}
+    assert bt.should_run_background("terminal", {**args, "should_run_in_background": True}) is True
+    for value in ("yes", "true", "false", 1, 0, None):
+        assert bt.should_run_background(
+            "terminal", {**args, "should_run_in_background": value}) is False
+
+
 def test_subagent_background_record_has_no_cancel_handle(monkeypatch):
     """子代理的 bg 记录不挂取消句柄：cancel_work(bg-…) 是 no-op，按停只能经 sa 条目；Esc 仍连带停。"""
     state = RuntimeState()
@@ -158,6 +168,21 @@ def test_collect_background_results_formats_notification(monkeypatch):
         assert "boom" in notes
 
     asyncio.run(main())
+
+
+def test_collect_background_results_truncates_large_output(monkeypatch):
+    state = RuntimeState()
+    monkeypatch.setattr(bt, "RUNTIME_STATE", state)
+    bg_id = state.allocate_background_id()
+    state.register_background(bg_id, "terminal(pytest)")
+    content = "line\n" * (MAX_OUTPUT_LINES + 10)
+    state.complete_background(bg_id, ToolResult(content=content))
+
+    notes = "\n".join(bt.collect_background_results())
+
+    assert content not in notes
+    assert "[Truncated:" in notes
+    assert "<status>completed</status>" in notes
 
 
 def test_tool_result_cancelled_is_flagged_not_error():

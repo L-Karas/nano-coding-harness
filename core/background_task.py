@@ -13,6 +13,7 @@ from typing import Callable
 
 from openai.types.chat import ChatCompletionMessageToolCallUnion
 
+from core.context.truncate import truncate_tool_output
 from core.runtime_context import ToolContext
 from core.runtime_state import RUNTIME_STATE
 from core.shared.logger import get_logger
@@ -95,7 +96,8 @@ def should_run_background(tool_name: str, tool_args: dict) -> bool:
     if tool_name == _SUBAGENT_TOOL:
         # 子代理固定后台跑：主代理不等待结论，结果稍后经 background notification 注入
         return True
-    return bool(tool_args.get("should_run_in_background")) or is_slow_operation(tool_name, tool_args)
+    # 只认真正的 JSON 布尔 true；字符串 "yes" / 数字 1 不算显式后台请求
+    return tool_args.get("should_run_in_background") is True or is_slow_operation(tool_name, tool_args)
 
 
 def _bg_interrupted(tctx: ToolContext | None) -> bool:
@@ -204,12 +206,14 @@ def collect_background_results() -> list[str]:
             status = "cancelled"
         else:
             status = "completed"
+        content = result.content if result is not None else ""
+        content, _ = truncate_tool_output(content)
         notifications.append(
             BACKGROUND_MESSAGE_TEMPLATE.format(
                 task_id=item.id,
                 status=status,
                 tool=item.tool_call,
-                result=result.content if result is not None else "",
+                result=content,
             )
         )
 

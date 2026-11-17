@@ -35,10 +35,13 @@ class EditFile(BaseTool):
 
         Raises:
             ValueError: old_text 为空、未找到或出现多次。
+            IsADirectoryError: 目标路径是目录。
             FileNotFoundError: 目标文件不存在。
             OSError: 写入 / 替换失败。
         """
         path = resolve_path(self.path, tctx.cwd if tctx else None)
+        if path.is_dir():
+            raise IsADirectoryError(f"is a directory: {self.path}")
         if not self.old_text:
             raise ValueError("old_text must not be empty")
         if tctx:

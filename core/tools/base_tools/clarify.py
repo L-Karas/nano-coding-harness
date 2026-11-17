@@ -19,6 +19,7 @@ class Clarify(BaseTool):
     __doc__ = DESCRIPTION
 
     options: list[str] = Field(
+        max_length=MAX_OPTIONS,
         description=f"Candidate answers shown to the user (1-{MAX_OPTIONS}). "
                     "A chosen entry is returned verbatim, so write each as a complete answer; "
                     "mutually exclusive, ordered best first (a custom reply is always available, so no entry "

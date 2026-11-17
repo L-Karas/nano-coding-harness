@@ -22,6 +22,23 @@ DESCRIPTION = (
 )
 
 
+def _exit_code_error(returncode: int, output: str) -> str | None:
+    """非零退出码对应的错误详情；退出码为 0 时返回 None。
+
+    Args:
+        returncode: 子进程退出码。
+        output: 合并后的输出。
+
+    Returns:
+        "exit code N"（有输出时另起一行附上输出）；退出码为 0 时为 None。
+    """
+    if returncode == 0:
+        return None
+    if output:
+        return f"exit code {returncode}\n{output}"
+    return f"exit code {returncode}"
+
+
 class Terminal(BaseTool):
     __doc__ = DESCRIPTION
     command: str = Field(description="The shell command to execute.")
@@ -45,6 +62,9 @@ class Terminal(BaseTool):
 
         Returns:
             合并 stdout/stderr 的文本；无输出时返回 "(Tool no output)"。
+
+        Raises:
+            RuntimeError: 退出码非零；消息含退出码与输出。
         """
         # text=True decodes in a reader thread: on Windows (gbk locale) git's UTF-8 output
         # kills that thread and communicate() returns stdout=None. Capture bytes, decode here.
@@ -63,8 +83,10 @@ class Terminal(BaseTool):
             run_kwargs["input"] = args.stdin_script.encode("utf-8")
         res = subprocess.run(args.argv, **run_kwargs)
         output = (_to_text(res.stdout) + _to_text(res.stderr)).strip()
-        # todo: 是否由 prepare_messages 方法统一截断处理
-        return output[:int(5e4)] if output else "(Tool no output)"
+        detail = _exit_code_error(res.returncode, output)
+        if detail:
+            raise RuntimeError(detail)
+        return output or "(Tool no output)"
 
     async def arun(self, tctx: ToolContext | None = None) -> str:
         """异步执行 shell 命令并返回合并输出；取消时终止子进程。
@@ -74,6 +96,9 @@ class Terminal(BaseTool):
 
         Returns:
             合并 stdout/stderr 的文本；无输出时返回 "(Tool no output)"。
+
+        Raises:
+            RuntimeError: 退出码非零；消息含退出码与输出。
         """
         process = await start_process(build_command_invocation(self.command),
                                       cwd=tctx.cwd if tctx and tctx.cwd else WORKDIR)
@@ -82,7 +107,10 @@ class Terminal(BaseTool):
             if tctx:
                 tctx.raise_if_cancelled()
             output = (_to_text(out) + _to_text(error)).strip()
-            return output[:int(5e4)] if output else "(Tool no output)"
+            detail = _exit_code_error(process.returncode, output)
+            if detail:
+                raise RuntimeError(detail)
+            return output or "(Tool no output)"
         except asyncio.CancelledError:
             process.terminate()
             try:

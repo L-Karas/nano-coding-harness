@@ -190,3 +190,29 @@ def test_skip_hidden_and_ignored_is_part_of_the_tool_schema():
     schema = glob_mod.Glob.to_openai_tool()["function"]
     assert schema["parameters"]["properties"]["skip_hidden_and_ignored"]["default"] is True
     assert "skip_hidden_and_ignored" in schema["description"]
+
+
+def test_empty_pattern_is_rejected():
+    with pytest.raises(ValueError):
+        glob_mod.Glob(pattern="")
+
+
+@pytest.mark.parametrize("pattern", ["   ", "[", "a[b", "[z-a]", "[9-0]", "[!z-a]"])
+def test_invalid_pattern_raises(monkeypatch, tmp_path, pattern):
+    _build(tmp_path, git=False)
+
+    with pytest.raises(ValueError):
+        _glob(monkeypatch, tmp_path, pattern, True, ripgrep=False)
+
+
+@pytest.mark.parametrize("pattern", ["[[]", "[a-z]*", "[!a-z]*", "[a--b]", "[a-b-c]"])
+def test_valid_character_classes_are_not_rejected(monkeypatch, tmp_path, pattern):
+    _build(tmp_path, git=False)
+
+    assert isinstance(_glob(monkeypatch, tmp_path, pattern, True, ripgrep=False), str)
+
+
+def test_character_class_matches_files(monkeypatch, tmp_path):
+    _build(tmp_path, git=False)
+
+    assert _lines(_glob(monkeypatch, tmp_path, "[t]op.py", True, ripgrep=False)) == ["top.py"]

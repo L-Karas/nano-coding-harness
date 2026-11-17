@@ -203,9 +203,8 @@ def test_run_terminal_async_uses_shared_shell_invocation(monkeypatch):
     assert captured["invocation"] == shell.build_command_invocation("echo ok")
 
 
-def test_run_terminal_async_caps_output_at_50k(monkeypatch):
-    """异步 / 后台 terminal 与同步路径同样截到 5 万字符：后台结果走 notification
-    （role=user），不经过只处理 role=tool 的上下文截断，工具侧上限是唯一闸门。"""
+def test_run_terminal_async_returns_full_output(monkeypatch):
+    """工具不截断输出：上下文截断统一由 prepare_messages 处理。"""
     import core.tools.base_tools.terminal as terminal
 
     class _Process:
@@ -219,19 +218,100 @@ def test_run_terminal_async_caps_output_at_50k(monkeypatch):
 
     monkeypatch.setattr(terminal, "start_process", fake_start_process)
 
-    assert asyncio.run(terminal.Terminal(command="echo big").arun()) == "x" * 50_000
+    assert asyncio.run(terminal.Terminal(command="echo big").arun()) == "x" * 60_000
 
 
-def test_run_terminal_sync_caps_output_at_50k(monkeypatch):
+def test_run_terminal_async_nonzero_exit_raises_with_output(monkeypatch):
+    """非零退出码必须抛异常（ADR-0001）：ToolPool 才能标记 is_error，TUI 才会渲染 error 卡。"""
+    import core.tools.base_tools.terminal as terminal
+
+    class _Process:
+        returncode = 7
+
+        async def communicate(self):
+            return b"out\n", b"err"
+
+    async def fake_start_process(invocation, cwd=None):
+        return _Process()
+
+    monkeypatch.setattr(terminal, "start_process", fake_start_process)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        asyncio.run(terminal.Terminal(command="false").arun())
+    assert str(excinfo.value) == "exit code 7\nout\nerr"
+
+
+def test_run_terminal_sync_returns_full_output(monkeypatch):
+    """工具不截断输出：上下文截断统一由 prepare_messages 处理。"""
     import core.tools.base_tools.terminal as terminal
 
     class _Completed:
+        returncode = 0
         stdout = b"x" * 60_000
         stderr = b""
 
     monkeypatch.setattr(terminal.subprocess, "run", lambda argv, **kwargs: _Completed())
 
-    assert terminal.Terminal(command="echo big").run() == "x" * 50_000
+    assert terminal.Terminal(command="echo big").run() == "x" * 60_000
+
+
+def test_run_terminal_sync_nonzero_exit_raises_with_output(monkeypatch):
+    """非零退出码必须抛异常，且错误详情保留 stdout/stderr。"""
+    import core.tools.base_tools.terminal as terminal
+
+    class _Completed:
+        returncode = 2
+        stdout = b"partial"
+        stderr = b"boom"
+
+    monkeypatch.setattr(terminal.subprocess, "run", lambda argv, **kwargs: _Completed())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        terminal.Terminal(command="false").run()
+    detail = str(excinfo.value)
+    assert detail.startswith("exit code 2")
+    assert "partial" in detail and "boom" in detail
+
+
+def test_run_terminal_sync_nonzero_exit_without_output(monkeypatch):
+    import core.tools.base_tools.terminal as terminal
+
+    class _Completed:
+        returncode = 3
+        stdout = b""
+        stderr = b""
+
+    monkeypatch.setattr(terminal.subprocess, "run", lambda argv, **kwargs: _Completed())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        terminal.Terminal(command="exit 3").run()
+    assert str(excinfo.value) == "exit code 3"
+
+
+def test_terminal_nonzero_exit_becomes_error_result_and_error_card(monkeypatch):
+    """端到端：非零退出 → ToolPool is_error=True → TUI error 卡（实时与回放两路）。"""
+    import core.tools.base_tools.terminal as terminal
+    from core.template import TOOL_ERROR_PREFIX
+    from core.tools.tool_pool import ToolPool
+    from core.tui import blocks
+
+    class _Completed:
+        returncode = 1
+        stdout = b""
+        stderr = b"fatal: not a git repository"
+
+    monkeypatch.setattr(terminal.subprocess, "run", lambda argv, **kwargs: _Completed())
+
+    result = ToolPool({"terminal": terminal.Terminal}).execute_sync(
+        "terminal", {"command": "git status"})
+
+    assert result.is_error is True
+    assert result.content.startswith(TOOL_ERROR_PREFIX)
+    assert "exit code 1" in result.content
+    assert "fatal: not a git repository" in result.content
+    assert blocks.tool_result("call-1", result.content, is_error=result.is_error).kind == "error"
+    assert blocks.tool_result("call-1", result.content).kind == "error", \
+        "回放按错误前缀识别，未显式传 is_error 时也必须渲染 error 卡"
 
 
 # ---------- 子进程控制台隔离（防止子进程 SetConsoleTitle 覆盖 TUI 终端标题） ----------
@@ -271,6 +351,7 @@ def test_run_terminal_isolates_child_console_on_windows(monkeypatch, tmp_path):
     captured = {}
 
     class _Completed:
+        returncode = 0
         stdout = b"ok"
         stderr = b""
 

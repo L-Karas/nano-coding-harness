@@ -23,6 +23,7 @@ DESCRIPTION = (
 class Glob(BaseTool):
     __doc__ = DESCRIPTION
     pattern: str = Field(
+        min_length=1,
         description="Glob pattern relative to the working directory, e.g. '*.py' or "
                     "'src/**/*.ts'."
     )
@@ -79,6 +80,28 @@ class Glob(BaseTool):
         return _format(_match(paths, self.pattern, self.skip_hidden_and_ignored))
 
 
+_NEVER_MATCH_MARKER = "(?!)"  # CPython 把反向范围 [z-a] 翻成永不匹配
+_ANY_CHAR_SUFFIXES = (r".)\Z", r".)\z")  # 取反的反向范围 [!z-a] 翻成任意字符（.）
+
+
+def _validate_pattern(pattern: str) -> None:
+    """拒绝空 pattern、未闭合的 `[` 与非法字符范围。
+
+    Args:
+        pattern: 原始 glob 模式。
+
+    Raises:
+        ValueError: pattern 非法。
+    """
+    pat = pattern.strip()
+    if not pat or re.search(r"\[[^]]*$", pat):
+        raise ValueError(f"invalid glob pattern: {pattern!r}")
+    for char_class in re.findall(r"\[[^]]*\]", pat):
+        translated = g.translate(char_class, recursive=True, include_hidden=True)
+        if _NEVER_MATCH_MARKER in translated or translated.endswith(_ANY_CHAR_SUFFIXES):
+            raise ValueError(f"invalid character range in glob pattern: {pattern!r}")
+
+
 def _root(tctx: ToolContext | None) -> Path:
     """解析本次查找的根目录。
 
@@ -106,6 +129,7 @@ def _matcher(pattern: str, skip_hidden_and_ignored: bool) -> re.Pattern[str]:
     Returns:
         用于匹配相对路径的正则对象。
     """
+    _validate_pattern(pattern)
     pat = pattern.strip()
     if os.sep != "/":  # Windows 上手写的 `src\*.py` 归一成 `/`
         pat = pat.replace(os.sep, "/")
@@ -115,7 +139,7 @@ def _matcher(pattern: str, skip_hidden_and_ignored: bool) -> re.Pattern[str]:
         pat = pat[2:]
     if pat and pat != "**" and "/" not in pat and not rooted:
         pat = "**/" + pat
-    return re.compile(g.translate(pat, recursive=True, include_hidden=not skip_hidden_and_ignored) if pat else r"(?!)")
+    return re.compile(g.translate(pat, recursive=True, include_hidden=not skip_hidden_and_ignored))
 
 
 def _match(paths: list[str], pattern: str, skip_hidden_and_ignored: bool) -> list[str]:

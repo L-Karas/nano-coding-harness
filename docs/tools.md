@@ -20,7 +20,7 @@
 
 | 工具 | 参数 | 说明 |
 | --- | --- | --- |
-| `terminal` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），输出截断 5 万字符；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
+| `terminal` | `command`, `should_run_in_background` | shell 执行（同步路径 120s 超时），非零退出码按工具错误返回（详情含退出码与输出）；`should_run_in_background=true` 或命中慢命令启发式时自动转后台 |
 | `read_file` | `path`, `limit=2000`, `offset=1` | 分页读取文本（默认 2000 行 / 50KB，任一先到即停），超限时返回续读 offset 提示；图片路径（png/jpg/jpeg/gif/webp，单图 ≤ 5 MB，超出时等比缩小）与 `http(s)` 图片 URL 作为图片附件返回，供视觉模型使用；`limit` / `offset` 仅对文本有效 |
 | `write_file` | `path`, `content` | 整文件写入（自动建父目录，覆盖原内容；小改请用 `edit_file`），执行前计算 diff 预览，成功后与结果同卡展示；UTF-8，内容里的 `\r\n` 归一为目标换行风格（已有文件沿用原 LF / CRLF 风格，新文件 LF），保留原文件权限，内容未变时短路不改写 |
 | `edit_file` | `path`, `old_text`, `new_text` | 单次精确替换（`old_text` 必须非空且唯一），执行前计算 diff 预览，成功后与结果同卡展示；保留原文件 LF / CRLF 风格与权限，混合换行按多数行统一 |

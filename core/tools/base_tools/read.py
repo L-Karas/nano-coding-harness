@@ -25,9 +25,9 @@ class ReadFile(BaseTool):
     __doc__ = DESCRIPTION
     path: str = Field(
         description="File path or http(s) image URL; relative paths resolve against the working directory.")
-    limit: int = Field(default=MAX_OUTPUT_LINES,
+    limit: int = Field(default=MAX_OUTPUT_LINES, ge=1, le=MAX_OUTPUT_LINES,
                        description=f"Max lines to return (default: {MAX_OUTPUT_LINES}).")
-    offset: int = Field(default=1, description="1-indexed line to start from (default: 1); continue with the "
+    offset: int = Field(default=1, ge=1, description="1-indexed line to start from (default: 1); continue with the "
                                                "offset from the truncation notice.")
 
     agent_type: set = {"main", "sub-agent"}
@@ -44,6 +44,7 @@ class ReadFile(BaseTool):
 
         Raises:
             ValueError: URL 后缀不是受支持的图片格式。
+            IsADirectoryError: 目标路径是目录。
             FileNotFoundError: 文件不存在。
             UnicodeDecodeError: 文本文件不是 UTF-8 编码。
         """
@@ -53,6 +54,8 @@ class ReadFile(BaseTool):
 
         base = tctx.cwd if tctx and tctx.cwd else WORKDIR
         fp = (base / self.path).resolve()
+        if fp.is_dir():
+            raise IsADirectoryError(f"is a directory: {self.path}")
         if vision.image_mime(self.path) is not None:
             return vision.local_image_result(fp, vision=vision_enabled)
 
@@ -74,6 +77,7 @@ class ReadFile(BaseTool):
 
         Raises:
             ValueError: URL 后缀不是受支持的图片格式。
+            IsADirectoryError: 目标路径是目录。
             FileNotFoundError: 文件不存在。
             UnicodeDecodeError: 文本文件不是 UTF-8 编码。
         """
@@ -83,6 +87,8 @@ class ReadFile(BaseTool):
 
         base = tctx.cwd if tctx and tctx.cwd else WORKDIR
         fp = (base / self.path).resolve()
+        if fp.is_dir():
+            raise IsADirectoryError(f"is a directory: {self.path}")
         if vision.image_mime(self.path) is not None:
             return await vision.alocal_image_result(fp, vision=vision_enabled)
 
