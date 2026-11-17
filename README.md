@@ -1,3 +1,5 @@
+[English](README.en.md) | 简体中文
+
 # nano-harness
 
 一个用 Python 3.13 + Textual 写的 coding agent harness：全屏 TUI 对话、流式工具调用、
