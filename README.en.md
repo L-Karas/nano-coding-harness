@@ -11,9 +11,9 @@ English | [简体中文](README.md)
 </p>
 
 <p align="center">
-  <img alt="Python 3.13+" src="https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Python 3.13+" src="https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=3776AB&labelColor=FFD43B">
   <img alt="Textual" src="https://img.shields.io/badge/TUI-Textual-5A5FD1">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D4">
 </p>
 
 A coding agent harness built with Python 3.13 and [Textual](https://textual.textualize.io/): full-screen TUI
