@@ -2,24 +2,58 @@
 
 # nano-harness
 
-一个用 Python 3.13 + Textual 写的 coding agent harness：全屏 TUI 对话、流式工具调用、
-分层上下文压缩、后台任务、cron 调度与子代理。
-源码即文档，主体实现位于 `core/`；命令行入口在 `core/cli.py`（全局命令 `nh` / `nano-harness`），
-仓库根 `main.py` 是保持 dev 默认的薄壳，日志实现位于 `core/shared/logger.py`。
+<p align="center">
+  <img src="examples/TUI.png" alt="nano-harness 全屏 TUI 启动画面" width="880">
+</p>
+
+<p align="center">
+  <sub>全屏 TUI：左侧卡片式会话流与状态行，右侧 Information 面板（Todos / Background Tasks / Subagents）</sub>
+</p>
+
+<p align="center">
+  <img alt="Python 3.13+" src="https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Textual" src="https://img.shields.io/badge/TUI-Textual-5A5FD1">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+</p>
+
+一个用 Python 3.13 + [Textual](https://textual.textualize.io/) 写的 coding agent harness：全屏 TUI 对话、
+流式工具调用、分层上下文压缩、后台任务、cron 调度与子代理。
+
+> 源码即文档：主体实现位于 `core/`，命令行入口在 `core/cli.py`（全局命令 `nh` / `nano-harness`），
+> 仓库根 `main.py` 是保持 dev 默认的薄壳，日志实现位于 `core/shared/logger.py`。
+
+## 目录
+
+- [核心特性](#核心特性)
+- [快速开始](#快速开始)
+- [模型配置](#模型配置)
+- [TUI 使用](#tui-使用)
+- [配置目录](#配置目录)
+- [权限策略](#权限策略)
+- [扩展系统](#扩展系统)
+- [项目结构](#项目结构)
+- [文档索引](#文档索引)
 
 ## 核心特性
 
-- **全屏 TUI**：卡片式聊天记录、流式思考/正文渲染、工具调用与结果（write / edit 的 diff 同卡展示），右栏展示 Todos、后台任务与子代理；
-- **工具系统**：文件读写编辑（`read_file` 支持 png/jpg/jpeg/gif/webp 本地图片，单图 ≤ 5 MB、超限自动缩小，以及图片 URL；图片经 user 消息注入视觉模型）、shell（慢命令自动转后台）、glob / grep、clarify、MCP 工具合并；
+- **全屏 TUI**：卡片式聊天记录、流式思考/正文渲染、工具调用与结果（write / edit 的 diff 同卡展示），
+  右栏展示 Todos、后台任务与子代理；
+- **工具系统**：文件读写编辑（`read_file` 支持 png/jpg/jpeg/gif/webp 本地图片，单图 ≤ 5 MB、超限自动缩小，
+  以及图片 URL；图片经 user 消息注入视觉模型）、shell（慢命令自动转后台）、glob / grep、clarify、MCP 工具合并；
 - **两层上下文压缩**：工具输出统一截断 + 历史摘要，阈值随当前模型动态解析；
 - **健壮性**：Esc 中断、按 provider 分类的错误退避重试、截断自动扩窗与续写恢复、会话逐条落盘；
 - **子代理**：独立提示词与工具池，后台运行、最多 30 轮，只回传最终文本结论，右栏按 role 展示；
-- **可扩展**：`.nano-harness/.permissions.json` 权限规则（allow / ask / deny）+ `.nano-harness/extensions/` 外部扩展五个事件介入（`before_tool` 决定票与内置权限门）。
+- **可扩展**：`.nano-harness/.permissions.json` 权限规则（allow / ask / deny）+
+  `.nano-harness/extensions/` 外部扩展五个事件介入（`before_tool` 决定票与内置权限门）。
 
 ## 快速开始
 
-前置：Python 3.13+ 与 [uv](https://docs.astral.sh/uv/)（未安装时：macOS / Linux
-`curl -LsSf https://astral.sh/uv/install.sh | sh`，Windows `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`）。
+### 前置依赖
+
+Python 3.13+ 与 [uv](https://docs.astral.sh/uv/)。未安装 uv 时：macOS / Linux
+`curl -LsSf https://astral.sh/uv/install.sh | sh`，Windows `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`。
+
+### 安装
 
 ```bash
 # 1. 从 GitHub 拉取源码
@@ -32,7 +66,15 @@ uv sync
 # 3. 安装为全局命令（在仓库根执行）：nh / nano-harness 落到 uv 的 shim 目录，需在 PATH 中
 # Windows 默认 %USERPROFILE%\.local\bin，macOS / Linux 默认 ~/.local/bin
 uv tool install --editable .
+```
 
+仓库目录名是 `nano-coding-harness`，安装后的包名与命令是 `nano-harness` / `nh`。
+editable 安装直接使用仓库代码，`git pull` 后改源码即时生效；依赖或版本号有变动时重装
+`uv tool install --editable . --force`（仓库内 `uv run` 开发则跑 `uv sync`），卸载 `uv tool uninstall nano-harness`。
+
+### 运行
+
+```bash
 nh                 # 任意目录启动：默认 prod（~/.nano-harness）
 nh -dev            # 用当前目录的 .nano-harness（等价于 uv run main.py）
 nano-harness       # 长命令与 nh 完全等价
@@ -41,12 +83,11 @@ uv run main.py               # 仓库内开发：dev（.nano-harness 在项目�
 uv run main.py --production  # prod：.nano-harness 在 home 目录（~/.nano-harness）
 ```
 
-仓库目录名是 `nano-coding-harness`，安装后的包名与命令是 `nano-harness` / `nh`。
-首次启动会按模式自动创建 `.nano-harness/` 配置与数据目录（见「配置目录」）。
+首次启动会按模式自动创建 `.nano-harness/` 配置与数据目录（见[配置目录](#配置目录)）。
 全局命令默认 `prod`，配置集中到 `~/.nano-harness`，项目目录保持干净；`-dev` / `-prod` 可在任一入口覆盖（互斥）。
-editable 安装直接使用仓库代码，`git pull` 后改源码即时生效；依赖或版本号有变动时重装
-`uv tool install --editable . --force`（仓库内 `uv run` 开发则跑 `uv sync`），卸载 `uv tool uninstall nano-harness`。
 模型未配置时界面可正常打开，先用 `/provider` 填 API Key，再 `/model` 选模型即可对话。
+
+### 自检
 
 ```bash
 uv run pytest tests/                          # 单元测试
@@ -58,16 +99,20 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 内置 Deepseek、Qwen、Kimi、Z.AI 等 provider（`core/client/models.json`），也可注册自定义提供方；
 模型的视觉 / 思考档位声明与注册表细节见 [`docs/configuration.md`](docs/configuration.md)。
 
-- `/provider`：填/删 API Key（写入 `.nano-harness/.auth.json`）
-- `/model`：从已配置 provider 的模型列表中切换当前会话模型（只改内存 client，不落盘；默认模型在 `/settings` 修改）
-- `/effort`：切换思考档位（`minimal` / `low` / `medium` / `high` / `max`）
-- `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型
+| 指令 | 说明 |
+| --- | --- |
+| `/provider` | 填 / 删 API Key（写入 `.nano-harness/.auth.json`） |
+| `/model` | 从已配置 provider 的模型列表中切换当前会话模型（只改内存 client，不落盘；默认模型在 `/settings` 修改） |
+| `/effort` | 切换思考档位（`minimal` / `low` / `medium` / `high` / `max`） |
+| `/login`（别名 `/logout`） | 注册 / 注销自定义提供方与模型 |
 
 ## TUI 使用
 
 左右分栏：左侧会话（卡片式聊天记录 + 状态行 + 输入条 + 页脚），右侧 Information 面板
 （Todos / 后台任务 / 子代理，默认折叠，有活动时自动展开，可点击折叠）。
 布局与界面模块见 [`docs/tui.md`](docs/tui.md)。
+
+### 快捷键
 
 | 操作 | 说明 |
 | --- | --- |
@@ -83,23 +128,31 @@ uv run python -m core.tui.ui_textual --smoke  # TUI 无头冒烟自检（渲染/
 | `Ctrl+←` / `Ctrl+→` | 调宽信息栏（20%–40%）；折叠态 `Ctrl+←` 展开，`Ctrl+→` 收到底即折叠 |
 | 鼠标 | 多数弹窗列表单击行 = `Enter` 执行（注销窗点击仅选中）；聊天卡片、信息栏分区 / 条目可点击；运行中的后台任务 / 子代理条目行尾 `■` = 指名停止（句柄跨回合有效，见 [ADR-0009](docs/adr/0009-background-cancel.md)）；`/settings` 点开关 / 下拉选项即落盘、点输入框进入编辑态 |
 
-内置指令：`/new`（新会话）、`/sessions`（会话选择）、`/compact`（压缩当前上下文，可被 Esc 中断）、
-`/fork`（列出当前会话的用户消息，选中后从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改）、
-`/skills`（技能列表，Enter/点击把技能作为一轮对话发出；Tab 把调用信息填入输入栏，可继续写补充消息后一起发送；`Ctrl+E` 启用/禁用选中技能）、`/extensions`（扩展列表，含未启用项与
-可选 `description`；`[user]` / `[builtin]` 标注来源，禁用 / 加载失败项在来源前显示
-`(disabled)` / `(error)`；`Ctrl+E` 启用/禁用选中扩展）、`/mcp`（MCP server 名列表，Enter 查看该 server
-的工具列表（失败/禁用项不可查看），`Ctrl+E` 启用/禁用选中 server，`Insert` 弹出 JSON 配置窗、`Ctrl+S` 落盘，`Delete` 删除 server）、
-`/provider`、`/model`、`/effort`、`/settings`（编辑 AgentConfig 运行参数）、
-`/login`（别名 `/logout`，注册/注销自定义提供方与模型）、`/exit`（别名 `/quit`）。
+### 内置指令
+
+| 指令 | 说明 |
+| --- | --- |
+| `/new` | 新会话 |
+| `/sessions` | 会话选择 |
+| `/compact` | 压缩当前上下文（可被 Esc 中断） |
+| `/fork` | 列出当前会话的用户消息，选中后从该消息前分叉出新会话并重放历史，消息原文填回输入栏供修改 |
+| `/skills` | 技能列表：Enter/点击把技能作为一轮对话发出；Tab 把调用信息填入输入栏；`Ctrl+E` 启用/禁用选中技能 |
+| `/extensions` | 扩展列表（含未启用项与可选 `description`）；`[user]` / `[builtin]` 标注来源，禁用 / 加载失败项在来源前显示 `(disabled)` / `(error)`；`Ctrl+E` 启用/禁用 |
+| `/mcp` | MCP server 名列表：Enter 查看该 server 的工具列表（失败/禁用项不可查看）；`Ctrl+E` 启用/禁用；`Insert` 弹出 JSON 配置窗、`Ctrl+S` 落盘；`Delete` 删除 server |
+| `/provider` | 填 / 删 API Key |
+| `/model` | 切换当前会话模型 |
+| `/effort` | 切换思考档位 |
+| `/settings` | 编辑 AgentConfig 运行参数 |
+| `/login`（别名 `/logout`） | 注册 / 注销自定义提供方与模型 |
+| `/exit`（别名 `/quit`） | 退出 |
 
 ## 配置目录
 
 运行模式决定 `.nano-harness/` 的位置：全局命令 `nh` 默认 `prod`（home，跨项目共享），
 `uv run main.py` 默认 `dev`（项目目录）；`-dev` / `-prod` 可覆盖。两种模式目录名一致，
 整棵目录树一起搬。工作目录 / 工具沙箱始终是当前项目，不随模式变化。首次启动由
-`core.bootstrap.bootstrap()` 自动创建
-（配置、会话、技能、任务、日志等，幂等且线程安全）。完整目录清单与模式规则见
-[`docs/configuration.md`](docs/configuration.md)。
+`core.bootstrap.bootstrap()` 自动创建（配置、会话、技能、任务、日志等，幂等且线程安全）。
+完整目录清单与模式规则见 [`docs/configuration.md`](docs/configuration.md)。
 
 ## 权限策略
 
@@ -114,6 +167,24 @@ path 正则与越界策略）表达 allow / ask / deny；外部扩展也能用 `
 介入主流程，或用 `tool_execute` 接管内置工具执行。加载规则、事件语义、实战配方与排错见
 [`docs/extensions.md`](docs/extensions.md)。
 
+## 项目结构
+
+| 路径 | 职责 |
+| --- | --- |
+| `core/cli.py`、`main.py` | CLI 入口与仓库内 dev 薄壳 |
+| `core/agent_loop.py`、`agent_step.py`、`turn_runtime.py` | Agent 主循环、单步执行（模型调用 + 工具派发）、回合线程契约 |
+| `core/tui/` | Textual 界面：App 装配、卡片 / 流式渲染、指令与弹窗、右栏面板 |
+| `core/tools/` | 工具基类、注册表与 `ToolPool`，内置 / 扩展工具与视觉处理 |
+| `core/context/` | 会话消息、两层上下文压缩与长期记忆 |
+| `core/client/` | Provider / 模型注册表与流式客户端 |
+| `core/extension/` | 外部扩展系统（事件、阶段、决定票）与内置扩展（权限门） |
+| `core/mcp/` | MCP server 连接与工具合并 |
+| `core/background_task.py`、`sub_agent.py`、`cron_scheduler.py` | 后台任务、子代理、cron 调度 |
+| `smoke/`、`tests/` | TUI 无头冒烟自检与单元测试 |
+| `docs/`、`examples/` | 项目文档与示例（配置、扩展、s01–s18 教学脚本） |
+
+完整模块地图与主循环细节见 [`docs/architecture.md`](docs/architecture.md)。
+
 ## 文档索引
 
 | 文档 | 内容 |
@@ -127,4 +198,4 @@ path 正则与越界策略）表达 allow / ask / deny；外部扩展也能用 `
 | [`docs/permissions.md`](docs/permissions.md) | 权限策略：三层判定、规则文件、扩展决定票与风险 |
 | [`docs/teams.md`](docs/teams.md) | 子代理：独立提示词、工具池与轮次上限 |
 | [`docs/extensions.md`](docs/extensions.md) | 外部扩展系统完整指南 |
-| [`examples/`](examples/) | 配置示例 `permission_config_example.json`、扩展示例（`extension_example`、`jev-for-web-search`、`jev-for-terminal`）与 `tutorials/` 下的 s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`） |
+| [`examples/`](examples/) | 界面截图 `TUI.png`、配置示例 `permission_config_example.json`、扩展示例（`extension_example`、`jev-for-web-search`、`jev-for-terminal`）与 `tutorials/` 下的 s01–s18 教学脚本（agent loop 演进示例；其中 s12 / s15–s18 的队友 / 任务板 / worktree 为独立原型，未进入 `core/`） |
