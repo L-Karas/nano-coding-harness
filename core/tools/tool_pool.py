@@ -150,6 +150,42 @@ class ToolPool:
             return entry.parallel_safe
         return bool(entry.model_fields["parallel_safe"].get_default())
 
+    def _get_tool(self, name: str, args: dict) -> BaseTool | _McpEntry | ToolResult:
+        """取得本次调用要执行的工具；未知工具或参数非法时返回错误结果。
+
+        Args:
+            name: 工具名。
+            args: 工具参数。
+
+        Returns:
+            内置工具实例、MCP 条目，或错误结果。
+        """
+        entry = self._entries.get(name)
+        if entry is None:
+            return ToolResult.unknown(name)
+        if not isinstance(entry, type):
+            return entry
+        try:
+            return entry.model_validate(args)
+        except Exception as e:
+            return ToolResult.error(str(e))
+
+    def precheck_call(self, name: str, args: dict) -> ToolResult | None:
+        """准备阶段预检：未知工具或内置工具参数非法时返回错误结果。
+
+        与执行入口共用 `_get_tool`，错误值与实际执行完全同源；预检只判定错误，
+        后台执行时仍会重新校验并实例化。MCP 工具无法本地校验，返回 None 交给执行端。
+
+        Args:
+            name: 工具名。
+            args: 工具参数。
+
+        Returns:
+            未发现错误时为 None；未知工具或参数非法时为错误结果。
+        """
+        tool = self._get_tool(name, args)
+        return tool if isinstance(tool, ToolResult) else None
+
     async def execute(
         self,
         name: str,
@@ -164,17 +200,17 @@ class ToolPool:
             tctx: 运行时上下文。
 
         Returns:
-            工具结果；未知工具或执行异常时返回错误结果。
+            工具结果；未知工具、参数非法或执行异常时返回错误结果。
         """
-        entry = self._entries.get(name)
-        if entry is None:
-            return ToolResult.unknown(name)
+        tool = self._get_tool(name, args)
+        if isinstance(tool, ToolResult):
+            return tool
         try:
-            if isinstance(entry, type):
+            if isinstance(tool, BaseTool):
                 _LOGGER.info(f"Executing tool: {name}, args: {args}")
-                content = await entry.model_validate(args).arun(tctx)
+                content = await tool.arun(tctx)
             else:
-                content = await entry.execute_async(args, tctx)
+                content = await tool.execute_async(args, tctx)
             if isinstance(content, ToolResult):
                 return content
             return ToolResult(content=str(content))
@@ -195,16 +231,16 @@ class ToolPool:
             tctx: 运行时上下文。
 
         Returns:
-            工具结果；未知工具或执行异常时返回错误结果。
+            工具结果；未知工具、参数非法或执行异常时返回错误结果。
         """
-        entry = self._entries.get(name)
-        if entry is None:
-            return ToolResult.unknown(name)
+        tool = self._get_tool(name, args)
+        if isinstance(tool, ToolResult):
+            return tool
         try:
-            if isinstance(entry, type):
-                content = entry.model_validate(args).run(tctx)
+            if isinstance(tool, BaseTool):
+                content = tool.run(tctx)
             else:
-                content = entry.execute_sync(args, tctx)
+                content = tool.execute_sync(args, tctx)
             if isinstance(content, ToolResult):
                 return content
             return ToolResult(content=str(content))

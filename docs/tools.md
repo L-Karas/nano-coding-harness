@@ -71,7 +71,9 @@ MCP 结果中的 `ImageContent` 与 `read_file` 的图片走同一条注入链�
 或命令命中慢命令启发式（`make` / `pytest` / `sleep` / `pip install` / `npm test` / `cargo build` 等，
 只看每条子命令的命令词，宁可漏判不误判）。
 
-命中后立即返回 `[Background task <bg-id> started]` 占位结果，工具在后台继续执行（原生异步挂
+命中后先预检工具名与参数：未知工具或参数非法直接返回失败结果，不登记后台任务（MCP 工具
+参数无法本地校验，仍以执行结果回报）；预检通过才返回 `[Background task <bg-id> started]`
+占位结果，工具在后台继续执行（原生异步挂
 回合 loop，纯同步工具走守护线程）；下一轮开始时结果以 `<background-task-notification>` 注入会话，通知含 `<task-id>` / `<status>`
 （`completed` / `error` / `cancelled`）/ `<tool>` / `<result>`，右栏 Background Tasks 同步显示状态。
 

@@ -51,7 +51,7 @@
 3. 重建工具池（内置 + MCP），把预算后的 history 交给 `run_agent_step()`；
 4. step 内部：构造请求视图（system + history 裁剪）→ 扩展 `before_llm` → 流式请求（重试 + 渲染思考/正文/usage）
    → 扩展 `after_llm` → 按 `parallel_safe` 声明分组派发工具（组内 `asyncio.gather` 并发，未声明工具作为屏障自成一组；
-   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台 → 并发执行 → 扩展 `after_tool`（所有结局，含中断 / 拦截 / 后台占位）→ 渲染结果（write / edit 的 diff 与结果同卡））；
+   每组：扩展 `before_tool`（参数改写 + 决定票）→ 内置权限门（gate）→ 慢工具转后台（命中时先预检工具名 / 参数，失败直接定型错误）→ 并发执行 → 扩展 `after_tool`（所有结局，含中断 / 拦截 / 预检失败 / 后台占位）→ 渲染结果（write / edit 的 diff 与结果同卡））；
    结果写回会话后进入下一轮。工具回报的图片由 step 汇总为一条 user 注入消息（路径列表 + `image_url` parts），
    位于所有 tool 消息之后；非视觉模型不附加图片。工具结局统一为 `ToolResult`（内容 +
    失败 / 取消标志），失败一律来自异常，字符串只在写消息 / 渲染的边界呈现；

@@ -35,6 +35,22 @@ class Named(BaseTool):
         return tctx.agent_name
 
 
+_VALIDATE_CALLS = []
+
+
+class CountingEcho(BaseTool):
+    """Counting echo：记录 model_validate 被调用的次数。"""
+    value: str = ""
+
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        _VALIDATE_CALLS.append(obj)
+        return super().model_validate(obj, *args, **kwargs)
+
+    def run(self, tctx=None):
+        return f"ran:{self.value}"
+
+
 def test_pool_schemas_match_entries():
     pool = ToolPool({"echo": Echo, "async_only": AsyncOnly})
     assert [s["function"]["name"] for s in pool.schemas()] == ["echo", "async_only"]
@@ -78,6 +94,53 @@ def test_extra_args_are_rejected():
 def test_context_reaches_tool():
     pool = ToolPool({"named": Named})
     assert pool.execute_sync("named", {}, ToolContext(agent_name="tm")).content == "tm"
+
+
+def test_precheck_call_accepts_valid_and_skips_mcp():
+    def never_run(**kwargs):
+        raise AssertionError("precheck_call 不应执行 MCP 工具")
+
+    mcp_entry = _McpEntry(
+        {"type": "function", "function": {"name": "mcp__srv__do"}},
+        never_run,
+        never_run,
+    )
+    pool = ToolPool({"echo": Echo, "mcp__srv__do": mcp_entry})
+    assert pool.precheck_call("echo", {"value": "x"}) is None
+    assert pool.precheck_call("mcp__srv__do", {"anything": 1}) is None
+
+
+def test_precheck_call_matches_execute_results():
+    """预检与执行入口产生完全相同的错误值：参数错误和未知工具都统一格式。"""
+    pool = ToolPool({"echo": Echo})
+
+    bad_args = {"value": "x", "bogus": 1}
+    assert pool.precheck_call("echo", bad_args) == pool.execute_sync("echo", bad_args)
+
+    assert pool.precheck_call("nope", {}) == pool.execute_sync("nope", {})
+
+
+def test_execute_validates_args_once():
+    """执行入口复用 `_get_tool`，不会在它之外再 model_validate 一次。"""
+    pool = ToolPool({"counting_echo": CountingEcho})
+
+    _VALIDATE_CALLS.clear()
+    assert pool.execute_sync("counting_echo", {"value": "x"}) == ToolResult(content="ran:x")
+    assert len(_VALIDATE_CALLS) == 1
+
+    _VALIDATE_CALLS.clear()
+    assert asyncio.run(pool.execute("counting_echo", {"value": "y"})) == ToolResult(content="ran:y")
+    assert len(_VALIDATE_CALLS) == 1
+
+
+class MustNotRun(BaseTool):
+    """Must not run：预检不应执行工具。"""
+    def run(self, tctx=None):
+        raise AssertionError("precheck_call 不应执行工具")
+
+
+def test_precheck_call_does_not_execute_tool():
+    assert ToolPool({"must_not_run": MustNotRun}).precheck_call("must_not_run", {}) is None
 
 
 class ParallelSafe(BaseTool):

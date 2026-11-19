@@ -231,7 +231,7 @@ async def run_agent_step(
 class _PreparedCall:
     """一次工具调用的中间态。
 
-    准备阶段定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 outcome，只是不再执行；
+    准备阶段定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 预检失败 / 后台已启动）写好 outcome，只是不再执行；
     执行失败记在 exception：非中断失败直接上抛，中断的 CancelledError 先转成 outcome 占位再进收尾段。
     所有结局都走同一收尾段：after_tool → 渲染 → 回填消息。
     """
@@ -250,9 +250,9 @@ async def _prepare_tool_call(
         policy: StepPolicy,
         renderer: StepRenderer,
 ) -> _PreparedCall:
-    """准备阶段（串行）：中断检查 → 解析 → before_tool（含权限门）→ 渲染调用 → tool_execute → 后台路由。
+    """准备阶段（串行）：中断检查 → 解析 → before_tool（含权限门）→ 渲染调用 → tool_execute → 后台路由（命中时先预检）。
 
-    立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 后台已启动）写好 outcome 返回，其余留给执行阶段；
+    立即定型的调用（中断 / 解析失败 / 被 block / 扩展接管 / 预检失败 / 后台已启动）写好 outcome 返回，其余留给执行阶段；
     定型结果与真实执行结果一样走 after_tool 与结果渲染。
 
     Args:
@@ -300,6 +300,11 @@ async def _prepare_tool_call(
         return item
 
     if policy.background and should_run_background(tool_name, tool_args):
+        # 先预检工具名与参数再转后台：否则未知工具 / 参数错误只能作为后台结果异步回报
+        invalid = pool.precheck_call(tool_name, tool_args)
+        if invalid is not None:
+            item.outcome = invalid
+            return item
         bg_id = start_background_task(call, pool, tctx)
         item.outcome = ToolResult(content=BACKGROUND_STARTED_PROMPT.format(task_id=bg_id))
         return item

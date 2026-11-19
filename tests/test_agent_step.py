@@ -8,12 +8,13 @@ import core.agent_step as step_mod
 from core.agent_step import StepPolicy, StepRenderer, group_parallel_tool_calls, run_agent_step
 from core.extension.dispatcher import add as add_hook
 from core.runtime_context import AgentRunContext, ToolContext
-from core.template import IMAGE_OMITTED_MESSAGE, TOOL_ABORTED_PROMPT
+from core.template import IMAGE_OMITTED_MESSAGE, TOOL_ABORTED_PROMPT, UNKNOWN_TOOL_PREFIX
 from core.tools import ImageAttachment, ToolResult, ToolPool
 from core.tools.base_tools.edit import EditFile
 from core.tools.base_tools.glob import Glob
 from core.tools.base_tools.grep import Grep
 from core.tools.base_tools.read import ReadFile
+from core.tools.base_tools.terminal import Terminal
 from core.tools.base_tools.write import WriteFile
 from core.tools.extra_tools.cron import ListCrons
 from core.tools.extra_tools.memory import SaveMemory
@@ -108,6 +109,18 @@ def _run(
         policy=policy or StepPolicy(use_extensions=False),
         renderer=renderer or StepRenderer(),
     ))
+
+
+def _run_background(monkeypatch, tool_name, args, pool=None):
+    """跑一次后台路由的 step，返回 (start_background_task 收到的调用, 结局)。"""
+    started = []
+    monkeypatch.setattr(step_mod, "start_background_task",
+                        lambda call, pool, tctx: started.append(call) or "bg-1")
+    outcome = _run(monkeypatch,
+                   [("", "", [_tool_call(tool_name, json.dumps(args))], "tool_calls", None)],
+                   pool=pool,
+                   policy=StepPolicy(use_extensions=False, background=True))
+    return started, outcome
 
 
 def test_tool_round_returns_ordered_followups(monkeypatch):
@@ -227,6 +240,32 @@ def test_background_routing_respects_policy(monkeypatch):
     assert started == []
 
 
+@pytest.mark.parametrize("role_args", [
+    {},  # 缺少必填 role
+    {"role": "x" * 33},  # 超过 32 字符
+    {"role": "reviewer\nresearcher"},  # 跨行
+])
+def test_invalid_background_args_are_rejected_before_start(monkeypatch, role_args):
+    """后台化前先校验参数：非法 role 直接返回 tool 错误，不登记 / 启动后台任务。"""
+    args = {"description": "explore", "goal": "g", **role_args}
+    started, outcome = _run_background(monkeypatch, "spawn_subagent", args,
+                                       pool=ToolPool({"spawn_subagent": SpawnSubagent}))
+
+    content = outcome.followup_messages[0]["content"]
+    assert started == []
+    assert content.startswith("[Tool Error]:")
+    assert "role" in content
+
+
+def test_unknown_background_tool_is_rejected_before_start(monkeypatch):
+    """未知工具与参数错误一样在准备阶段定型，不登记 / 启动后台任务。"""
+    args = {"command": "sleep 1", "should_run_in_background": True}
+    started, outcome = _run_background(monkeypatch, "nope", args)
+
+    assert started == []
+    assert outcome.followup_messages[0]["content"] == f"{UNKNOWN_TOOL_PREFIX} nope"
+
+
 def test_background_route_sees_rewritten_call_arguments(monkeypatch):
     started = []
     monkeypatch.setattr(step_mod, "start_background_task",
@@ -235,6 +274,7 @@ def test_background_route_sees_rewritten_call_arguments(monkeypatch):
     add_hook("before_tool", lambda ctx: ctx.args.update({"command": "ls -la"}), "test")
 
     outcome = _run(monkeypatch, [("", "", [_tool_call_cmd("ls")], "tool_calls", None)],
+                   pool=ToolPool({"terminal": Terminal}),
                    policy=StepPolicy(use_extensions=True, background=True))
     assert started
     assert json.loads(started[0].function.arguments) == {"command": "ls -la"}
@@ -278,6 +318,16 @@ def test_unparsable_arguments_run_after_tool_and_render_result(monkeypatch):
     assert content.startswith("[Tool Error]: JSONDecodeError:")
     assert hooks == [("echo", content, True)]
     assert rendered == [(content, True)]
+
+
+def test_valid_background_args_still_start_task(monkeypatch):
+    """预校验只拦非法参数：合法 role 仍按原路径后台启动。"""
+    args = {"description": "explore", "goal": "g", "role": "reviewer"}
+    started, outcome = _run_background(monkeypatch, "spawn_subagent", args,
+                                       pool=ToolPool({"spawn_subagent": SpawnSubagent}))
+
+    assert len(started) == 1
+    assert outcome.followup_messages[0]["content"].startswith("[Background task `bg-1` started]")
 
 
 def test_background_placeholder_runs_after_tool_and_renders_result(monkeypatch):
