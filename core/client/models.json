@@ -238,6 +238,89 @@
   "Z.AI": {
     "base_url": "https://open.bigmodel.cn/api/paas/v4",
     "model_list": {
+      "glm-5.4": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": 131072
+      },
+      "glm-5.3": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": 128000
+      },
+      "glm-5.3-flash": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": 128000
+      },
+      "glm-5.3-flashx": {
+        "vision": true,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": 128000
+      },
+      "glm-5.2": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "minimal",
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": 128000
+      }
+    }
+  },
+  "Z.AI GLM Coding Plan": {
+    "base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
+    "model_list": {
+      "glm-5.4": {
+        "vision": false,
+        "thinking": true,
+        "thinking_level_map": {
+          "minimal": "low",
+          "low": "low",
+          "medium": "high",
+          "high": "high",
+          "max": "max"
+        },
+        "context_length": 1000000,
+        "max_output": 131072
+      },
       "glm-5.3": {
         "vision": false,
         "thinking": true,
