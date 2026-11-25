@@ -39,6 +39,12 @@ _Avoid_: 环境变量、运行期切换、配置优先级
 不改变提示词、工具池或模型。
 _Avoid_: roler、agent type
 
+**Model choice**:
+子代理单次 spawn 的显式模型配置：`provider:model` 与思考档位必须成对给出；缺省时使用
+`.settings.json` 的 `default_sub_model` 与其档位。由主代理通过 `spawn_subagent.model_choice`
+选择，`list_models` 提供可用清单。
+_Avoid_: 动态模型、模型路由（后者指按难度自动选型，尚未实现）
+
 **Turn runner**:
 驱动一次 turn 的线程契约：私有事件循环、串行锁与当前回合的上下文 / 任务登记都在一个 implementation 内，调用方只提「跑回合 / 压缩 / 中断」。
 _Avoid_: AGENT_LOCK、submit 阻塞、直接操作 loop

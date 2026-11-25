@@ -4,7 +4,7 @@ import threading
 import time
 
 import core.bootstrap as bootstrap_mod
-import core.client.model as model_mod
+import core.client.registry as registry_mod
 import core.config as config
 import core.cron_scheduler as cron_mod
 import core.extension.builtin as builtin_mod
@@ -63,7 +63,7 @@ def test_bootstrap_initializes_once_across_threads(monkeypatch):
 
     monkeypatch.setattr(bootstrap_mod, "_booted", False)
     monkeypatch.setattr(bootstrap_mod, "init_harness", _record("harness"))
-    monkeypatch.setattr(model_mod, "load_model_registry", _record("registry"))
+    monkeypatch.setattr(registry_mod, "load_model_registry", _record("registry"))
     monkeypatch.setattr(cron_mod, "start_cron_scheduler", _record("cron"))
     monkeypatch.setattr(extension_loader, "load_extensions", _record("extensions"))
     monkeypatch.setattr(builtin_mod, "register_builtin_extensions", _record("builtins"))

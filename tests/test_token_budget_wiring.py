@@ -33,7 +33,7 @@ def test_step_clamps_max_tokens_to_current_model(monkeypatch):
 def test_subagent_clamps_max_tokens_to_sub_model(monkeypatch):
     client = StubModelClient(clamp_to=7_777)
 
-    async def identity(messages, ctx=None, sub_model=False):
+    async def identity(messages, ctx=None, client=None):
         return messages
 
     monkeypatch.setattr(sa, "shared_sub_model_client", lambda: client)

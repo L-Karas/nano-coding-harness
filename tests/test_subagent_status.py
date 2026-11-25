@@ -4,7 +4,6 @@ import asyncio
 import pytest
 
 import core.agent_step as step_mod
-import core.context.compact.context_compact as compact_mod
 import core.sub_agent as sa
 import core.tools
 import core.tools.tool_pool
@@ -49,17 +48,16 @@ def _patch(monkeypatch, rounds, execute_tool):
     prepared = []
     original_prepare = sa.prepare_messages
 
-    async def recording_prepare(messages, ctx=None, sub_model=False):
-        prepared.append((len(messages), sub_model))
-        return await original_prepare(messages, ctx, sub_model)
+    async def recording_prepare(messages, ctx=None, client=None):
+        prepared.append((len(messages), client))
+        return await original_prepare(messages, ctx, client)
 
     monkeypatch.setattr(sa, "shared_sub_model_client", lambda: client)
-    monkeypatch.setattr(compact_mod, "shared_sub_model_client", lambda: client)
     monkeypatch.setattr(sa, "prepare_messages", recording_prepare)
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(step_mod, "streaming_message", fake_streaming_message)
     monkeypatch.setattr(core.tools, "assemble_tool_pool", lambda *a, **k: _Pool())
-    return seen, prepared, state
+    return seen, prepared, state, client
 
 
 _TOOL_ROUND = ("", "", [{"id": "t1", "type": "function",
@@ -72,12 +70,12 @@ def test_phases_and_cleanup(monkeypatch):
     async def execute_tool():
         return "out"
 
-    seen, prepared, state = _patch(monkeypatch, rounds, execute_tool)
+    seen, prepared, state, client = _patch(monkeypatch, rounds, execute_tool)
     assert asyncio.run(sa.spawn_subagent("do it")) == "done"
     assert seen == [("thinking", ""), ("tool", "terminal"), ("thinking", "")]
-    # 每轮模型调用前过一次 prepare_messages 且带 sub_model=True：history 不含 system，
+    # 每轮模型调用前过一次 prepare_messages 且传入子代理自己的 client：history 不含 system，
     # 开局 user 一条，第二轮前已追加 assistant+tool
-    assert prepared == [(1, True), (3, True)], prepared
+    assert prepared == [(1, client), (3, client)], prepared
     assert state.snapshot().subagents == []
 
 
@@ -87,7 +85,7 @@ def test_cleanup_on_error(monkeypatch):
     async def execute_tool():
         raise RuntimeError("boom")
 
-    _, _, state = _patch(monkeypatch, rounds, execute_tool)
+    _, _, state, _ = _patch(monkeypatch, rounds, execute_tool)
     with pytest.raises(RuntimeError):
         asyncio.run(sa.spawn_subagent("do it"))
     assert state.snapshot().subagents == []

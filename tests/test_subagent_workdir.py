@@ -42,9 +42,10 @@ def test_schema_rejects_invalid_role(bad_role):
 def _capture_tool_spawn(monkeypatch):
     calls = []
 
-    async def fake_spawn(description, ctx=None, goal="", working_directory=None, role="subagent"):
+    async def fake_spawn(description, ctx=None, goal="", working_directory=None, role="subagent",
+                         model_choice=None):
         calls.append({"description": description, "goal": goal, "working_directory": working_directory,
-                      "role": role})
+                      "role": role, "model_choice": model_choice})
         return "ok"
 
     monkeypatch.setattr(subagent_tool_mod, "spawn_subagent", fake_spawn)
@@ -86,7 +87,7 @@ def _patch_spawn(monkeypatch, state, captured):
 
     monkeypatch.setattr(sa, "build_system_prompt", fake_prompt)
 
-    async def prepare(messages, ctx=None, sub_model=False):
+    async def prepare(messages, ctx=None, client=None):
         return messages
 
     monkeypatch.setattr(sa, "prepare_messages", prepare)

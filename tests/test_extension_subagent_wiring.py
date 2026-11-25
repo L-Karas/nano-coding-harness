@@ -41,7 +41,7 @@ def _patch(monkeypatch, responses, execute):
             calls["args"].append(args)
             return ToolResult(content=execute)
 
-    async def _prepare(messages, ctx=None, sub_model=False):
+    async def _prepare(messages, ctx=None, client=None):
         return messages
 
     monkeypatch.setattr(sa, "shared_sub_model_client", lambda: client)

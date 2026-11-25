@@ -463,7 +463,7 @@ def test_subagent_row_expands_to_goal_not_description():
         app = _app(state)
         async with app.run_test() as pilot:
             state.register_subagent("sa-1", "explore the whole repo", "find the entry point",
-                                    role="reviewer")
+                                    role="reviewer", model="P:m", thinking_level="high")
             _refresh(app)
             await pilot.pause()  # 等 Textual 处理行 mount
             label = app.query_one("#subagents-list").query(".-info-text")[0]
@@ -473,6 +473,7 @@ def test_subagent_row_expands_to_goal_not_description():
             assert "[thinking]" in collapsed
             assert "find the entry point" not in collapsed
             assert "explore the whole repo" not in collapsed
+            assert "P:m · high" not in collapsed
 
             await pilot.click(label)
             await pilot.pause()
@@ -481,6 +482,7 @@ def test_subagent_row_expands_to_goal_not_description():
             assert "sa-1" not in expanded
             assert "find the entry point" in expanded
             assert "explore the whole repo" not in expanded
+            assert "P:m · high" in expanded
 
     asyncio.run(main())
 

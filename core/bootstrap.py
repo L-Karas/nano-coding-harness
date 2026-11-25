@@ -74,7 +74,7 @@ def bootstrap() -> None:
         init_harness()
 
         # 函数内导入：bootstrap 被导入时不拉起模型注册表 / 工具池等重依赖
-        from core.client.model import load_model_registry
+        from core.client.registry import load_model_registry
         from core.cron_scheduler import start_cron_scheduler
         from core.extension.builtin import register_builtin_extensions
         from core.extension.loader import load_extensions

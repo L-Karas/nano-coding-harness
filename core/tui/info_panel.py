@@ -246,13 +246,17 @@ class _InfoPanel(Vertical):
                     for t in snap.todos]
         if kind == "subagents":
             # 条目只在子代理运行期间存在（finally 移除）；role 替换内部 id 作为展示标签，
-            # 阶段拼进 text 以触发签名重建；展开只补 goal（description 不在右栏展示）
+            # 阶段拼进 text 以触发签名重建；展开补 goal 与该子代理实际使用的模型 / 档位
+            # （description 不在右栏展示）
             items = []
             for sa in snap.subagents:
                 label = f"tool: {sa.detail}" if sa.phase == "tool" else "thinking"
+                expand_lines = [sa.goal] if sa.goal else []
+                if sa.model:
+                    expand_lines.append(f"{sa.model} · {sa.thinking_level or 'off'}")
                 items.append({"id": sa.id, "status": "running", "phase": sa.phase,
                               "role": sa.role or DEFAULT_SUBAGENT_ROLE,
-                              "text": f"[{label}]", "expand_text": sa.goal,
+                              "text": f"[{label}]", "expand_text": "\n".join(expand_lines),
                               "cancellable": sa.cancellable})
             return items
         items = []

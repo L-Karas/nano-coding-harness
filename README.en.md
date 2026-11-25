@@ -43,7 +43,7 @@ chat, streaming tool calls, layered context compaction, background tasks, cron s
 - **Tool system**: file read/write/edit (`read_file` supports local png/jpg/jpeg/gif/webp images — ≤ 5 MB each, with automatic downscaling when oversized — and image URLs; images reach vision models as user messages), shell (slow commands move to the background automatically), glob / grep, clarify, and MCP tools merged into the pool;
 - **Two-layer context compaction**: uniform truncation of tool output plus history summarization, with thresholds resolved dynamically for the current model;
 - **Robustness**: Esc interruption, provider-specific error classification and backoff retries, automatic max-token escalation and continuation prompts after truncation, and each session message persisted to disk immediately;
-- **Subagents**: their own prompts and tool pools; they run in the background for up to 30 rounds, return only the final text conclusion, and appear under their role label in the right-hand panel;
+- **Subagents**: their own prompts and tool pools; they run in the background for up to 500 rounds, return only the final text conclusion, and appear under their role label in the right-hand panel;
 - **Extensibility**: allow / ask / deny permission rules in `.nano-harness/.permissions.json`, plus external extensions under `.nano-harness/extensions/` that hook into five events; their deciding votes in `before_tool` are adjudicated by the built-in permission gate.
 
 ## Quick Start

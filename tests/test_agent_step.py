@@ -18,6 +18,7 @@ from core.tools.base_tools.terminal import Terminal
 from core.tools.base_tools.write import WriteFile
 from core.tools.extra_tools.cron import ListCrons
 from core.tools.extra_tools.memory import SaveMemory
+from core.tools.extra_tools.model import ListModels
 from core.tools.extra_tools.skill import LoadSkill
 from core.tools.extra_tools.subagent import SpawnSubagent
 from core.tools.tool_base import BaseTool
@@ -446,14 +447,15 @@ def test_group_parallel_tool_calls_empty_input():
 
 
 def test_group_parallel_tool_calls_uses_declared_parallel_safe():
-    """内置工具中声明 parallel_safe 的 9 个连成一个并发组，其余工具仍是屏障。"""
-    names = ["read_file", "glob", "grep", "list_crons", "load_skill",
+    """内置工具中声明 parallel_safe 的 10 个连成一个并发组，其余工具仍是屏障。"""
+    names = ["read_file", "glob", "grep", "list_crons", "list_models", "load_skill",
              "save_memory", "spawn_subagent", "web_search", "web_extract"]
     pool = ToolPool({
         "read_file": ReadFile,
         "glob": Glob,
         "grep": Grep,
         "list_crons": ListCrons,
+        "list_models": ListModels,
         "load_skill": LoadSkill,
         "save_memory": SaveMemory,
         "spawn_subagent": SpawnSubagent,

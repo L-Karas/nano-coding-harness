@@ -120,7 +120,8 @@ class AgentRuntime:
             AgentInterrupted: 压缩期间被用户中断。
         """
         try:
-            messages, compacted = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx, auto_compact=False)
+            messages, compacted = await compact_history(SESSION_MANAGER.load_messages(), ctx=ctx,
+                                                        auto_compact=False)
             if compacted:
                 SESSION_MANAGER.update_messages(messages)
             return compacted
@@ -157,11 +158,11 @@ class AgentRuntime:
                 ctx.raise_if_cancelled()
                 inject_background_notifications()
 
-                messages = await prepare_messages(SESSION_MANAGER.load_messages(), ctx)
+                client = shared_model_client()
+                messages = await prepare_messages(SESSION_MANAGER.load_messages(), ctx, client=client)
                 SESSION_MANAGER.update_messages(messages)
                 pool = assemble_tool_pool("main",
                                           enable_experimental=CONFIGMANAGER.config.enable_experimental_tools)
-                client = shared_model_client()
                 tctx = ToolContext(agent_run=ctx, vision=model_supports_vision(client))
 
                 try:

@@ -41,6 +41,8 @@ class SubagentEntry:
     description: str
     goal: str = ""
     role: str = DEFAULT_SUBAGENT_ROLE
+    model: str = ""  # provider:model 展示标签；空 = 未解析到模型
+    thinking_level: str = ""  # 展示标签：档位 / enabled (no effort) / off
     cancellable: bool = False
 
 
@@ -231,7 +233,8 @@ class RuntimeState:
             return f"sa-{self._subagent_counter:04d}"
 
     def register_subagent(self, agent_id: str, description: str, goal: str = "",
-                          *, role: str = DEFAULT_SUBAGENT_ROLE) -> None:
+                          *, role: str = DEFAULT_SUBAGENT_ROLE,
+                          model: str = "", thinking_level: str = "") -> None:
         """登记一个处于 thinking 阶段的子代理。
 
         Args:
@@ -239,6 +242,8 @@ class RuntimeState:
             description: 任务描述。
             goal: 单行目标说明。
             role: 展示用角色标签。
+            model: 实际使用的模型引用（``provider:model``）展示标签。
+            thinking_level: 实际使用的思考档位（降级时可为 enabled (no effort) / off）。
         """
         clean_role = " ".join((role or "").split()) or DEFAULT_SUBAGENT_ROLE
         with self._lock:
@@ -249,6 +254,8 @@ class RuntimeState:
                 description=description,
                 goal=goal,
                 role=clean_role,
+                model=model,
+                thinking_level=thinking_level,
             )
 
     def update_subagent(

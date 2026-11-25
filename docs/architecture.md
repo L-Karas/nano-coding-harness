@@ -19,7 +19,9 @@
 | `core/shared/logger.py` | 日志：`get_logger()` 按模块名写 `.nano-harness/log/<module>.log` |
 | `core/runtime_state.py` | `RuntimeState` 单例：右栏 todos / 后台任务 / 子代理的运行状态，单锁 + 类型化快照（ADR-0004） |
 | `core/context/prompt.py` + `core/template/` | agent 级提示词（`prompt_template.py`：系统 / 子代理 / 摘要）与消息级模板（`message_template.py`：注入消息包装、续跑/中断提示、工具错误前缀、工具结果落盘/截断包裹、后台通知包裹） |
-| `core/client/model.py` | `ModelClient` 与进程内单例 `shared_model_client()`；provider/模型/思考档位 |
+| `core/client/registry.py` | 模型注册表：内置 / 自定义 provider 与模型的加载、凭证、持久化与可用模型清单 |
+| `core/client/model_choice.py` | 子代理显式模型选择 `ModelChoice` 与注册表校验 |
+| `core/client/model_client.py` | `ModelClient`、进程内共享 client 与显式模型 client 缓存；provider/模型/思考档位 |
 | `core/context/session/session.py` | `SessionManager`：消息状态的唯一 owner；`Message` 货币、JSON 只在文件边界、只读 `current_session` + `reset()`（ADR-0006） |
 | `core/context/message.py` | `Message` 会话消息类型（`content` 可为 `str` 或 OpenAI content 数组）与 `to_llm_messages` 请求视图（`vision=False` 时整条图片消息替换为文本占位） |
 | `core/tools/` | 工具基类（schema 字段 + `run`/`arun`）、注册表与 `ToolPool`（`tool_pool.py`）；`base_tools/`（基础工具）、`extra_tools/`（扩展工具）、`web_search/`（含 `ToolResult` / `ToolContext`） |
@@ -35,7 +37,7 @@
 | `core/mcp/mcp_client.py` | MCP Server 连接与工具合并（独立后台事件循环）；配置里的 `enabled=false` 控制运行时启停 |
 | `core/skill/skills.py` | 扫描 global（`~/.agents/skills`）/ user（`.nano-harness/skills`）/ project（`.agents/skills`）三来源的 `SKILL.md`，同名 project > user > global；`.nano-harness/.skills.json` 控制模型可见性 |
 | `core/context/memory/memory.py` | 长期记忆的增删查，注入系统提示词 |
-| `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 30 轮，只回传最终文本 |
+| `core/sub_agent.py` | 子代理：独立提示词与工具池，最多 500 轮，只回传最终文本 |
 | `core/tui/` | Textual 界面：App 装配、卡片/流式渲染、指令与弹窗、左栏分区与右栏面板（详见 [`tui.md`](tui.md)） |
 | `smoke/` | TUI 无头冒烟自检（`python -m core.tui.ui_textual --smoke`）与离线演示 agent；不随 `core/` 发布 |
 | `docs/` | 项目文档（见 [README 文档索引](../README.md#文档索引)） |

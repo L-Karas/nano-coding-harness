@@ -1,5 +1,6 @@
 """ModelClient 动态 token 预算：上下文/最大输出直接取自注册表，阈值按当前模型动态解析。"""
-import core.client.model as model
+import core.client.model_client as client_mod
+import core.client.registry as registry_mod
 import core.config as config_mod
 
 
@@ -10,12 +11,12 @@ def _client(
     config: config_mod.AgentConfig,
 ):
     """构造仅带 provider/model 的 client，并把注册表与全局配置换成测试值。"""
-    monkeypatch.setattr(model, "CONFIGMANAGER", config_mod.AgentConfigManager(config))
-    monkeypatch.setitem(model._MODEL_LIST, "TestProvider", {
+    monkeypatch.setattr(client_mod, "CONFIGMANAGER", config_mod.AgentConfigManager(config))
+    monkeypatch.setitem(registry_mod._MODEL_LIST, "TestProvider", {
         "base_url": "",
         "model_list": {"test-model": {"context_length": registry_ctx, "max_output": registry_out}},
     })
-    client = model.ModelClient.__new__(model.ModelClient)  # 不建真实 client
+    client = client_mod.ModelClient.__new__(client_mod.ModelClient)  # 不建真实 client
     client.current_provider = "TestProvider"
     client.current_model = "test-model"
     return client
@@ -57,8 +58,8 @@ def test_huge_max_output_does_not_collapse_compact_threshold(monkeypatch):
 
 
 def test_unselected_model_has_no_budget(monkeypatch):
-    monkeypatch.setattr(model, "CONFIGMANAGER", config_mod.AgentConfigManager(config_mod.AgentConfig()))
-    client = model.ModelClient.__new__(model.ModelClient)
+    monkeypatch.setattr(client_mod, "CONFIGMANAGER", config_mod.AgentConfigManager(config_mod.AgentConfig()))
+    client = client_mod.ModelClient.__new__(client_mod.ModelClient)
     client.current_provider = ""
     client.current_model = ""
     assert client.load_context_length() == 0

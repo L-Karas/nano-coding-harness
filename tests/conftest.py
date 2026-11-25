@@ -17,7 +17,7 @@ from core.bootstrap import init_harness
 
 init_harness()
 
-from core.client.model import load_model_registry  # noqa: E402
+from core.client.registry import load_model_registry  # noqa: E402
 import core.config as config  # noqa: E402
 from core.config import AgentConfig  # noqa: E402
 from core.context.session.session import SessionManager  # noqa: E402

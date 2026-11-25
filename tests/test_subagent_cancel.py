@@ -20,7 +20,7 @@ def _patch_spawn(monkeypatch, state):
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(sa, "shared_sub_model_client", lambda: object())
 
-    async def prepare(messages, ctx=None, sub_model=False):
+    async def prepare(messages, ctx=None, client=None):
         return messages
 
     monkeypatch.setattr(sa, "prepare_messages", prepare)

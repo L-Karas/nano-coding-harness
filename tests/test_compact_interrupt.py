@@ -13,7 +13,7 @@ def test_compact_registers_ctx_and_task_for_interrupt(monkeypatch):
     started = threading.Event()
     seen_ctx = []
 
-    async def _slow(messages, ctx=None, auto_compact=True):  # 代替 compact_history：挂住等中断
+    async def _slow(messages, ctx=None, auto_compact=True, client=None):  # 代替 compact_history：挂住等中断
         seen_ctx.append(ctx)
         started.set()
         await asyncio.sleep(30)

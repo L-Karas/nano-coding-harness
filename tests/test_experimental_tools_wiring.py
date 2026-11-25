@@ -56,7 +56,7 @@ def test_main_loop_passes_configured_flag_to_pool(monkeypatch):
     monkeypatch.setattr(lwi, "shared_model_client", StubModelClient)
     monkeypatch.setattr(lwi, "assemble_tool_pool", _capture_pool(seen))
 
-    async def identity(messages, ctx):
+    async def identity(messages, ctx, client=None):
         return messages
 
     monkeypatch.setattr(lwi, "prepare_messages", identity)
@@ -74,7 +74,7 @@ def test_subagent_passes_configured_flag_to_pool(monkeypatch):
     monkeypatch.setattr(sa, "build_system_prompt", lambda *a, **k: "sys")
     monkeypatch.setattr(tools_mod, "assemble_tool_pool", _capture_pool(seen))
 
-    async def identity(messages, ctx=None, sub_model=False):
+    async def identity(messages, ctx=None, client=None):
         return messages
 
     monkeypatch.setattr(sa, "prepare_messages", identity)

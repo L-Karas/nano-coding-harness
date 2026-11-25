@@ -27,7 +27,7 @@ def _terminal_pool(calls, output):
     return ToolPool({"terminal": _Terminal})
 
 
-async def _identity(messages, ctx):
+async def _identity(messages, ctx, client=None):
     return messages
 
 

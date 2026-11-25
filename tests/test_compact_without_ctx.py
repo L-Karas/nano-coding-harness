@@ -24,20 +24,19 @@ def test_summarize_history_clamps_max_tokens(monkeypatch):
     assert fake_client.calls[0]["max_tokens"] == 7_777
 
 
-def test_compact_history_uses_sub_model_client(monkeypatch):
-    """子代理压缩（sub_model=True）必须用子代理 client 总结（与对话同模型，缓存命中），不得回退主 client；
+def test_compact_history_uses_passed_client(monkeypatch):
+    """压缩必须用调用方传入的 client 总结（子代理场景与对话同模型，缓存命中），不得回退主 client；
     且触发阈值/保留预算使用该 client 当前模型解析出的预算。"""
     fake_client = StubModelClient(trigger_tokens=1, response=FakeStream([text_chunk("summary")]))
 
     def fail():
-        raise AssertionError("应使用子代理 client，而非主 client")
+        raise AssertionError("应使用传入的 client，而非主 client")
 
     monkeypatch.setattr(compact_mod, "shared_model_client", fail)
-    monkeypatch.setattr(compact_mod, "shared_sub_model_client", lambda: fake_client)
     monkeypatch.setattr(compact_mod, "CONFIGMANAGER",
                         SimpleNamespace(config=SimpleNamespace(summary_max_tokens=10)))
     result, compacted = asyncio.run(compact_mod.compact_history([{"role": "user", "content": "hi"}],
-                                                                auto_compact=False, sub_model=True))
+                                                                auto_compact=False, client=fake_client))
     assert compacted is True
     assert len(result) == 1
     assert result[0].role == "user"

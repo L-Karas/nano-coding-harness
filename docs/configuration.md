@@ -12,8 +12,11 @@
 - `/login`（别名 `/logout`）：注册 / 注销自定义提供方与模型（写入 `.nano-harness/.custom_providers.json` /
   `.nano-harness/.custom_models.json`）
 
-所有 LLM 调用共用单例 `core.client.shared_model_client()`：主循环、子代理、上下文压缩走同一份配置，
-不存在第二处模型来源。
+所有 LLM 调用的模型来源仍是同一份注册表（`core/client/models.json` + `.custom_models.json`）。
+主 agent 与手动压缩使用共享单例 `core.client.shared_model_client()`；子代理默认使用
+`shared_sub_model_client()`，也可由 `spawn_subagent.model_choice` 按单次选择取 client
+（按 `(provider, model, thinking_level)` 缓存，见
+[ADR-0016](adr/0016-subagent-model-choice.md)）。
 
 ## 运行模式
 
@@ -81,6 +84,14 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 | Default thinking level | `default_thinking_level` | `max` | 主模型默认思考档位（minimal / low / medium / high / max），按模型 `thinking_level_map` 映射为 `reasoning_effort`；该档位不被模型支持时不发送 |
 | Sub model thinking level | `default_sub_model_thinking_level` | `max` | 子模型思考档位；未设置 `default_sub_model` 时回退 `default_thinking_level` |
 
+### 子代理动态模型
+
+`spawn_subagent` 支持可选的 `model_choice` 对象：
+`{model: "provider:model", thinking_level: "minimal|low|medium|high|max"}`。两者必须同时给出；
+省略整个对象时沿用 `default_sub_model` / `default_sub_model_thinking_level`。主代理可用
+`list_models` 查看已配置 provider 的模型能力与档位。显式模型在工具构造期校验（未知模型 /
+未配置 API key 直接成为同步工具错误），上下文压缩与摘要使用该子代理自己的 client。
+
 ### 审批模式
 
 | 窗口显示名 | 字段 | 默认 | 说明 |
@@ -119,7 +130,7 @@ Enter 进入编辑态、再次 Enter 校验全部字段并落盘；开关 Enter 
 （默认值见 `core/config.py`），均为绝对 token 数，可在 `/settings` 中调整；上下文长度与最大输出
 直接取自当前模型的注册表配置（`core/client/models.json` / `.nano-harness/.custom_models.json`）。
 压缩阈值按当前模型窗口动态解析，切换模型（`/model`）后立即生效；完整优先级与退化处理见
-[`context-compaction.md`](context-compaction.md#22-按当前模型解析coreclientmodelpy)。
+[`context-compaction.md`](context-compaction.md#22-按当前模型解析coreclientmodel_clientpy)。
 `max_output` 只用于调用时的输出钳制，不参与阈值计算。
 
 两层管线、切分规则与手动 `/compact` 等细节见 [`context-compaction.md`](context-compaction.md)。

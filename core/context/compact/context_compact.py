@@ -13,9 +13,9 @@ from functools import wraps
 from typing import Any
 
 from core.client import (
+    ModelClient,
     model_supports_vision,
     shared_model_client,
-    shared_sub_model_client,
 )
 from core.config import PATHS, CONFIGMANAGER
 from core.context import to_llm_messages
@@ -210,22 +210,24 @@ def find_index_to_split(messages: list, reserve_tokens: int) -> int:
 
 
 @log_compact_step
-async def summarize_history(messages: list, ctx: Any = None, sub_model: bool = False) -> str:
+async def summarize_history(messages: list, ctx: Any = None,
+                            client: ModelClient | None = None) -> str:
     """总结历史消息。
 
-    sub_model=True 用子代理 client 总结（与子代理对话同模型，缓存命中）；
-    默认用主 client（主流程 / 手动 /compact）。
+    调用方显式传入本次对话实际使用的 client（主代理或子代理），保证摘要模型与
+    对话模型一致、缓存命中；省略时用主 client。
 
     Args:
         messages: 待总结的消息列表。
         ctx: 回合上下文，用于中断检查；手动 /compact 时为 None。
-        sub_model: True 使用子代理模型 client。
+        client: 对话实际使用的模型客户端；None 时用主 client。
 
     Returns:
         模型生成的摘要文本。
     """
     summary_text = ""
-    client = shared_sub_model_client() if sub_model else shared_model_client()
+    if client is None:
+        client = shared_model_client()
     vision = model_supports_vision(client)
     request_messages = to_llm_messages(messages, vision=vision) + [
         {
@@ -258,9 +260,9 @@ async def compact_history(
     messages: list,
     ctx: Any = None,
     auto_compact: bool = True,
-    sub_model: bool = False,
+    client: ModelClient | None = None,
 ) -> tuple[list, bool]:
-    """压缩历史消息；阈值/保留预算按当前模型（主代理或子代理）窗口解析，阈值封顶到窗口 80%。
+    """压缩历史消息；阈值/保留预算按传入 client 的模型窗口解析，阈值封顶到窗口 80%。
 
     auto_compact=False（手动 /compact）跳过 token 阈值判断，直接压缩；未选择模型
     （无可用上下文窗口）仍然无法压缩。
@@ -269,7 +271,7 @@ async def compact_history(
         messages: 待压缩的消息列表。
         ctx: 回合上下文，用于中断检查；手动 /compact 时为 None。
         auto_compact: True 先判断阈值并按 turn 切分；False 跳过阈值判断、总结全部消息。
-        sub_model: True 使用子代理模型 client。
+        client: 对话实际使用的模型客户端；None 时用主 client。
 
     Returns:
         (messages, compacted)：空列表入参返回新的 []（compacted=False）；未触发压缩
@@ -278,7 +280,8 @@ async def compact_history(
     """
     if not messages:
         return [], False
-    client = shared_sub_model_client() if sub_model else shared_model_client()
+    if client is None:
+        client = shared_model_client()
     # 未选择模型 / 上下文未知 → 无法压缩，原样返回
     threshold = client.compact_trigger_tokens()
     if threshold <= 0:
@@ -292,29 +295,30 @@ async def compact_history(
         to_summarize, tail = messages[:split_index], messages[split_index:]
     else:
         to_summarize, tail = messages, []
-    summary = await summarize_history(to_summarize, ctx, sub_model)
+    summary = await summarize_history(to_summarize, ctx, client)
     compacted_messages = [
                              Message(role="user", content=f"<compacted_messages>\n{summary}\n</compacted_messages>")
                          ] + tail
     return compacted_messages, True
 
 
-async def prepare_messages(messages: list, ctx: Any = None, sub_model: bool = False) -> list:
+async def prepare_messages(messages: list, ctx: Any = None,
+                           client: ModelClient | None = None) -> list:
     """每轮 LLM 调用前的统一上下文预算管线。
 
-    sub_model=True 时压缩总结用子代理 client（与对话同模型，缓存命中）；
-    auto_compact 关闭时只裁剪工具结果，不做模型总结。
+    压缩总结与预算按传入 client 的模型解析：主代理传主 client，子代理传它自己的 client
+    （动态模型下两者可能不同）。auto_compact 关闭时只裁剪工具结果，不做模型总结。
 
     Args:
         messages: 会话消息列表（原地处理）。
         ctx: 回合上下文，用于中断检查。
-        sub_model: True 使用子代理模型 client。
+        client: 对话实际使用的模型客户端；None 时用主 client。
 
     Returns:
         处理后的消息列表。
     """
     truncate_large_tool_outputs(messages)
     if CONFIGMANAGER.config.auto_compact:
-        messages[:], _ = await compact_history(messages, ctx, sub_model=sub_model)
+        messages[:], _ = await compact_history(messages, ctx, client=client)
 
     return messages

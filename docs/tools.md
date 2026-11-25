@@ -50,7 +50,8 @@
 | 工具 | 参数 | 可见 | 说明 |
 | --- | --- | --- | --- |
 | `todo_write` | `todos[{content,status}]` | main | 整体替换任务清单，右栏实时展示 |
-| `spawn_subagent` | `description`, `goal`, `role`, `working_directory=""` | main | 独立上下文子代理，后台运行，最多 30 轮，结论经后台通知回传；`role` 为右栏 Subagents 条目展示的角色标签（如 reviewer / researcher，替代内部 id），`goal` 为条目展开时展示的简短目标，`working_directory` 指定子代理工作目录（缺省与主代理一致） |
+| `spawn_subagent` | `description`, `goal`, `role`, `working_directory=""`, `model_choice=None` | main | 独立上下文子代理，后台运行，最多 500 轮，结论经后台通知回传；`role` 为右栏 Subagents 条目展示的角色标签（如 reviewer / researcher，替代内部 id），`goal` 为条目展开时展示的简短目标，`working_directory` 指定子代理工作目录（缺省与主代理一致）；`model_choice: {model, thinking_level}` 为本次子代理显式指定模型（两者必须成对，缺省用 settings 的子模型） |
+| `list_models` | 无 | main | 列出已配置 provider 的可用模型（`provider:model`、vision、thinking、档位、context、max_output）与默认模型；供 `spawn_subagent.model_choice` 选型 |
 | `load_skill` | `name` | main | 返回技能正文与 `SKILL.md` 路径（`<skill>` 标签包裹） |
 | `save_memory` | `title`, `content`, `mem_type`, `scope` | main | `mem_type`: user / feedback / project / reference；`scope`: local（默认，仅当前工作目录）/ global（跨工作目录共享） |
 | `schedule_cron` | `cron_expression`, `prompt`, `recurring`, `durable` | main | 注册 5 段式 cron，触发时把 prompt 作为用户消息注入会话 |

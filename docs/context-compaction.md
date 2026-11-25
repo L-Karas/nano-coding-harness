@@ -12,7 +12,7 @@
 SESSION_MANAGER.load_messages()
         │
         ▼
-prepare_messages(messages, ctx, sub_model=?)
+prepare_messages(messages, ctx, client=?)
         │
         ├─ 1. truncate_large_tool_outputs(messages)   ← 总是执行，不调用模型
         │
@@ -39,7 +39,7 @@ prepare_messages(messages, ctx, sub_model=?)
 
 三个字段都是绝对值；阈值字段不接受比例。
 
-### 2.2 按当前模型解析（`core/client/model.py`）
+### 2.2 按当前模型解析（`core/client/model_client.py`）
 
 `ModelClient.compact_trigger_tokens()` / `compact_reserve_tokens()` 每次调用时都按当前模型重新解析，
 所以 `/model` 切换后立即生效：
@@ -89,12 +89,12 @@ prepare_messages(messages, ctx, sub_model=?)
 
 ## 4. 第二层：触发式摘要
 
-`compact_history(messages, ctx=None, auto_compact=True, sub_model=False) -> (messages, compacted)`。
+`compact_history(messages, ctx=None, auto_compact=True, client=None) -> (messages, compacted)`。
+`client` 为本次对话实际使用的模型客户端；省略时用主 client。
 
 ### 4.1 触发判断
 
-- 取当前 client 的有效触发阈值：`sub_model=True` 用 `shared_sub_model_client()`（子代理模型），
-  否则用主 client；
+- 取传入 client 的有效触发阈值（子代理传自己的 client，主代理省略或传主 client）；
 - 阈值 `<= 0`（未选模型）→ 原样返回 `(messages, False)`，不调用模型；
 - `auto_compact=True`（自动压缩）时，`estimate_size(messages) < 阈值` → 原样返回 `(messages, False)`，不调用模型；
 - `auto_compact=False`（手动 `/compact`）跳过阈值判断，即使历史低于阈值也直接压缩；未选模型时仍是 no-op，
@@ -139,8 +139,8 @@ prepare_messages(messages, ctx, sub_model=?)
 | 入口            | 路径                                                                                          | 行为                                            |
 |---------------|---------------------------------------------------------------------------------------------|-----------------------------------------------|
 | 主 agent 每回合   | `core/agent_loop.py`：`prepare_messages(...)` → `update_messages(...)`              | 超阈值自动压缩；未触发时同样写回                              |
-| sub-agent     | `core/sub_agent.py`：每轮 `prepare_messages(history, ctx, sub_model=True)`                     | 用子代理 client 的预算与摘要模型                          |
-| 手动 `/compact` | TUI → `AgentRuntime.run_compact()` → `TurnRunner` 锁 → `compact_history(auto_compact=False)` | 与用户回合 / cron 互斥；跳过阈值判断直接压缩；Esc 可中断；中断不落会话；成功后重放历史；未选模型时只提示 |
+| sub-agent     | `core/sub_agent.py`：每轮 `prepare_messages(history, ctx, client=<该子代理的 client>)`                     | 预算与摘要模型跟随该子代理实际模型                          |
+| 手动 `/compact` | TUI → `AgentRuntime.run_compact()` → `TurnRunner` 锁 → `compact_history(auto_compact=False)` | 与用户回合 / cron 互斥；省略 client 时用主 client；跳过阈值判断直接压缩；Esc 可中断；中断不落会话；成功后重放历史；未选模型时只提示 |
 
 UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），runtime 在
 `core/agent_loop.py`（`AgentRuntime.compact`）。
@@ -169,5 +169,6 @@ UI 入口在 `core/tui/commands.py`（`_run_compact` / `_compact_worker`），ru
 - `core/context/token.py`：token 估算；
 - `core/context/truncate.py`：行数 / 字节截断；
 - `core/config.py`：预算字段、按模型解析；
-- `core/client/model.py`：`compact_trigger_tokens()` / `compact_reserve_tokens()` / `clamp_max_tokens()`；
+- `core/client/model_client.py`：`compact_trigger_tokens()` / `compact_reserve_tokens()` / `clamp_max_tokens()`；
+- `core/client/registry.py`：模型 / provider 注册表与预算字段来源；
 - `core/template/message_template.py`、`core/template/prompt_template.py`：落盘包裹与摘要模板。
